@@ -24,9 +24,13 @@ async def _make_bucket(bucket_mgr, *, content: str = "old content") -> str:
     return bucket_id
 
 
-async def test_replace_text_fields_is_atomic_and_preserves_activation(bucket_mgr):
+async def test_replace_text_fields_is_atomic_and_updates_content_timestamp(
+    bucket_mgr, monkeypatch
+):
     bucket_id = await _make_bucket(bucket_mgr)
     before = await bucket_mgr.get(bucket_id)
+    renamed_at = "2099-01-02T03:04:05"
+    monkeypatch.setattr("bucket_manager.now_iso", lambda: renamed_at)
 
     result = await bucket_mgr.replace_text_fields("old", "new")
     after = await bucket_mgr.get(bucket_id)
@@ -36,7 +40,8 @@ async def test_replace_text_fields_is_atomic_and_preserves_activation(bucket_mgr
     assert "new title" in after["metadata"]["name"]
     assert after["metadata"]["why_remembered"] == "remember new"
     assert after["metadata"]["user_name"] == "new"
-    assert after["metadata"]["last_active"] == before["metadata"]["last_active"]
+    assert before["metadata"]["last_active"] != renamed_at
+    assert after["metadata"]["last_active"] == renamed_at
     assert (
         after["metadata"]["activation_count"]
         == before["metadata"]["activation_count"]

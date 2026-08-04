@@ -51,10 +51,11 @@ async def test_touch_updates_cache_in_place(bucket_mgr):
     await bucket_mgr.list_all()  # 建缓存
     before = next(b for b in bucket_mgr._active_cache if b["id"] == bid)
     before_count = float(before["metadata"].get("activation_count") or 0)
+    before_active = before["metadata"]["last_active"]
     await bucket_mgr.touch(bid)
     after = next(b for b in bucket_mgr._active_cache if b["id"] == bid)
     assert float(after["metadata"].get("activation_count") or 0) == before_count + 1
-    assert after["metadata"].get("last_active")
+    assert after["metadata"]["last_active"] == before_active
 
 
 @pytest.mark.asyncio

@@ -445,23 +445,51 @@ class TestBucketManagerUpdate:
         before = (await bucket_mgr.get(bid))["metadata"]
         before_active = before["last_active"]
         before_count = float(before.get("activation_count") or 0)
-        await bucket_mgr.update(bid, importance=6)
+        # Legacy callers may still send bump_active; it must not revive the old
+        # read/activation timestamp semantics.
+        await bucket_mgr.update(bid, importance=6, bump_active=True)
         after = (await bucket_mgr.get(bid))["metadata"]
         assert after["last_active"] == before_active
         assert float(after.get("activation_count") or 0) == before_count
 
     @pytest.mark.asyncio
-    async def test_bump_active_update_refreshes_activation(self, bucket_mgr):
-        """真实激活写入（如合并近邻桶）：bump_active=True 刷 last_active 且 activation_count +1。"""
+    async def test_meaning_append_does_not_refresh_last_active(self, bucket_mgr):
+        """meaning 是对旧记忆的理解，不应伪装成正文修改。"""
+        bid = await bucket_mgr.create(content="x")
+        before = (await bucket_mgr.get(bid))["metadata"]
+        before_active = before["last_active"]
+        before_count = float(before.get("activation_count") or 0)
+
+        await bucket_mgr.update(bid, meaning_append="后来才明白的意义")
+
+        after = (await bucket_mgr.get(bid))["metadata"]
+        assert after["meaning"] == ["后来才明白的意义"]
+        assert after["last_active"] == before_active
+        assert float(after.get("activation_count") or 0) == before_count
+
+    @pytest.mark.asyncio
+    async def test_content_change_refreshes_last_active(self, bucket_mgr):
+        """正文真正改变时刷新 last_active，但不伪造一次读取。"""
         import time
         bid = await bucket_mgr.create(content="x")
         before = (await bucket_mgr.get(bid))["metadata"]
         before_count = float(before.get("activation_count") or 0)
         time.sleep(1)  # 保证秒级时间戳能前移
-        await bucket_mgr.update(bid, importance=6, bump_active=True)
+        await bucket_mgr.update(bid, content="y")
         after = (await bucket_mgr.get(bid))["metadata"]
-        assert float(after.get("activation_count") or 0) == before_count + 1
-        assert after["last_active"] >= before["last_active"]
+        assert float(after.get("activation_count") or 0) == before_count
+        assert after["last_active"] > before["last_active"]
+
+    @pytest.mark.asyncio
+    async def test_same_content_does_not_refresh_last_active(self, bucket_mgr):
+        """重复写入相同正文不是一次真正修改。"""
+        bid = await bucket_mgr.create(content="x")
+        before = (await bucket_mgr.get(bid))["metadata"]
+
+        await bucket_mgr.update(bid, content="x")
+
+        after = (await bucket_mgr.get(bid))["metadata"]
+        assert after["last_active"] == before["last_active"]
 
     @pytest.mark.asyncio
     async def test_update_valence_clamped(self, bucket_mgr):
