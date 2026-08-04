@@ -853,15 +853,20 @@ async def I(
 
 
 @mcp.tool()
-async def dream(window_hours: Optional[int] = 48) -> str:
-    """读取最近 window_hours（默认 48h）内有变动的所有记忆桶,用于回顾与消化。
-    每个桶返回其在窗口内的最新内容（按 last_active 取）,完整正文不截断。
+async def dream(
+    window_hours: Optional[int] = 48,
+    catalog: Optional[bool] = False,
+) -> str:
+    """读取前一天（本地日历）新创建的记忆桶,用于回顾与消化。
+    只按 created_at（兼容现有 created 字段）筛选，不因 last_active 变化纳入旧桶；
+    默认每个候选桶返回完整正文；catalog=True 时才只返回定位元数据。
+    window_hours 参数仅为兼容旧客户端保留，不再参与筛选。
     可据此操作：放下的 → trace(resolved=1) 沉底；有沉淀的 → hold(feel=True, source_bucket=...) 记录；无沉淀则不操作。
     候选桶超过 40 时按 decay_engine.calculate_score() 排序取前 40，避免一次返回过多。"""
     return await _with_notice(
-        _t_dream.dispatch(window_hours=window_hours),
+        _t_dream.dispatch(window_hours=window_hours, catalog=catalog),
         op="dream",
-        args={"window_hours": window_hours},
+        args={"window_hours": window_hours, "catalog": catalog},
     )
 
 

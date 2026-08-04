@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -83,7 +83,7 @@ def test_quoted_false_stays_false_in_helpers_and_yaml(monkeypatch, tmp_path):
     assert config["mcp_require_auth"] is False
 
 
-def test_utc_timestamp_is_recent_across_scoring_decay_and_dream():
+def test_utc_timestamp_is_handled_across_scoring_decay_and_dream():
     timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     metadata = {
         "created": timestamp,
@@ -93,7 +93,11 @@ def test_utc_timestamp_is_recent_across_scoring_decay_and_dream():
 
     assert calc_time_score(metadata) > 0.99
     assert _days_since_active(metadata) < 0.01
-    assert collect_candidates([{"id": "utc", "metadata": metadata}], 1)[0]["id"] == "utc"
+    reference = datetime.now(timezone.utc) + timedelta(days=1)
+    assert collect_candidates(
+        [{"id": "utc", "metadata": metadata}],
+        reference_time=reference,
+    )[0]["id"] == "utc"
 
 
 @pytest.mark.asyncio

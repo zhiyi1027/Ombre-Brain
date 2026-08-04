@@ -1495,9 +1495,10 @@ class BucketManager:
     async def replace_text_fields(self, old: str, new: str) -> dict[str, int]:
         """Replace a display term through managed per-bucket transactions.
 
-        This is used when the configured human name changes.  It deliberately
-        does not bump ``last_active``: a display-name migration is not a memory
-        activation.  Each bucket is re-read while holding the normal
+        This is used when the configured human name changes.  Metadata-only
+        replacements leave ``last_active`` unchanged; a replacement that
+        genuinely changes the stored body follows the normal content timestamp
+        contract.  Each bucket is re-read while holding the normal
         cross-process bucket lock and then committed through ``_update_locked``
         so atomic writes, derived-index updates, ledger/projection events and
         concurrent edits retain the same guarantees as every other mutation.
@@ -1579,23 +1580,22 @@ class BucketManager:
         bucket_id: str,
         *,
         allow_embedding_fallback: bool = False,
-        bump_active: bool = False,
+        bump_active: bool | None = None,
         **kwargs,
     ) -> bool:
         """
         Update bucket content or metadata fields.
         更新桶的内容或元数据字段。
 
-        bump_active=False（默认）：纯元数据/内容编辑（trace、plan、anchor、后台
-        自动 resolve、导入等）——**不**刷新 last_active，也不动 activation_count。
-        bump_active=True：把这次写入视作一次真实激活（如 hold/grow 合并近邻桶），
-        同步刷新 last_active 并累加 activation_count，语义与 touch() 一致。
+        last_active 只表示正文最后一次真正改变的时间：content 新值与磁盘原文
+        不同时刷新；读取、搜索、meaning 追加以及其他纯元数据编辑都不碰它。
+        bump_active 仅为旧调用方兼容保留，不再改变时间或计数。
         """
+        del bump_active
         async with self._bucket_turn(bucket_id):
             return await self._update_locked(
                 bucket_id,
                 allow_embedding_fallback=allow_embedding_fallback,
-                bump_active=bump_active,
                 **kwargs,
             )
 
@@ -1604,9 +1604,10 @@ class BucketManager:
         bucket_id: str,
         *,
         allow_embedding_fallback: bool = False,
-        bump_active: bool = False,
+        bump_active: bool | None = None,
         **kwargs,
     ) -> bool:
+        del bump_active
         file_path = self._find_bucket_file(bucket_id)
         if not file_path:
             return False
@@ -1662,6 +1663,10 @@ class BucketManager:
         except Exception as e:
             logger.warning(f"Failed to load bucket for update / 加载桶失败: {file_path}: {e}")
             return False
+
+        content_changed = (
+            "content" in kwargs and (post.content or "") != kwargs["content"]
+        )
 
         # Work out the final pin/type state before mutating the post.  Type is
         # also a physical-storage decision, so unsupported values must fail
@@ -1855,16 +1860,9 @@ class BucketManager:
                     else:
                         post[k] = kwargs[k]
 
-        # --- 激活时间 / 激活次数 ---
-        # last_active 只代表「最后一次真实激活/召回」，并作为衰减 recency 打分的输入。
-        # 元数据编辑（trace / plan / anchor / 后台自动 resolve 等）**不算「活跃」**：
-        # 若在此无条件刷新，会重置遗忘时效，还会让 activation_count 与 last_active
-        # 长期不一致（次数不涨、时间却变新）。只有真正的「新事件写入」才把这条记忆
-        # 当作被重新激活一次——由 bump_active=True 显式触发（如 hold/grow 合并近邻桶），
-        # 同步刷新 last_active 并累加 activation_count，语义与 touch() 一致。
-        if bump_active:
+        # last_active 是正文修改时间，不是读取/召回时间。
+        if content_changed:
             post["last_active"] = now_iso()
-            post["activation_count"] = int(post.get("activation_count") or 0) + 1
 
         final_type = str(post.get("type") or current_type).strip().lower()
         target_path = file_path
@@ -1892,11 +1890,10 @@ class BucketManager:
             )
             return False
 
-        if bump_active:
+        if content_changed:
             self._cache_bump(
                 bucket_id,
                 last_active=post["last_active"],
-                activation_count=post["activation_count"],
                 file_path=committed_path,
             )
 
@@ -2065,16 +2062,16 @@ class BucketManager:
         return True
 
     # ---------------------------------------------------------
-    # Touch bucket (refresh activation time + increment count)
-    # 触碰桶（刷新激活时间 + 累加激活次数）
+    # Touch bucket (increment recall count without changing last_active)
+    # 触碰桶（只累加召回次数，不修改正文时间）
     # Called on every recall hit; affects decay score.
     # 每次检索命中时调用，影响衰减得分。
     # ---------------------------------------------------------
     async def touch(self, bucket_id: str, ripple: bool = True) -> None:
         """
-        Update a bucket's last activation time and count.
+        Increment a bucket's recall count without changing last_active.
         Also triggers time ripple: nearby memories get a slight activation boost.
-        更新桶的最后激活时间和激活次数。
+        累加桶的召回次数，但读取/搜索不改变 last_active。
         同时触发时间涟漪：时间上相邻的记忆轻微唤醒。
 
         ripple=False 可跳过读全库的时间涟漪（性能 P2：批量浮现时不值当为它多跑 list_all）。
@@ -2094,19 +2091,19 @@ class BucketManager:
 
         try:
             post = frontmatter.load(file_path)
-            post["last_active"] = now_iso()
             post["activation_count"] = int(post.get("activation_count") or 0) + 1  # type: ignore[call-overload]
 
             _atomic_write_text(file_path, frontmatter.dumps(post))
             self._cache_bump(
                 bucket_id,
-                last_active=post["last_active"],
                 activation_count=post["activation_count"],
                 file_path=file_path,
             )
 
             current_time = parse_iso_datetime(
-                post.get("created", post.get("last_active", ""))
+                post.get("created_at")
+                or post.get("created")
+                or post.get("last_active", "")
             )
             self._record_ledger_event(
                 "TraceTouched",
@@ -2191,7 +2188,11 @@ class BucketManager:
                     ):
                         continue
 
-                    created_str = post.get("created", post.get("last_active", ""))
+                    created_str = (
+                        post.get("created_at")
+                        or post.get("created")
+                        or post.get("last_active", "")
+                    )
                     created = parse_iso_datetime(created_str)
                     delta_hours = abs((reference_time - created).total_seconds()) / 3600
                     if delta_hours > hours:

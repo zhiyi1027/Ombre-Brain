@@ -21,8 +21,10 @@ tools/dream/output.py — dream 最终输出格式化
 - 不做任何持久化写入
 - 不调 LLM
 
-对外暴露：format_dream_output(recent, all_buckets, window_hours,
-                              connection_hint, crystal_hint) → str
+对外暴露：
+- format_dream_catalog(recent, target_date) → str
+- format_dream_output(recent, all_buckets, window_hours,
+                      connection_hint, crystal_hint, target_date) → str
 ========================================
 """
 
@@ -206,6 +208,28 @@ def _bucket_data_block(
     )
 
 
+def format_dream_catalog(recent: list, target_date: str) -> str:
+    """Explicit directory mode; never include bucket bodies."""
+    if not recent:
+        return f"{target_date} 没有新创建的记忆桶。"
+
+    lines = [
+        f"=== Dreaming · {target_date} 新建记忆目录（{len(recent)} 个桶）===",
+        "bucket_id | 名称 | 域 | 重要度 | last_active",
+    ]
+    for bucket in recent:
+        meta = bucket.get("metadata", {})
+        raw_domains = meta.get("domain") or []
+        if isinstance(raw_domains, str):
+            raw_domains = [raw_domains]
+        domains = ",".join(str(domain) for domain in raw_domains) or "未分类"
+        lines.append(
+            f"{bucket['id']} | {meta.get('name') or bucket['id']} | {domains} | "
+            f"{meta.get('importance', 0)} | {meta.get('last_active') or ''}"
+        )
+    return "\n".join(lines)
+
+
 def format_dream_output(
     recent: list,
     all_buckets: list,
@@ -213,6 +237,7 @@ def format_dream_output(
     connection_hint: str,
     crystal_hint: str,
     core_context: list | None = None,
+    target_date: str = "",
 ) -> str:
     runtime_config = rt.config if isinstance(rt.config, dict) else {}
     surfacing_cfg = runtime_config.get("surfacing", {}) or {}
@@ -243,7 +268,7 @@ def format_dream_output(
         domains = ",".join(meta.get("domain", []))
         val = float(meta.get("valence") or 0.5)
         aro = float(meta.get("arousal") or 0.3)
-        created = meta.get("created", "")
+        created = meta.get("created_at") or meta.get("created", "")
         last_active = meta.get("last_active", "")
         parts.append(
             _bucket_data_block(
@@ -259,8 +284,13 @@ def format_dream_output(
             )
         )
 
+    header_label = (
+        f"{target_date} 新建记忆"
+        if target_date
+        else f"过去 {window_hours} 小时全量记忆"
+    )
     header = (
-        f"=== Dreaming · 过去 {window_hours} 小时全量记忆（{len(recent)} 个桶）===\n"
+        f"=== Dreaming · {header_label}（{len(recent)} 个桶）===\n"
         "以下是你最近的记忆。用第一人称想：\n"
         "- 这些东西里有什么在你这里留下了重量？\n"
         "- 有什么还没想清楚？\n"

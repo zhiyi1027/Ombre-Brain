@@ -890,7 +890,6 @@ async def _merge_or_create_inner(
                             allow_embedding_fallback=(
                                 raw_merge and source_tool == "hold"
                             ),
-                            bump_active=True,
                             **update_kwargs,
                         )
                         if not committed:

@@ -1,7 +1,7 @@
 """touch 批量 + ripple 开关回归测试（性能 P2）。
 
 breath 浮现后应把 touch 移出响应路径、批量在后台跑；ripple 默认关（不为激活微调
-多跑读全库的时间涟漪）。touch 本身的激活语义要保持不变。
+多跑读全库的时间涟漪）。touch 只计召回次数，不刷新正文修改时间。
 """
 import pytest
 
@@ -24,6 +24,7 @@ async def test_touch_default_still_ripples(bucket_mgr, monkeypatch):
 @pytest.mark.asyncio
 async def test_touch_ripple_false_skips_time_ripple(bucket_mgr, monkeypatch):
     bid = await bucket_mgr.create(content="内容一号一号一号", name="一", domain=["测试"])
+    before_active = (await bucket_mgr.get(bid))["metadata"]["last_active"]
     called = {"n": 0}
 
     async def spy(*a, **k):
@@ -35,6 +36,7 @@ async def test_touch_ripple_false_skips_time_ripple(bucket_mgr, monkeypatch):
     # 但激活本身仍生效
     b = await bucket_mgr.get(bid)
     assert float(b["metadata"].get("activation_count") or 0) >= 1
+    assert b["metadata"]["last_active"] == before_active
 
 
 @pytest.mark.asyncio
