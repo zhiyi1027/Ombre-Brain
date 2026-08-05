@@ -204,11 +204,12 @@ hold / grow（Claude 决策）
               ▼
        _merge_or_create()
               │
-       bucket_mgr.search(content, limit=1, domain_filter)
-              │
-       score > merge_threshold(75)?
-        ├─ 是 → 原文分隔追加（raw_merge=True）→ bucket_mgr.update()
+       find_exact_content(content)?
+        ├─ 是 → 幂等去重，返回已有桶（正文不变）
         └─ 否 → bucket_mgr.create()（原文逐字落盘）
+              │
+       auto_merge_enabled=true 时才进入旧版语义合并兼容路径；
+       合并后超过硬上限 4096 字节仍强制新建
               │
               ▼
        写入 buckets/dynamic/{domain}/{name}_{id}.md
@@ -298,7 +299,7 @@ feel 桶自身：
 两种路径：
 
 - **Feel 模式** (`feel=True`)：跳过 LLM 分析，自动注入 `__feel__` 标签，写入 `feel/沉淀物/`。`source_bucket` 提供时把源桶标记为 `digested=True` 并写 `model_valence`。返回 `🫧feel→{id}`。
-- **普通模式**：`analyze()` → 用户传入的 `valence`/`arousal` 优先于 LLM 结果（B-09 修复）→ `_merge_or_create(raw_merge=True)`（相似度 > `merge_threshold` 时以分隔线追加原文，否则新建）→ 原文落盘后投递 embedding outbox → 异步触发 `_check_plan_resolution()` 扫 active plans。返回 `合并→{name}` 或 `新建→{name}`。`analyze()` 或 embedding 不可用时只降级元数据/向量索引，正文仍原样落盘；**hold 永远不调 `dehydrate()`/`merge()` 压缩正文**。
+- **普通模式**：`analyze()` → 用户传入的 `valence`/`arousal` 优先于 LLM 结果（B-09 修复）→ `_merge_or_create(raw_merge=True)`（完全相同正文幂等去重，否则默认新建）→ 原文落盘后投递 embedding outbox → 异步触发 `_check_plan_resolution()` 扫 active plans。返回 `去重→{name}` 或 `新建→{name}`。只有显式设置 `auto_merge_enabled=true` 才启用旧版语义合并，且合并后正文超过 4096 字节会强制新建。`analyze()` 或 embedding 不可用时只降级元数据/向量索引，正文仍原样落盘；**hold 永远不调 `dehydrate()`/`merge()` 压缩正文**。
 - `meaning` 追加一条“为什么值得被想起”的第一人称含义；`media` 接受持久化前可读取路径或 `data_base64+filename` 项，失败时不写失效引用。
 - `test_data=True` 只在创建时写入不可后补的可擦除 provenance，并禁止与 pinned/feel 组合；这是 `trace(hard_delete=True)` 唯一允许物理删除的来源边界。
 
@@ -436,7 +437,7 @@ feel 桶自身：
 | `/api/duplicates` | GET | 🔒 | 列出疑似重复桶对（iter 1.6 §4，sim>0.95，由 hold/grow 后台扫出） |
 | `/api/breath-debug?q=&valence=&arousal=` | GET | 🔒 | 评分调试（每桶四维分解） |
 | `/api/config` | GET | 🔒 | 配置查看（API key 脱敏） |
-| `/api/config` | POST | 🔒 | 热更新配置（dehydration / embedding / merge_threshold；可选持久化到 yaml） |
+| `/api/config` | POST | 🔒 | 热更新配置（dehydration / embedding / auto_merge_enabled / merge_threshold；可选持久化到 yaml） |
 | `/api/host-vault` | GET | 🔒 | 读 `OMBRE_HOST_VAULT_DIR`；Docker 内只报告 Compose 注入值并标记 `compose_managed` |
 | `/api/host-vault` | POST | 🔒 | 裸机可写项目 `.env`；Docker 内返回 409，避免假装容器能修改宿主机挂载 |
 | `/api/status` | GET | 🔒 | Dashboard 设置页用：版本号 + 桶数 + embedding/decay 状态 + 是否环境变量密码 |
@@ -1353,7 +1354,8 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 | `transport` | `stdio` | `stdio` / `sse` / `streamable-http` |
 | `log_level` | `INFO` | 日志级别 |
 | `buckets_dir` | `./buckets` | 记忆桶目录 |
-| `merge_threshold` | `75` | 合并相似度阈值 (0~100) |
+| `auto_merge_enabled` | `false` | 语义自动合并开关；完全相同正文仍幂等去重 |
+| `merge_threshold` | `100` | 旧版语义合并阈值，仅开关为 true 时生效 |
 | `dehydration.model` | `deepseek-chat` | LLM 模型名 |
 | `dehydration.base_url` | `https://api.deepseek.com/v1` | OpenAI 兼容 endpoint |
 | `dehydration.api_key` | `""` | 推荐用环境变量传入，不要写文件 |
@@ -1555,7 +1557,7 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 
 | 症状 | 文件 | 函数 |
 |---|---|---|
-| `hold` 应合并却新建了 | `tools/hold/` + `tools/_common.py` | `merge_or_create`；检查 `merge_threshold` + `bucket_mgr.search(content, limit=1)` 返回的 score |
+| `hold` 未自动合并 | `tools/hold/` + `tools/_common.py` | 默认设计如此；仅旧兼容模式检查 `auto_merge_enabled`、`merge_threshold` 与合并后字节上限 |
 | `hold` 应新建却合并到无关桶 | `bucket_manager.py` | `_calc_topic_score` content_weight 是否被改回 3.0；query 用了 content 全文导致正文相似度爆表 |
 | 用户传入 valence=0.0 被忽略 | `tools/hold/` | 必须用 `0 <= valence <= 1` 判定，不能 `if valence`（B-09） |
 | `grow` 短内容报「digest 失败」 | `tools/grow/` | 短内容 `< 30` 字应走 `shortpath` 快速路径；检查长度判断 |

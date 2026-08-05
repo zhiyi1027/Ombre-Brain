@@ -417,7 +417,10 @@ def load_config(config_path: Optional[str] = None) -> dict:
         "mcp_auth_mode": "oauth",
         "mcp_token": "",
         "buckets_dir": os.path.join(project_root, "buckets"),
-        "merge_threshold": 75,
+        # Semantic auto-merge is intentionally opt-in. Exact-content retries
+        # are still deduplicated even when this switch is false.
+        "auto_merge_enabled": False,
+        "merge_threshold": 100,
         "dehydration": {
             "model": "gemini-2.0-flash",
             "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",

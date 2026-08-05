@@ -97,7 +97,7 @@ async def test_grow_shortpath_explains_hold_style_single_memory(monkeypatch):
             }
 
     async def fake_merge_or_create(**_kwargs):
-        return "bucket-1", False, ""
+        return "bucket-1", shortpath.WriteDisposition.CREATED, ""
 
     async def fake_background(*_args, **_kwargs):
         return None
@@ -287,6 +287,34 @@ async def test_dashboard_oauth_switch_persists_to_config(monkeypatch, tmp_path):
     # Startup-bound settings remain the effective runtime snapshot until restart.
     assert config_api.sh.config["mcp_require_auth"] is True
     assert persisted["mcp_require_auth"] is False
+
+
+@pytest.mark.asyncio
+async def test_semantic_auto_merge_switch_persists(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.yaml"
+    runtime = {}
+    monkeypatch.setattr(config_api.sh, "_require_auth", lambda _request: None)
+    monkeypatch.setattr(config_api.sh, "config", runtime)
+    monkeypatch.setattr(utils, "config_file_path", lambda: str(config_path))
+    mcp = FakeMCP()
+    config_api.register(mcp)
+
+    response = await mcp.routes[("POST", "/api/config")](
+        JsonRequest(
+            {
+                "auto_merge_enabled": False,
+                "merge_threshold": 100,
+                "persist": True,
+            }
+        )
+    )
+    persisted = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+
+    assert response.status_code == 200
+    assert runtime["auto_merge_enabled"] is False
+    assert runtime["merge_threshold"] == 100
+    assert persisted["auto_merge_enabled"] is False
+    assert persisted["merge_threshold"] == 100
 
 
 @pytest.mark.asyncio

@@ -154,7 +154,11 @@ async def test_merge_updates_embedding_exactly_once(tmp_path, monkeypatch):
     monkeypatch.setattr(tools_runtime, "bucket_mgr", manager)
     monkeypatch.setattr(tools_runtime, "embedding_engine", engine)
     monkeypatch.setattr(tools_runtime, "dehydrator", _NoCompression())
-    monkeypatch.setattr(tools_runtime, "config", {"merge_threshold": 75})
+    monkeypatch.setattr(
+        tools_runtime,
+        "config",
+        {"auto_merge_enabled": True, "merge_threshold": 75},
+    )
     monkeypatch.setattr(tools_runtime, "logger", _Logger())
 
     result_id, merged, _warning = await common.merge_or_create(
@@ -168,7 +172,7 @@ async def test_merge_updates_embedding_exactly_once(tmp_path, monkeypatch):
         source_tool="hold",
     )
 
-    assert merged is True
+    assert merged is common.WriteDisposition.MERGED
     assert result_id == bucket_id
     assert engine.calls == [
         (bucket_id, old_content),

@@ -19,6 +19,7 @@ import pytest
 
 import tools._runtime as rt
 from tools._common import (
+    WriteDisposition,
     count_high_importance,
     count_pinned,
     enforce_high_importance_quota,
@@ -34,7 +35,12 @@ class EchoDehydrator:
 
 
 def install_runtime(bucket_mgr, limits=None):
-    rt.config = {"surfacing": {}, "limits": limits or {}}
+    rt.config = {
+        "surfacing": {},
+        "limits": limits or {},
+        "auto_merge_enabled": True,
+        "merge_threshold": 75,
+    }
     rt.bucket_mgr = bucket_mgr
     rt.dehydrator = EchoDehydrator()
     rt.logger = MagicMock()
@@ -369,7 +375,7 @@ async def test_merge_promotion_cannot_bypass_high_importance_cap(
     )
 
     persisted = await bucket_mgr.get(target_id)
-    assert merged is True
+    assert merged is WriteDisposition.MERGED
     assert merged_id == target_id
     assert persisted["metadata"]["importance"] == 8
     assert await count_high_importance() == 1
@@ -410,7 +416,10 @@ async def test_concurrent_merge_promotions_preserve_both_events_and_one_slot(
     )
 
     persisted = await bucket_mgr.get(target_id)
-    assert all(result[:2] == (target_id, True) for result in results)
+    assert all(
+        result[:2] == (target_id, WriteDisposition.MERGED)
+        for result in results
+    )
     assert "concurrent event A" in persisted["content"]
     assert "concurrent event B" in persisted["content"]
     assert persisted["metadata"]["importance"] == 9

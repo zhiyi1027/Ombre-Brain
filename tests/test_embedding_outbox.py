@@ -399,7 +399,7 @@ async def test_merge_or_create_repairs_missing_outbox_item_without_false_warning
     finally:
         outbox._running = False
 
-    assert merged is False
+    assert merged is common.WriteDisposition.CREATED
     assert warning == ""
     assert outbox.is_pending(bucket_id) is True
 
@@ -450,7 +450,7 @@ async def test_hold_create_with_meaning_is_visible_before_embedding_worker_runs(
             task.cancel()
         await outbox.stop()
 
-    assert merged is False
+    assert merged is common.WriteDisposition.CREATED
     assert warning == ""
     assert engine.visible_during_meaning is True
     assert engine.calls == [

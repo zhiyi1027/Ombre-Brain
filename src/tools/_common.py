@@ -4,13 +4,13 @@ tools/_common.py — 跨工具共享的辅助逻辑
 ========================================
 
 这个文件收纳被多个工具同时复用的、与具体工具语义无关的小工具：
-配额检查（单桶字节上限 / pinned 数量上限）、合并或新建（hold/grow 共用）、
+配额检查（单桶字节上限 / pinned 数量上限）、去重或新建（hold/grow 共用）、
 新桶疑似重复扫描、新事件触发的 plan 自动闭环判定。
 
 关键行为：
 - check_content_size / check_pinned_quota：读取 config.limits，超限返回中文提示串
-- merge_or_create：先用语义检索找近似桶；超过阈值则合并（hold 用原文拼接，
-  grow 用 LLM 压缩），否则新建；写完投递 embedding 队列并刷新脱水缓存
+- merge_or_create：先做完全相同正文的幂等去重；默认直接新建。旧版语义合并
+  仅在 auto_merge_enabled=true 时启用，并受 4 KiB 合并后正文上限保护
 - iter 2.0：merge_or_create 接受 ``source_tool`` / ``grow_batch_id``，
   新建时写入 frontmatter；合并时不动原桶 source_tool，只追加 ``last_merged_by``
 - check_duplicate_for：fire-and-forget 标记疑似重复对（不自动合并）
@@ -32,6 +32,7 @@ import asyncio
 from copy import deepcopy
 from concurrent.futures import Future, InvalidStateError
 from contextlib import AsyncExitStack, asynccontextmanager
+from enum import Enum
 import hashlib
 import math
 import os
@@ -64,6 +65,7 @@ _DEFAULT_MAX_GROW_INPUT_BYTES = 2 * 1024 * 1024
 _DEFAULT_MAX_QUERY_BYTES = 16 * 1024
 _DEFAULT_MAX_METADATA_BYTES = 16 * 1024
 _DEFAULT_MAX_GROW_ITEMS = 100
+_DEFAULT_MAX_AUTO_MERGE_BYTES = 4 * 1024
 
 # --- importance≥9 配额（rule.md §1.0 哲学） ---
 _HIGH_IMP_THRESHOLD = 9                # importance 达到该值算“高重要度”
@@ -99,6 +101,14 @@ _CONTENT_LOCK_WAIT_GRACE_SECONDS = 30.0
 # asyncio.Lock is not a cross-loop primitive and allowed two first writes to race.
 _merge_content_tails: dict[str, Future[None]] = {}
 _merge_content_tails_guard = threading.Lock()
+
+
+class WriteDisposition(str, Enum):
+    """merge_or_create 的实际落盘结果；避免把幂等去重误报成语义合并。"""
+
+    CREATED = "created"
+    DEDUPLICATED = "deduplicated"
+    MERGED = "merged"
 
 
 def _complete_content_turn(key: str, turn: Future[None]) -> None:
@@ -687,9 +697,13 @@ async def merge_or_create(
     meaning: str = "",
     media: list | str | None = None,
     test_data: bool = False,
-) -> Tuple[str, bool, str]:
+) -> Tuple[str, WriteDisposition, str]:
     """
-    检查是否有相似桶可合并，有则合并，无则新建。返回 (桶ID或名称, 是否合并, embed警告信息)。
+    完全相同正文做幂等去重，否则默认新建。返回
+    (桶ID或名称, 写入结果, embed警告信息)。
+
+    语义自动合并默认关闭；只有显式设置 auto_merge_enabled=true 才进入旧兼容路径。
+    兼容路径的合并结果超过硬上限 4 KiB 时强制新建。
 
     raw_merge=True (hold)：原文追加，不调 LLM 压缩。
     raw_merge=False (grow)：LLM 压缩老+新内容。
@@ -703,8 +717,8 @@ async def merge_or_create(
     Miss：meaning/media 是我自己的体验锚定，不是摘要。新建时直接写入；
     合并到老桶时两条 meaning 都保留（拼接），media 追加而不是覆盖。
 
-    F-01 / F-08 fix：整个 search→create 路径在 per-content-hash Lock 下串行执行。
-    同内容并发调用时后到的协程会阻塞，等前者写完后直接走合并分支，不产生重复桶。
+    F-01 / F-08 fix：整个 deduplicate→create 路径在 per-content-hash Lock 下串行执行。
+    同内容并发调用时后到的协程会阻塞，等前者写完后直接走去重分支，不产生重复桶。
     """
     async with _content_turn(content):
         return await _merge_or_create_inner(
@@ -731,34 +745,52 @@ async def _merge_or_create_inner(
     meaning: str = "",
     media: list | str | None = None,
     test_data: bool = False,
-) -> Tuple[str, bool, str]:
-    """实际的 search→merge/create 逻辑，由 merge_or_create 在 Lock 保护下调用。"""
-    exact_storage_match = False
-    try:
-        existing = await rt.bucket_mgr.search(content, limit=1, domain_filter=domain or None)
-    except Exception as e:
-        rt.logger.warning(f"Search for merge failed, creating new / 合并搜索失败，新建: {e}")
-        existing = []
-
+) -> Tuple[str, WriteDisposition, str]:
+    """实际的 exact-deduplicate→optional-merge/create 逻辑。"""
     # Cache invalidation and a concurrent list_all() refresh can cross: an old
     # parsed snapshot may briefly hide a bucket that is already durable on disk.
-    # Before any create, let Markdown truth override search/cache results.
+    # Before any create, let Markdown truth override search/cache results. Test
+    # data intentionally bypasses deduplication so each fixture can be deleted
+    # independently by its own id.
     exact_finder = getattr(rt.bucket_mgr, "find_exact_content", None)
-    if callable(exact_finder):
+    if not test_data and callable(exact_finder):
         try:
-            exact = exact_finder(content, domain_filter=domain or None)
+            # Idempotency follows the durable payload, not LLM metadata that
+            # may classify the same retry into a different domain.
+            exact = exact_finder(content)
         except Exception as exc:
             rt.logger.warning(f"Exact-content storage check failed: {exc}")
         else:
             if exact:
-                exact = dict(exact)
-                exact["score"] = float("inf")
-                existing = [exact]
-                exact_storage_match = True
+                exact_id = str(exact.get("id") or "").strip()
+                if exact_id:
+                    rt.logger.info(
+                        "op=merge_or_create phase=branch branch=deduplicate "
+                        f"bucket_id={exact_id} source_tool={source_tool or '_'}"
+                    )
+                    return exact_id, WriteDisposition.DEDUPLICATED, ""
 
-    merge_threshold = rt.config.get("merge_threshold") or 75
+    auto_merge_enabled = parse_bool(
+        rt.config.get("auto_merge_enabled"), default=False
+    )
+    existing = []
+    if auto_merge_enabled and not test_data:
+        try:
+            existing = await rt.bucket_mgr.search(
+                content, limit=1, domain_filter=domain or None
+            )
+        except Exception as e:
+            rt.logger.warning(
+                f"Search for merge failed, creating new / 合并搜索失败，新建: {e}"
+            )
+
+    try:
+        merge_threshold = int(rt.config.get("merge_threshold", 100))
+    except (TypeError, ValueError):
+        merge_threshold = 100
     if (
-        not test_data
+        auto_merge_enabled
+        and not test_data
         and existing
         and existing[0].get("score", 0) > merge_threshold
     ):
@@ -785,7 +817,7 @@ async def _merge_or_create_inner(
                     snapshot_content = str(bucket.get("content") or "")
                     snapshot_metadata = deepcopy(metadata)
 
-                    if raw_merge or exact_storage_match:
+                    if raw_merge:
                         old_text = snapshot_content.rstrip()
                         new_text = content.strip()
                         if new_text and new_text not in old_text:
@@ -800,6 +832,15 @@ async def _merge_or_create_inner(
                         merged = await rt.dehydrator.merge(
                             snapshot_content, content
                         )
+
+                    merged_bytes = len(merged.encode("utf-8"))
+                    if merged_bytes > _DEFAULT_MAX_AUTO_MERGE_BYTES:
+                        rt.logger.info(
+                            "op=merge_or_create phase=branch branch=merge_size_guard "
+                            f"bucket_id={candidate_id} merged_bytes={merged_bytes} "
+                            f"limit_bytes={_DEFAULT_MAX_AUTO_MERGE_BYTES}"
+                        )
+                        break
 
                     old_v = metadata.get("valence") or 0.5
                     old_a = metadata.get("arousal") or 0.3
@@ -906,7 +947,7 @@ async def _merge_or_create_inner(
                         f"source_tool={source_tool or '_'} "
                         f"score={existing[0].get('score', 0):.3f}"
                     )
-                    return candidate_id, True, ""
+                    return candidate_id, WriteDisposition.MERGED, ""
                 else:
                     rt.logger.warning(
                         "Merge target changed repeatedly; creating a new bucket "
@@ -1056,7 +1097,7 @@ async def _merge_or_create_inner(
         f"source_tool={source_tool or '_'} grow_batch_id={grow_batch_id or '_'} "
         f"embedding_state={embedding_state}"
     )
-    return bucket_id, False, embed_warn
+    return bucket_id, WriteDisposition.CREATED, embed_warn
 
 
 async def check_duplicate_for(new_bucket_id: str, new_text: str, threshold: float = _DUP_DEFAULT_THRESHOLD) -> None:
