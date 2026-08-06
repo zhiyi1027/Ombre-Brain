@@ -105,6 +105,90 @@ def test_dashboard_uses_display_text_for_preview_and_raw_content_for_editor():
     assert "'<div class=\"detail-content\">' + esc(b.content)" not in source
 
 
+def test_dashboard_renders_all_meaning_entries_separately_from_content():
+    source = _dashboard_function("showDetail", "bucketPin")
+
+    assert "Array.isArray(meta.meaning)" in source
+    assert "typeof meta.meaning === 'string' ? [meta.meaning] : []" in source
+    assert "typeof item === 'string' && item.trim()" in source
+    assert "meaningItems.map(function(item)" in source
+    assert "esc(item)" in source
+    assert "💭 我留下的意义 / Meaning" in source
+    assert source.index("meaningHtml +") < source.index(
+        "'<div class=\"detail-content\">' + esc(displayContent)"
+    )
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is unavailable")
+def test_dashboard_meaning_runtime_supports_lists_legacy_strings_and_escaping():
+    html = DASHBOARD.read_text(encoding="utf-8")
+    start = html.index("let detailLoadGeneration = 0;")
+    end = html.index("async function bucketPin(", start)
+    source = html[start:end]
+    script = r"""
+const payloads = [
+  {id:'list', metadata:{name:'List', type:'dynamic', meaning:[
+    'first meaning', '<img src=x onerror=alert(1)>', '', 42,
+  ]}, content:'body', display_content:'body', score:1},
+  {id:'legacy', metadata:{name:'Legacy', type:'dynamic', meaning:'old meaning'},
+    content:'body', display_content:'body', score:1},
+];
+let payloadIndex = 0;
+const panel = {classList:{add() {}, toggle() {}}};
+const content = {innerHTML:''};
+const document = {
+  getElementById(id) {
+    if (id === 'detail-panel') return panel;
+    if (id === 'detail-content') return content;
+    return null;
+  },
+};
+const BASE = '';
+const _SV = {ok:'ok', anchor:'anchor'};
+function fetch() {
+  return Promise.resolve({ok:true, status:200, payload:payloads[payloadIndex++]});
+}
+async function readJsonSafe(response) { return response.payload; }
+function esc(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function escAttr(value) { return esc(value); }
+function safeNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+function weightAnchorLabel() { return ''; }
+function renderEditForm() { return ''; }
+""" + source + r"""
+(async function() {
+  await showDetail('list');
+  const listHtml = content.innerHTML;
+  await showDetail('legacy');
+  const legacyHtml = content.innerHTML;
+  process.stdout.write(JSON.stringify([
+    listHtml.includes('first meaning'),
+    listHtml.includes('&lt;img src=x onerror=alert(1)&gt;'),
+    !listHtml.includes('<img src=x onerror=alert(1)>'),
+    !listHtml.includes('>42<'),
+    legacyHtml.includes('old meaning'),
+  ]));
+})().catch(function(error) {
+  console.error(error);
+  process.exit(1);
+});
+"""
+    completed = subprocess.run(
+        [shutil.which("node"), "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == [True, True, True, True, True]
+
+
 def test_dashboard_detail_does_not_render_an_editor_for_failed_bucket_fetch():
     source = _dashboard_function("showDetail", "bucketPin")
 

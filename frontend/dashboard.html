@@ -378,6 +378,31 @@
     font-family: 'Noto Sans SC', sans-serif;
     letter-spacing: 0.2px;
   }
+  .detail-meaning {
+    margin: 0 0 20px;
+    padding: 14px 16px;
+    border-left: 3px solid var(--accent);
+    border-radius: 2px;
+    background: var(--surface-solid);
+  }
+  .detail-meaning-title {
+    margin-bottom: 8px;
+    color: var(--accent);
+    font-family: 'Noto Sans SC', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.3px;
+  }
+  .detail-meaning-item {
+    font-size: 13px;
+    line-height: 1.75;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .detail-meaning-item + .detail-meaning-item {
+    margin-top: 9px;
+    padding-top: 9px;
+    border-top: 1px solid var(--border);
+  }
   .detail-content {
     font-size: 13px;
     line-height: 1.8;
@@ -4689,6 +4714,21 @@ async function showDetail(id) {
     panel.classList.toggle('anchor-mode', !!meta.anchor);
     // iter 1.8: why_remembered = 这条为什么被记得（展示不计分）
     var whyHtml = meta.why_remembered ? ('<div style="margin:8px 0 16px;padding:10px 14px;border-left:3px solid var(--accent);background:var(--surface-solid);font-style:italic;color:var(--accent);font-family:\'Cormorant Garamond\',\'Noto Serif SC\',serif;line-height:1.7;">❝ ' + esc(meta.why_remembered) + ' ❞</div>') : '';
+    // meaning 是独立于正文的体验锚定。兼容早期单字符串数据，并逐条完整展示。
+    var meaningItems = Array.isArray(meta.meaning)
+      ? meta.meaning
+      : (typeof meta.meaning === 'string' ? [meta.meaning] : []);
+    meaningItems = meaningItems.filter(function(item) {
+      return typeof item === 'string' && item.trim();
+    });
+    var meaningHtml = meaningItems.length ? (
+      '<section class="detail-meaning" aria-label="Meaning">' +
+        '<div class="detail-meaning-title">💭 我留下的意义 / Meaning</div>' +
+        meaningItems.map(function(item) {
+          return '<div class="detail-meaning-item">' + esc(item) + '</div>';
+        }).join('') +
+      '</section>'
+    ) : '';
     var firstBadge = meta.first_of_kind ? '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--accent);margin-left:8px;"><i data-lucide="sparkles" style="width:12px;height:12px;"></i>首次出现</span>' : '';
     var weightHtml = (meta.type === 'plan' && meta.weight != null) ? ('<div class="field"><label>承诺重量</label><span style="display:inline-block;width:80px;height:6px;background:var(--border);border-radius:3px;vertical-align:middle;overflow:hidden;"><span style="display:block;width:' + Math.round(meta.weight*100) + '%;height:100%;background:var(--accent);"></span></span> ' + (meta.weight*100).toFixed(0) + '% · ' + weightAnchorLabel(meta.weight) + '</div>') : '';
     // iter 1.9 D3: triggered_by 渲染成可跳转链接
@@ -4707,6 +4747,7 @@ async function showDetail(id) {
     content.innerHTML =
       '<h2>' + esc(meta.name || id) + firstBadge + '</h2>' +
       whyHtml +
+      meaningHtml +
       '<div class="detail-meta">' +
         '<div class="field"><label>ID</label>' + esc(id) + '</div>' +
         '<div class="field"><label>类型 / Type</label>' + esc(meta.type || 'dynamic') + '</div>' +
