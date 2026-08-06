@@ -17,7 +17,7 @@ import pytest
 
 from import_memory import ImportEngine, ImportState, _EXTRACT_TOKEN_CEILING
 from tools import _runtime as rt
-from tools._common import count_high_importance
+from tools._common import WriteDisposition, count_high_importance
 from utils import count_tokens_approx
 
 
@@ -159,6 +159,7 @@ async def test_import_merge_promotion_respects_high_importance_quota(
         return [target]
 
     monkeypatch.setattr(bucket_mgr, "search", search_target)
+    test_config["auto_merge_enabled"] = True
     engine = ImportEngine(
         test_config,
         bucket_mgr,
@@ -175,7 +176,7 @@ async def test_import_merge_promotion_respects_high_importance_quota(
     })
 
     target = await bucket_mgr.get(target_id)
-    assert merged is True
+    assert merged is WriteDisposition.MERGED
     assert target["metadata"]["importance"] == 8
     assert "new imported event" in target["content"]
     assert await count_high_importance(bucket_mgr=bucket_mgr) == 1

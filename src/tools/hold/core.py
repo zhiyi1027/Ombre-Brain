@@ -1,12 +1,11 @@
 """
 ========================================
-tools/hold/core.py — hold 普通存入分支（含自动合并）
+tools/hold/core.py — hold 普通存入分支（幂等去重，默认新建）
 ========================================
 
 非 feel、非 pinned 时走这里：优先调 LLM 自动打标，失败则用本地中性元数据，
-再用检索找近似桶，
-超过 merge_threshold 则合并（hold 用 raw_merge=True 拼接原文，不压缩），
-否则新建。
+再检查是否已有完全相同正文；相同则幂等去重，否则默认新建。
+旧版语义合并仅在 auto_merge_enabled=true 时兼容启用。
 
 关键行为：
 - analyze() 失败（API key/限流/网络不可用）时仍逐字保存正文，只降级元数据
@@ -28,7 +27,12 @@ tools/hold/core.py — hold 普通存入分支（含自动合并）
 import asyncio
 
 from .. import _runtime as rt
-from .._common import merge_or_create, check_duplicate_for, check_plan_resolution
+from .._common import (
+    WriteDisposition,
+    merge_or_create,
+    check_duplicate_for,
+    check_plan_resolution,
+)
 
 
 async def store_core(
@@ -71,7 +75,7 @@ async def store_core(
     all_tags = list(dict.fromkeys((_raw_tags if isinstance(_raw_tags, list) else []) + extra_tags))
     suggested_name = analysis.get("suggested_name", "")
 
-    result_name, is_merged, embed_warn = await merge_or_create(
+    result_name, disposition, embed_warn = await merge_or_create(
         content=content,
         tags=all_tags,
         importance=importance,
@@ -87,9 +91,13 @@ async def store_core(
         test_data=test_data,
     )
 
-    action = "合并→" if is_merged else "新建→"
+    action = {
+        WriteDisposition.CREATED: "新建→",
+        WriteDisposition.DEDUPLICATED: "去重→",
+        WriteDisposition.MERGED: "合并→",
+    }[disposition]
     asyncio.create_task(check_plan_resolution(content, source_bucket_id=result_name))
-    if not is_merged:
+    if disposition is WriteDisposition.CREATED:
         asyncio.create_task(check_duplicate_for(result_name, content))
     result = f"{action}{result_name} {','.join(str(d) for d in domain if d is not None)}"
     if embed_warn:

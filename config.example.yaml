@@ -82,11 +82,17 @@ hooks:
 storage:
   external_change_poll_seconds: 1.0  # 0 = check every list; env: OMBRE_EXTERNAL_CHANGE_POLL_SECONDS
 
-# --- Merge threshold / 桶合并阈值 ---
-# When storing a new memory, if similarity with an existing bucket exceeds
-# this value (0-100), merge instead of creating a new one
-# 存新记忆时，如果与已有桶的相似度超过此值（0-100），则合并而非新建
-merge_threshold: 75
+# --- Semantic auto-merge / 语义自动合并 ---
+# Exact-content retries are always deduplicated. Similar-but-not-identical
+# memories create new buckets by default, preserving time and context.
+# 完全相同正文始终幂等去重；相似但不相同的记忆默认新建，保留时间与语境。
+auto_merge_enabled: false
+
+# Legacy compatibility settings; only used when auto_merge_enabled is true.
+# 旧版兼容配置；仅在 auto_merge_enabled=true 时生效。
+merge_threshold: 100
+# Hard safety guard: merge results above 4 KiB always create a new bucket.
+# 硬安全闸门：合并结果超过 4 KiB 时始终强制新建，不可配置绕过。
 
 # --- Dehydration API / 脱水压缩 API 配置 ---
 # Uses a cheap LLM for intelligent compression. API is required; if the

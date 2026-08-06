@@ -630,7 +630,8 @@ docker compose -f deploy/docker-compose.yml up -d
 | `embedding.background_indexing` | 原文落盘后由耐久后台队列生成向量 | `true` |
 | `embedding.retry_base_seconds` / `retry_max_seconds` | 向量失败后的指数退避起点 / 上限 | `5` / `300` |
 | `decay.lambda` | 衰减速率，越大越快忘 | `0.05` |
-| `merge_threshold` | 合并相似度阈值 (0-100) | `75` |
+| `auto_merge_enabled` | 语义自动合并；完全相同正文的幂等去重不受此开关影响 | `false` |
+| `merge_threshold` | 旧版语义合并阈值，仅开关为 `true` 时生效 | `100` |
 | `hooks.token` | `/breath-hook` 的 HTTP token | 自托管公网建议设置 |
 | `hooks.allow_public` | 是否允许 hook 无鉴权访问 | `false` |
 

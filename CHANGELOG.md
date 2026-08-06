@@ -2,6 +2,12 @@
 
 本项目版本号见根目录 `VERSION` 文件，Docker 镜像 tag 与之对应（`p0luz/ombre-brain:<VERSION>`）。
 
+## 未发布 / Unreleased
+
+### 变更 / Changed
+
+- 语义自动合并改为显式 opt-in，默认关闭；完全相同正文仍做幂等去重，并在 hold/grow 输出中与“合并”分开显示。旧版兼容合并路径增加不可配置绕过的 4 KiB 合并后正文上限，超过时强制新建；历史导入遵循相同规则。
+
 ## 2.7.6
 
 ### 修复 / Fixed

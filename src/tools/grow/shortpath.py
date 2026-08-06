@@ -24,7 +24,12 @@ import asyncio
 import uuid
 
 from .. import _runtime as rt
-from .._common import merge_or_create, check_duplicate_for, check_plan_resolution
+from .._common import (
+    WriteDisposition,
+    merge_or_create,
+    check_duplicate_for,
+    check_plan_resolution,
+)
 
 
 async def grow_shortpath(content: str) -> str:
@@ -39,7 +44,7 @@ async def grow_shortpath(content: str) -> str:
     # iter 2.0：短路径也是一次 grow 调用 → 仍生成 batch_id，便于 dashboard 聚合，
     # 即使 batch 里只有一条记录也保留字段，schema 一致。
     batch_id = f"g_{uuid.uuid4().hex[:12]}"
-    result_name, is_merged, embed_warn = await merge_or_create(
+    result_name, disposition, embed_warn = await merge_or_create(
         content=content.strip(),
         tags=analysis.get("tags", []),
         importance=importance,
@@ -51,9 +56,13 @@ async def grow_shortpath(content: str) -> str:
         source_tool="grow",
         grow_batch_id=batch_id,
     )
-    action = "合并" if is_merged else "新建"
+    action = {
+        WriteDisposition.CREATED: "新建",
+        WriteDisposition.DEDUPLICATED: "去重",
+        WriteDisposition.MERGED: "合并",
+    }[disposition]
     asyncio.create_task(check_plan_resolution(content, source_bucket_id=result_name))
-    if not is_merged:
+    if disposition is WriteDisposition.CREATED:
         asyncio.create_task(check_duplicate_for(result_name, content.strip()))
     result = (
         "短内容已按 hold 路径保存为单条记忆，没有拆分。\n"

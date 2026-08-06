@@ -244,7 +244,10 @@ def register(mcp) -> None:
                 "breath_max_tokens": int(sh.config.get("surfacing", {}).get("breath_max_tokens") or 10000),
                 "feel_max_tokens": int(sh.config.get("surfacing", {}).get("feel_max_tokens") or 6000),
             },
-            "merge_threshold": sh.config.get("merge_threshold", 75),
+            "auto_merge_enabled": _parse_bool(
+                sh.config.get("auto_merge_enabled"), default=False
+            ),
+            "merge_threshold": sh.config.get("merge_threshold", 100),
             "transport": desired["transport"],
             "transport_effective": runtime_transport,
             "buckets_dir": sh.config.get("buckets_dir", ""),
@@ -476,7 +479,17 @@ def register(mcp) -> None:
                         status_code=400,
                     )
 
-        # --- Merge threshold ---
+        # --- Semantic auto-merge (disabled by default) ---
+        if "auto_merge_enabled" in body:
+            try:
+                sh.config["auto_merge_enabled"] = _parse_bool(
+                    body["auto_merge_enabled"]
+                )
+                updated.append("auto_merge_enabled")
+            except (TypeError, ValueError):
+                pass
+
+        # --- Legacy merge threshold ---
         if "merge_threshold" in body:
             try:
                 sh.config["merge_threshold"] = int(body["merge_threshold"])
@@ -543,6 +556,14 @@ def register(mcp) -> None:
                         sc_emb["enabled"] = embedding_enabled
                     if embedding_backend is not None:
                         sc_emb["backend"] = embedding_backend
+
+                if "auto_merge_enabled" in body:
+                    try:
+                        save_config["auto_merge_enabled"] = _parse_bool(
+                            body["auto_merge_enabled"]
+                        )
+                    except (TypeError, ValueError):
+                        pass
 
                 if "merge_threshold" in body:
                     try:

@@ -1,16 +1,16 @@
 """
 ========================================
-tools/grow/core.py — grow 长内容主路径（digest + merge）
+tools/grow/core.py — grow 长内容主路径（digest + 幂等去重/新建）
 ========================================
 
 长内容（≥30 字）走这里。先调 dehydrator.digest 把整段拆成 2~6 条
-事件项，每条独立尝试 merge_or_create。
+事件项，每条独立尝试完全相同正文去重，否则默认新建。
 
 关键行为：
 - digest 失败（API key 不可用）时直接 RuntimeError，不创建任何桶
-- 逐条调 merge_or_create（grow 路径用 LLM merge，会压缩老+新）
+- 逐条调 merge_or_create；旧版 LLM merge 仅在 auto_merge_enabled=true 时启用
 - iter 2.0：每次 grow 调用生成一个 ``grow_batch_id``，同批次新建桶共享，
-  source_tool 一律为 ``grow``；合并到的老桶不改 source_tool
+  source_tool 一律为 ``grow``；旧兼容合并路径不改老桶 source_tool
 - 单条失败不影响其他；按字节上限校验单条尺寸
 - embedding 失败时桶正常创建，返回追加向量化降级警告
 - 末尾 fire-and-forget 触发 plan 自动闭环（用整段原文做匹配）
@@ -29,6 +29,7 @@ import uuid
 
 from .. import _runtime as rt
 from .._common import (
+    WriteDisposition,
     merge_or_create,
     check_content_size,
     check_grow_items_payload,
@@ -60,6 +61,7 @@ async def grow_core(content: str) -> str:
 
     results = []
     created = 0
+    deduplicated = 0
     merged = 0
     embed_warnings = []
 
@@ -69,7 +71,7 @@ async def grow_core(content: str) -> str:
             if size_err:
                 results.append(f"⚠️{item.get('name', '?')}（{size_err}）")
                 continue
-            result_name, is_merged, embed_warn = await merge_or_create(
+            result_name, disposition, embed_warn = await merge_or_create(
                 content=item["content"],
                 tags=item.get("tags") or [],
                 importance=item.get("importance") or 5,
@@ -83,9 +85,12 @@ async def grow_core(content: str) -> str:
             if embed_warn and embed_warn not in embed_warnings:
                 embed_warnings.append(embed_warn)
 
-            if is_merged:
+            if disposition is WriteDisposition.MERGED:
                 results.append(f"📎{result_name}")
                 merged += 1
+            elif disposition is WriteDisposition.DEDUPLICATED:
+                results.append(f"＝{result_name}")
+                deduplicated += 1
             else:
                 results.append(f"📝{item.get('name', result_name)}")
                 created += 1
@@ -98,7 +103,10 @@ async def grow_core(content: str) -> str:
             results.append(f"⚠️{item.get('name', '?')}")
 
     asyncio.create_task(check_plan_resolution(content))
-    summary = f"{len(items)}条|新{created}合{merged} batch:{batch_id}\n" + "\n".join(results)
+    summary = (
+        f"{len(items)}条|新{created}去重{deduplicated}合{merged} batch:{batch_id}\n"
+        + "\n".join(results)
+    )
     if embed_warnings:
         summary += f"\n⚠️ {embed_warnings[0]}"
     return summary
@@ -110,7 +118,7 @@ async def grow_items(items: list) -> str:
     与 grow_core 的关键差别（issue 的诉求）：
     - **不调 digest**：跳过廉价 LLM 的二次拆分+改写，正文一字不动（消除第二次失真）；
     - 每条只调 analyze() 打元数据（domain/valence/arousal/tags/name），不碰正文；
-    - 合并走 raw_merge=True（原文追加，不 LLM 压缩老+新），消除第三次失真。
+    - 旧兼容合并路径走 raw_merge=True（原文追加，不 LLM 压缩老+新）。
     存储沿用 grow 风格：共享 grow_batch_id，source_tool=grow，dashboard 仍可按批展示。
     """
     payload_err = check_grow_items_payload(items)
@@ -134,6 +142,7 @@ async def grow_items(items: list) -> str:
     batch_id = f"g_{uuid.uuid4().hex[:12]}"
     results = []
     created = 0
+    deduplicated = 0
     merged = 0
     embed_warnings = []
 
@@ -158,7 +167,7 @@ async def grow_items(items: list) -> str:
                 meta = default_analysis() if callable(default_analysis) else {
                     "domain": ["未分类"], "valence": 0.5, "arousal": 0.3, "tags": [], "suggested_name": "",
                 }
-            result_name, is_merged, embed_warn = await merge_or_create(
+            result_name, disposition, embed_warn = await merge_or_create(
                 content=content_str,
                 tags=meta.get("tags") or [],
                 importance=5,
@@ -172,9 +181,12 @@ async def grow_items(items: list) -> str:
             )
             if embed_warn and embed_warn not in embed_warnings:
                 embed_warnings.append(embed_warn)
-            if is_merged:
+            if disposition is WriteDisposition.MERGED:
                 results.append(f"📎{result_name}")
                 merged += 1
+            elif disposition is WriteDisposition.DEDUPLICATED:
+                results.append(f"＝{result_name}")
+                deduplicated += 1
             else:
                 results.append(f"📝{result_name}")
                 created += 1
@@ -184,7 +196,10 @@ async def grow_items(items: list) -> str:
             results.append("⚠️")
 
     asyncio.create_task(check_plan_resolution("\n".join(clean)))
-    summary = f"{len(clean)}条(预拆分·逐字)|新{created}合{merged} batch:{batch_id}\n" + "\n".join(results)
+    summary = (
+        f"{len(clean)}条(预拆分·逐字)|新{created}去重{deduplicated}合{merged} batch:{batch_id}\n"
+        + "\n".join(results)
+    )
     if embed_warnings:
         summary += f"\n⚠️ {embed_warnings[0]}"
     if metadata_fallback:

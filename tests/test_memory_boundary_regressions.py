@@ -21,6 +21,14 @@ class _Logger:
         pass
 
 
+class _NoCompression:
+    async def merge(self, *_args, **_kwargs):
+        raise AssertionError("raw hold path must never call LLM merge")
+
+    def invalidate_cache(self, _content):
+        pass
+
+
 @pytest.mark.asyncio
 async def test_hold_analysis_failure_preserves_exact_content(monkeypatch):
     original = "第一行，不要改写。\n\n第二行 <raw> & symbols."
@@ -42,7 +50,7 @@ async def test_hold_analysis_failure_preserves_exact_content(monkeypatch):
 
     async def fake_merge_or_create(**kwargs):
         captured.update(kwargs)
-        return "bucket-1", False, ""
+        return "bucket-1", common.WriteDisposition.CREATED, ""
 
     async def background(*_args, **_kwargs):
         return None
@@ -110,18 +118,16 @@ async def test_hold_merge_appends_raw_text_and_never_calls_llm_merge(tmp_path, m
         bucket["score"] = 100
         return [bucket]
 
-    class NoCompression:
-        async def merge(self, *_args, **_kwargs):
-            raise AssertionError("hold must never call LLM merge")
-
-        def invalidate_cache(self, _content):
-            pass
-
     monkeypatch.setattr(manager, "search", fake_search)
     monkeypatch.setattr(rt, "bucket_mgr", manager, raising=False)
     monkeypatch.setattr(rt, "embedding_engine", None, raising=False)
-    monkeypatch.setattr(rt, "dehydrator", NoCompression(), raising=False)
-    monkeypatch.setattr(rt, "config", {"merge_threshold": 75}, raising=False)
+    monkeypatch.setattr(rt, "dehydrator", _NoCompression(), raising=False)
+    monkeypatch.setattr(
+        rt,
+        "config",
+        {"auto_merge_enabled": True, "merge_threshold": 75},
+        raising=False,
+    )
     monkeypatch.setattr(rt, "logger", _Logger(), raising=False)
 
     result_id, merged, _warning = await common.merge_or_create(
@@ -136,10 +142,124 @@ async def test_hold_merge_appends_raw_text_and_never_calls_llm_merge(tmp_path, m
     )
     bucket = await manager.get(bucket_id)
 
-    assert merged is True
+    assert merged is common.WriteDisposition.MERGED
     assert result_id == bucket_id
     assert bucket is not None
     assert bucket["content"] == f"{old}\n\n---\n{new}"
+
+
+@pytest.mark.asyncio
+async def test_semantic_auto_merge_is_disabled_by_default(tmp_path, monkeypatch):
+    manager = BucketManager(
+        {"buckets_dir": str(tmp_path / "vault")}, embedding_engine=None
+    )
+    old_id = await manager.create(content="同一主题的旧事件", domain=["测试"])
+
+    async def search_must_not_run(*_args, **_kwargs):
+        raise AssertionError("semantic search must not run while auto-merge is disabled")
+
+    monkeypatch.setattr(manager, "search", search_must_not_run)
+    monkeypatch.setattr(rt, "bucket_mgr", manager, raising=False)
+    monkeypatch.setattr(rt, "embedding_engine", None, raising=False)
+    monkeypatch.setattr(rt, "dehydrator", _NoCompression(), raising=False)
+    monkeypatch.setattr(rt, "config", {"merge_threshold": 100}, raising=False)
+    monkeypatch.setattr(rt, "logger", _Logger(), raising=False)
+
+    new_id, disposition, _warning = await common.merge_or_create(
+        content="同一主题的新事件",
+        tags=[],
+        importance=5,
+        domain=["测试"],
+        valence=0.5,
+        arousal=0.3,
+        raw_merge=True,
+        source_tool="hold",
+    )
+
+    assert disposition is common.WriteDisposition.CREATED
+    assert new_id != old_id
+    assert (await manager.get(old_id))["content"] == "同一主题的旧事件"
+
+
+@pytest.mark.asyncio
+async def test_exact_content_retry_is_deduplicated_without_semantic_merge(
+    tmp_path, monkeypatch
+):
+    manager = BucketManager(
+        {"buckets_dir": str(tmp_path / "vault")}, embedding_engine=None
+    )
+    content = "网络重试时完全相同的正文"
+    existing_id = await manager.create(content=content, domain=["旧分类"])
+
+    async def search_must_not_run(*_args, **_kwargs):
+        raise AssertionError("exact deduplication must not require semantic search")
+
+    monkeypatch.setattr(manager, "search", search_must_not_run)
+    monkeypatch.setattr(rt, "bucket_mgr", manager, raising=False)
+    monkeypatch.setattr(rt, "embedding_engine", None, raising=False)
+    monkeypatch.setattr(rt, "dehydrator", _NoCompression(), raising=False)
+    monkeypatch.setattr(rt, "config", {"auto_merge_enabled": False}, raising=False)
+    monkeypatch.setattr(rt, "logger", _Logger(), raising=False)
+
+    result_id, disposition, _warning = await common.merge_or_create(
+        content=content,
+        tags=[],
+        importance=5,
+        domain=["测试"],
+        valence=0.5,
+        arousal=0.3,
+        raw_merge=True,
+        source_tool="hold",
+    )
+
+    assert disposition is common.WriteDisposition.DEDUPLICATED
+    assert result_id == existing_id
+    assert len(await manager.list_all(include_archive=False)) == 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_auto_merge_size_guard_forces_new_bucket(tmp_path, monkeypatch):
+    manager = BucketManager(
+        {"buckets_dir": str(tmp_path / "vault")}, embedding_engine=None
+    )
+    old = "a" * 4000
+    new = "b" * 200
+    old_id = await manager.create(content=old, domain=["测试"])
+
+    async def fake_search(*_args, **_kwargs):
+        bucket = await manager.get(old_id)
+        bucket["score"] = 100
+        return [bucket]
+
+    monkeypatch.setattr(manager, "search", fake_search)
+    monkeypatch.setattr(rt, "bucket_mgr", manager, raising=False)
+    monkeypatch.setattr(rt, "embedding_engine", None, raising=False)
+    monkeypatch.setattr(rt, "dehydrator", _NoCompression(), raising=False)
+    monkeypatch.setattr(
+        rt,
+        "config",
+        {
+            "auto_merge_enabled": True,
+            "merge_threshold": 75,
+        },
+        raising=False,
+    )
+    monkeypatch.setattr(rt, "logger", _Logger(), raising=False)
+
+    new_id, disposition, _warning = await common.merge_or_create(
+        content=new,
+        tags=[],
+        importance=5,
+        domain=["测试"],
+        valence=0.5,
+        arousal=0.3,
+        raw_merge=True,
+        source_tool="hold",
+    )
+
+    assert disposition is common.WriteDisposition.CREATED
+    assert new_id != old_id
+    assert (await manager.get(old_id))["content"] == old
 
 
 @pytest.mark.asyncio

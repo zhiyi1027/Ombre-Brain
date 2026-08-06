@@ -15,7 +15,7 @@ import_memory.py — 历史对话导入引擎
 不做什么（边界）：
 - 不在线接收对话流（只处理离线导出文件）
 - 不写桶文件本身（委托给 BucketManager）
-- 不调用 dehydrator.merge（只新建，不合并）
+- 默认不调用 dehydrator.merge；仅显式开启 auto_merge_enabled 的旧兼容模式会合并
 
 对外暴露：ImportEngine 类（被 server.py 注入到 _runtime，由 dashboard API 触发）
 ========================================
@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from tools._common import (
+    WriteDisposition,
     _HIGH_IMP_THRESHOLD,
     _quota_turn,
     enforce_high_importance_quota,
@@ -84,8 +85,9 @@ _NAME_MAX_CHARS = 20
 _DOMAIN_MAX = 3
 _TAGS_MAX = 10                 # extraction 试在 10 个以内（与 dehydrator 的 15 不同，导入场景信息密度较低）
 
-# --- merge_or_create 默认阈值 ---
-_DEFAULT_MERGE_THRESHOLD = 75
+# --- 旧版语义合并兼容配置（默认关闭）---
+_DEFAULT_MERGE_THRESHOLD = 100
+_DEFAULT_MAX_AUTO_MERGE_BYTES = 4 * 1024
 
 # --- detect_patterns：embedding 聚类 ---
 _PATTERN_MIN_DYNAMIC_BUCKETS = 5  # 动态桶少于该数 → 不作处理
@@ -541,6 +543,7 @@ class ImportState:
             "processed": 0,
             "api_calls": 0,
             "memories_created": 0,
+            "memories_deduplicated": 0,
             "memories_merged": 0,
             "memories_raw": 0,
             "errors": [],
@@ -588,6 +591,7 @@ class ImportState:
             "processed": 0,
             "api_calls": 0,
             "memories_created": 0,
+            "memories_deduplicated": 0,
             "memories_merged": 0,
             "memories_raw": 0,
             "errors": [],
@@ -964,9 +968,12 @@ class ImportEngine:
                     self.state.data["memories_created"] += 1
                 else:
                     # Normal mode: go through merge-or-create pipeline
-                    is_merged = await self._merge_or_create_item(item)
-                    if is_merged:
+                    disposition = await self._merge_or_create_item(item)
+                    if disposition is WriteDisposition.MERGED:
                         self.state.data["memories_merged"] += 1
+                    elif disposition is WriteDisposition.DEDUPLICATED:
+                        self.state.data.setdefault("memories_deduplicated", 0)
+                        self.state.data["memories_deduplicated"] += 1
                     else:
                         self.state.data["memories_created"] += 1
 
@@ -1073,8 +1080,8 @@ class ImportEngine:
 
         return validated
 
-    async def _merge_or_create_item(self, item: dict) -> bool:
-        """Try to merge with existing bucket, or create new. Returns is_merged."""
+    async def _merge_or_create_item(self, item: dict) -> WriteDisposition:
+        """Exact-deduplicate, optionally legacy-merge, or create an import item."""
         content = item["content"]
         domain = item.get("domain", ["未分类"])
         tags = item.get("tags", [])
@@ -1082,18 +1089,43 @@ class ImportEngine:
         valence = item.get("valence", _DEFAULT_VALENCE)
         arousal = item.get("arousal", _DEFAULT_AROUSAL)
 
+        exact_finder = getattr(self.bucket_mgr, "find_exact_content", None)
+        if callable(exact_finder):
+            try:
+                exact = exact_finder(content)
+            except Exception as exc:
+                logger.warning(f"[import] exact-content check failed: {exc}")
+            else:
+                if exact:
+                    return WriteDisposition.DEDUPLICATED
+
+        auto_merge_enabled = parse_bool(
+            self.config.get("auto_merge_enabled"), default=False
+        )
+        existing = []
+        if auto_merge_enabled:
+            try:
+                existing = await self.bucket_mgr.search(
+                    content, limit=1, domain_filter=domain or None
+                )
+            except Exception as _search_exc:
+                logger.warning(
+                    f"[import] Duplicate search failed, skipping merge check: "
+                    f"{type(_search_exc).__name__}: {_search_exc}"
+                )
+
         try:
-            existing = await self.bucket_mgr.search(content, limit=1, domain_filter=domain or None)
-        except Exception as _search_exc:
-            logger.warning(
-                f"[import] Duplicate search failed, skipping merge check: "
-                f"{type(_search_exc).__name__}: {_search_exc}"
+            merge_threshold = int(
+                self.config.get("merge_threshold", _DEFAULT_MERGE_THRESHOLD)
             )
-            existing = []
+        except (TypeError, ValueError):
+            merge_threshold = _DEFAULT_MERGE_THRESHOLD
 
-        merge_threshold = self.config.get("merge_threshold") or _DEFAULT_MERGE_THRESHOLD
-
-        if existing and existing[0].get("score", 0) > merge_threshold:
+        if (
+            auto_merge_enabled
+            and existing
+            and existing[0].get("score", 0) > merge_threshold
+        ):
             candidate = existing[0]
             candidate_id = str(candidate.get("id") or "").strip()
             candidate_metadata = candidate.get("metadata", {})
@@ -1114,6 +1146,14 @@ class ImportEngine:
                         )
                     finally:
                         self.state.data["api_calls"] += 1
+
+                    if len(merged.encode("utf-8")) > _DEFAULT_MAX_AUTO_MERGE_BYTES:
+                        logger.info(
+                            "[import] merge result exceeds %s bytes; creating new",
+                            _DEFAULT_MAX_AUTO_MERGE_BYTES,
+                        )
+                        await self._create_import_bucket(item)
+                        return WriteDisposition.CREATED
 
                     async with AsyncExitStack() as commit_stack:
                         # An incoming 9/10 can promote an ordinary low bucket.
@@ -1225,13 +1265,13 @@ class ImportEngine:
                             arousal=round((old_a + arousal) / 2, 2),
                         )
                         if committed:
-                            return True
+                            return WriteDisposition.MERGED
                 except Exception as e:
                     logger.warning(f"Merge failed during import: {e}")
 
         # Create new
         await self._create_import_bucket(item)
-        return False
+        return WriteDisposition.CREATED
 
     async def detect_patterns(self) -> list[dict]:
         """
