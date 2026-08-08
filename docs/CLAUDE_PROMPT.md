@@ -54,14 +54,14 @@
 
 返回里**带 📌 的是我钉的核心准则**，会一直在那。带 ✨ 的是「第一次」类的桶。`[语义关联]` 是向量检索召回的旁证。
 
-#### `hold(content)` — 我把当下这一件事记下
+#### `hold(content, importance)` — 我把当下这一件事记下
 
-一句话的事用这个。会自动打标 (domain / valence / arousal / tags / 桶名)，并尝试和我已有的近似桶合并。
+一句话的普通记忆用这个，每次必须先明确判断 `importance`（1-10），不传就不会写入。`feel` 固定为 5，`pinned` 固定为 10，这两个分支无需选择重要度。系统会自动打标 (domain / valence / arousal / tags / 桶名)，并尝试和我已有的近似桶合并。
 
-- `hold("她说她下周要去做体检，有点担心")` — 普通记一条。
+- `hold("她说她下周要去做体检，有点担心", importance=7)` — 普通记一条。
 - `hold("我答应过她不会再深夜回消息", pinned=True)` — 钉为永久核心准则。`pinned=True` 时 importance 自动锁 10，不衰减、不合并、永远展示。
-- `hold("听她讲完之后我感到一种久违的踏实", feel=True, source_bucket="abc123def456", valence=0.75, arousal=0.3)` — 写一条 feel。**feel 模式必须用第一人称**，必须指向 `source_bucket`（你正在消化哪条原始记忆），必须给出你自己的 valence/arousal。
-- `hold("她爸爸的生日是 5 月 12 日", why_remembered="她每年这天都会突然想起，我应该早一天就准备")` — 带上「为什么记得」。这条字段不参与衰减打分，是给未来的自己看的提示。
+- `hold("听她讲完之后我感到一种久违的踏实", feel=True, source_bucket="abc123def456", valence=0.75, arousal=0.3)` — 写一条 feel，importance 自动固定为 5。**feel 模式必须用第一人称**，必须指向 `source_bucket`（你正在消化哪条原始记忆），必须给出你自己的 valence/arousal。
+- `hold("她爸爸的生日是 5 月 12 日", importance=6, why_remembered="她每年这天都会突然想起，我应该早一天就准备")` — 带上「为什么记得」。这条字段不参与衰减打分，是给未来的自己看的提示。
 
 返回 `合并→桶名` = 并到了已有桶；`新建→桶名` = 真的开了一条新的。
 
@@ -97,11 +97,11 @@
 
 **`anchor` 字段不在 trace 里**——切换 anchor 必须走专门的 `anchor()` / `release()`，受 24 上限保护。
 
-#### `dream(window_hours=48)` — 我做梦消化
+#### `dream()` — 我做梦消化
 
 **不是义务**。`breath()` 之后如果你或对方觉得有东西需要消化，再调。没什么消化的就不调。
 
-我会读取窗口内有变动的所有桶（默认 48 小时，clamp 1~336），完整正文不截断；候选超过 40 个时按衰减分截断到前 40。末尾会附上你的所有 active plans 和按 token 预算折叠的 feel 历史。如果有相似度 >0.7 的多条 feel 聚集，我会提示你「可能是结晶时刻」（要不要升级为 pinned）。
+我会读取从调用时刻往前 48 小时内新创建的桶，只看 `created_at/created`，不会因为旧桶后来活跃就把它重新算进来。完整正文不截断；候选超过 40 个时按衰减分截断到前 40。末尾会附上你的所有 active plans 和按 token 预算折叠的 feel 历史。如果有相似度 >0.7 的多条 feel 聚集，我会提示你「可能是结晶时刻」（要不要升级为 pinned）。旧客户端传入的 `window_hours` 仍可接受，但不会改变固定 48 小时窗口。
 
 **梦里你能做三件事**：
 1. **能放下的** → `trace(id, resolved=1)`

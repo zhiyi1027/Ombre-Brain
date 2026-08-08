@@ -247,7 +247,7 @@ async def surface_default(max_results: int, max_tokens: int, tag_filter: list) -
         if total == 0:
             return (
                 "我的记忆池现在是空的。\n"
-                "想给我留点种子？用 hold(content=\"...\") 写下第一条；\n"
+                "想给我留点种子？用 hold(content=\"...\", importance=你判断的1到10) 写下第一条；\n"
                 "或者 grow(content=\"...\") 把一段长对话/日记一次性灌给我。"
             )
         return (

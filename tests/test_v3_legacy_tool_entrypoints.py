@@ -51,6 +51,84 @@ async def test_hold_dispatch_records_v3_tool_event_without_content_body(monkeypa
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("importance", "expected"),
+    [
+        (None, "普通 hold 的 importance 必填"),
+        ("5", "普通 hold 的 importance 必须是 1-10 的整数"),
+        (5.5, "普通 hold 的 importance 必须是 1-10 的整数"),
+        (True, "普通 hold 的 importance 必须是 1-10 的整数"),
+        (0, "普通 hold 的 importance 必须在 1-10 之间"),
+        (11, "普通 hold 的 importance 必须在 1-10 之间"),
+    ],
+)
+async def test_hold_rejects_missing_or_invalid_importance_before_write(
+    monkeypatch, importance, expected
+) -> None:
+    writes = []
+
+    async def fake_store_core(**kwargs):
+        writes.append(kwargs)
+        return "unexpected write"
+
+    monkeypatch.setattr(hold_mod, "store_core", fake_store_core)
+
+    result = await hold_mod.dispatch(content="must not be written", importance=importance)
+
+    assert expected in result
+    assert writes == []
+
+
+@pytest.mark.asyncio
+async def test_hold_feel_needs_no_importance(monkeypatch) -> None:
+    writes = []
+
+    async def fake_store_feel(**kwargs):
+        writes.append(kwargs)
+        return "feel result"
+
+    rt.init(config={}, decay_engine=_Decay(), mark_op=None)
+    monkeypatch.setattr(rt, "record_v3_tool_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(hold_mod, "check_content_size", lambda _content: None)
+    monkeypatch.setattr(hold_mod, "store_feel", fake_store_feel)
+
+    result = await hold_mod.dispatch(
+        content="first-person feeling",
+        feel=True,
+        source_bucket="abc123def456",
+    )
+
+    assert result == "feel result"
+    assert "importance" not in writes[0]
+
+
+@pytest.mark.asyncio
+async def test_hold_pinned_needs_no_importance(monkeypatch) -> None:
+    writes = []
+
+    async def fake_store_pinned(**kwargs):
+        writes.append(kwargs)
+        return "pinned result"
+
+    async def fake_pinned_quota(_pinned):
+        return True
+
+    rt.init(config={}, decay_engine=_Decay(), mark_op=None)
+    monkeypatch.setattr(rt, "record_v3_tool_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(hold_mod, "check_content_size", lambda _content: None)
+    monkeypatch.setattr(hold_mod, "enforce_pinned_quota", fake_pinned_quota)
+    monkeypatch.setattr(hold_mod, "store_pinned", fake_store_pinned)
+
+    result = await hold_mod.dispatch(
+        content="permanent rule",
+        pinned=True,
+    )
+
+    assert result == "pinned result"
+    assert len(writes) == 1
+
+
+@pytest.mark.asyncio
 async def test_trace_core_records_v3_tool_event_without_content_body(monkeypatch) -> None:
     calls = []
 

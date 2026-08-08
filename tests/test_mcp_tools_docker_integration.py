@@ -100,7 +100,7 @@ EXPECTED_TOOL_PROPERTIES = {
     "letter_write": {"author", "content", "user_name", "title", "date", "ai_name"},
     "letter_read": {"query", "limit", "author", "date_from", "date_to"},
     "I": {"content", "aspect", "read", "limit"},
-    "dream": {"window_hours"},
+    "dream": {"window_hours", "catalog"},
 }
 
 EXPECTED_REQUIRED_PROPERTIES = {
@@ -598,7 +598,8 @@ def test_query_tools_enforce_query_size_limit(mcp_client, tool, arguments):
 @pytest.mark.parametrize(
     ("tool", "arguments", "expected"),
     [
-        ("hold", {"content": ""}, "内容为空"),
+        ("hold", {"content": "", "importance": 5}, "内容为空"),
+        ("hold", {"content": "missing importance"}, "importance 必填"),
         ("grow", {"content": ""}, "内容为空"),
         ("trace", {"bucket_id": "missing-boundary-id"}, "missing-boundary-id"),
         ("anchor", {"bucket_id": "missing-boundary-id"}, "anchor"),
@@ -651,7 +652,10 @@ def test_single_bucket_tools_enforce_bucket_size_limit(mcp_client, tool, argumen
 
 
 def test_hold_enforces_bucket_size_limit(mcp_client):
-    result = mcp_client.call("hold", {"content": "x" * (50 * 1024 + 1)})
+    result = mcp_client.call(
+        "hold",
+        {"content": "x" * (50 * 1024 + 1), "importance": 5},
+    )
     assert "内容过大" in result
 
 

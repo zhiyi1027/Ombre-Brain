@@ -5,7 +5,7 @@ import pytest
 
 import tools._runtime as rt
 from tools.dream import dispatch
-from tools.dream.candidates import collect_candidates, previous_day
+from tools.dream.candidates import DREAM_WINDOW_HOURS, collect_candidates
 
 
 def _bucket(bucket_id, created, *, last_active="2026-08-04T12:00:00"):
@@ -21,21 +21,22 @@ def _bucket(bucket_id, created, *, last_active="2026-08-04T12:00:00"):
     }
 
 
-def test_dream_only_collects_buckets_created_on_previous_calendar_day():
+def test_dream_collects_buckets_created_in_rolling_48_hour_window():
     reference = datetime(2026, 8, 4, 9, 30)
     buckets = [
-        _bucket("yesterday-early", "2026-08-03T00:00:00"),
-        _bucket("yesterday-late", "2026-08-03T23:59:59"),
-        _bucket("today", "2026-08-04T00:00:00"),
-        _bucket("older-but-touched", "2026-07-01T12:00:00"),
+        _bucket("inside-old-edge", "2026-08-02T09:31:00"),
+        _bucket("yesterday", "2026-08-03T23:59:59"),
+        _bucket("today", "2026-08-04T08:00:00"),
+        _bucket("outside-but-touched", "2026-08-02T09:29:59"),
+        _bucket("future", "2026-08-04T09:31:00"),
     ]
 
     recent = collect_candidates(buckets, reference_time=reference)
 
-    assert previous_day(reference) == "2026-08-03"
     assert [bucket["id"] for bucket in recent] == [
-        "yesterday-late",
-        "yesterday-early",
+        "today",
+        "yesterday",
+        "inside-old-edge",
     ]
 
 
@@ -47,6 +48,16 @@ def test_dream_accepts_created_at_field_name():
     recent = collect_candidates([bucket], reference_time=reference)
 
     assert [item["id"] for item in recent] == ["created-at"]
+
+
+def test_dream_falls_back_to_created_when_created_at_is_invalid():
+    reference = datetime(2026, 8, 4, 9, 30)
+    bucket = _bucket("legacy-created", "2026-08-04T08:00:00")
+    bucket["metadata"]["created_at"] = "not-a-date"
+
+    recent = collect_candidates([bucket], reference_time=reference)
+
+    assert [item["id"] for item in recent] == ["legacy-created"]
 
 
 class _StaticBucketManager:
@@ -88,6 +99,23 @@ async def test_dream_returns_full_body_and_ignores_old_touched_bucket(monkeypatc
 
     assert "yesterday 的完整正文" in output
     assert "old-touched 的完整正文" not in output
+
+
+@pytest.mark.asyncio
+async def test_dream_window_argument_does_not_narrow_fixed_window(monkeypatch):
+    within_48h = datetime.now() - timedelta(hours=30)
+    buckets = [_bucket("within-48h", within_48h.isoformat())]
+    monkeypatch.setattr(rt, "bucket_mgr", _StaticBucketManager(buckets))
+    monkeypatch.setattr(rt, "decay_engine", _DummyDecay())
+    monkeypatch.setattr(rt, "embedding_engine", _NoEmbedding())
+    monkeypatch.setattr(rt, "logger", MagicMock())
+    monkeypatch.setattr(rt, "fire_webhook", None)
+    monkeypatch.setattr(rt, "config", {})
+
+    output = await dispatch(window_hours=1)
+
+    assert "within-48h 的完整正文" in output
+    assert f"过去 {DREAM_WINDOW_HOURS} 小时内新建记忆" in output
 
 
 @pytest.mark.asyncio

@@ -39,7 +39,7 @@ from .core import store_core
 async def dispatch(
     content: str,
     tags: Optional[str] = "",
-    importance: Optional[int] = 5,
+    importance: Optional[int] = None,
     pinned: Optional[bool] = False,
     feel: Optional[bool] = False,
     source_bucket: Optional[str] = "",
@@ -53,8 +53,6 @@ async def dispatch(
     content = "" if content is None else str(content)
     if tags is None:
         tags = ""
-    if importance is None:
-        importance = 5
     if pinned is None:
         pinned = False
     if feel is None:
@@ -74,10 +72,17 @@ async def dispatch(
     test_data = parse_bool(test_data, default=False)
     if test_data and (pinned or feel):
         return "测试数据不能创建为 pinned 或 feel；请使用普通测试桶。"
-    try:
-        importance = int(importance)
-    except (TypeError, ValueError, OverflowError):
+    if feel:
         importance = 5
+    elif pinned:
+        importance = 10
+    else:
+        if importance is None:
+            return "普通 hold 的 importance 必填；请先选择 1-10 的整数。"
+        if not isinstance(importance, int) or isinstance(importance, bool):
+            return "普通 hold 的 importance 必须是 1-10 的整数。"
+        if not 1 <= importance <= 10:
+            return "普通 hold 的 importance 必须在 1-10 之间。"
     try:
         valence = float(valence)
     except (TypeError, ValueError, OverflowError):
@@ -116,10 +121,6 @@ async def dispatch(
     err = check_content_size(content)
     if err:
         return err
-
-    # importance 越界 clamp 由 bucket_manager 接管（OB-W001 自动 push 到 channel）；
-    # 这里仅做一次软 clamp 便于配额判断。
-    importance = max(1, min(10, importance))
 
     # pinned 配额检查（OB-W004 软警告 / OB-I002 自动退出）
     if pinned and not feel:
