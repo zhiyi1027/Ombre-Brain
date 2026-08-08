@@ -629,7 +629,7 @@ async def breath_advanced(
 async def hold(
     content: str,
     tags: Optional[str] = "",
-    importance: Optional[int] = 5,
+    importance: Optional[int] = None,
     pinned: Optional[bool] = False,
     feel: Optional[bool] = False,
     source_bucket: Optional[str] = "",
@@ -640,7 +640,7 @@ async def hold(
     media: Optional[list | str] = None,
     test_data: Optional[bool] = False,
 ) -> str:
-    """仅在对话中已明确决定“这段内容值得成为长期记忆”时调用；不要因普通聊天、猜测或工具名称联想而自行调用。存入一条一句话级记忆，content 必须保留原意和事实，不得先改写成摘要；OB 的 hold 路径也绝不会压缩正文。系统优先自动打标，API 不可用时使用本地中性元数据继续逐字保存。tags 逗号分隔,importance 1-10。pinned=True=标记为永久核心,不衰减不合并。feel=True=存为感受类记忆(不参与普通浮现,仅通过 feel 检索读取)。source_bucket=正在消化的原始记忆桶 ID,会被标为已消化以加速淡化。why_remembered=记录原因(可选,自由文本,仅用于展示不计分)。meaning=可选,这条记忆为什么值得被想起——不是摘要,是我自己的话,只在真正觉得有重量时才写,不必每次都写。每次传入的是新增的一条,系统自动追加到该桶的 meaning 列表,不会覆盖已有的。media=可选,可传服务器可读的单个临时路径，或列表；列表项使用 path，或使用 data_base64+filename，如 [{"data_base64":"...","filename":"photo.png","type":"image/png"}]。媒体会先复制到 OB 持久媒体目录，Markdown 只记录稳定路径；无法读取的临时路径会明确报错，绝不保存失效引用。"""
+    """仅在对话中已明确决定“这段内容值得成为长期记忆”时调用；不要因普通聊天、猜测或工具名称联想而自行调用。存入一条一句话级记忆，content 必须保留原意和事实，不得先改写成摘要；OB 的 hold 路径也绝不会压缩正文。系统优先自动打标，API 不可用时使用本地中性元数据继续逐字保存。tags 逗号分隔。普通 hold 必须显式选择 importance 1-10，不传则拒绝写入；feel 固定为 5、pinned 固定为 10，这两个分支无需传 importance。pinned=True=标记为永久核心,不衰减不合并。feel=True=存为感受类记忆(不参与普通浮现,仅通过 feel 检索读取)。source_bucket=正在消化的原始记忆桶 ID,会被标为已消化以加速淡化。why_remembered=记录原因(可选,自由文本,仅用于展示不计分)。meaning=可选,这条记忆为什么值得被想起——不是摘要,是我自己的话,只在真正觉得有重量时才写,不必每次都写。每次传入的是新增的一条,系统自动追加到该桶的 meaning 列表,不会覆盖已有的。media=可选,可传服务器可读的单个临时路径，或列表；列表项使用 path，或使用 data_base64+filename，如 [{"data_base64":"...","filename":"photo.png","type":"image/png"}]。媒体会先复制到 OB 持久媒体目录，Markdown 只记录稳定路径；无法读取的临时路径会明确报错，绝不保存失效引用。"""
     return await _with_notice(
         _t_hold.dispatch(
             content=content, tags=tags, importance=importance,
@@ -857,10 +857,10 @@ async def dream(
     window_hours: Optional[int] = 48,
     catalog: Optional[bool] = False,
 ) -> str:
-    """读取前一天（本地日历）新创建的记忆桶,用于回顾与消化。
+    """读取从调用时刻往前 48 小时内新创建的记忆桶,用于回顾与消化。
     只按 created_at（兼容现有 created 字段）筛选，不因 last_active 变化纳入旧桶；
     默认每个候选桶返回完整正文；catalog=True 时才只返回定位元数据。
-    window_hours 参数仅为兼容旧客户端保留，不再参与筛选。
+    window_hours 参数仅为兼容旧客户端保留；窗口固定为 48 小时，不参与筛选。
     可据此操作：放下的 → trace(resolved=1) 沉底；有沉淀的 → hold(feel=True, source_bucket=...) 记录；无沉淀则不操作。
     候选桶超过 40 时按 decay_engine.calculate_score() 排序取前 40，避免一次返回过多。"""
     return await _with_notice(

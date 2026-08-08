@@ -294,16 +294,17 @@ feel 桶自身：
 
 ### 3.2 `hold` — 存储单条记忆
 
-签名：`hold(content, tags="", importance=5, pinned=False, feel=False, source_bucket="", valence=-1, arousal=-1, why_remembered="", meaning="", media=None, test_data=False)`
+签名：`hold(content, tags="", importance=None, pinned=False, feel=False, source_bucket="", valence=-1, arousal=-1, why_remembered="", meaning="", media=None, test_data=False)`
 
-两种路径：
+三种路径：
 
-- **Feel 模式** (`feel=True`)：跳过 LLM 分析，自动注入 `__feel__` 标签，写入 `feel/沉淀物/`。`source_bucket` 提供时把源桶标记为 `digested=True` 并写 `model_valence`。返回 `🫧feel→{id}`。
-- **普通模式**：`analyze()` → 用户传入的 `valence`/`arousal` 优先于 LLM 结果（B-09 修复）→ `_merge_or_create(raw_merge=True)`（完全相同正文幂等去重，否则默认新建）→ 原文落盘后投递 embedding outbox → 异步触发 `_check_plan_resolution()` 扫 active plans。返回 `去重→{name}` 或 `新建→{name}`。只有显式设置 `auto_merge_enabled=true` 才启用旧版语义合并，且合并后正文超过 4096 字节会强制新建。`analyze()` 或 embedding 不可用时只降级元数据/向量索引，正文仍原样落盘；**hold 永远不调 `dehydrate()`/`merge()` 压缩正文**。
+- **Feel 模式** (`feel=True`)：importance 固定为 5，不需要调用方选择；跳过 LLM 分析，自动注入 `__feel__` 标签，写入 `feel/沉淀物/`。`source_bucket` 提供时把源桶标记为 `digested=True` 并写 `model_valence`。返回 `🫧feel→{id}`。
+- **Pinned 模式** (`pinned=True`)：importance 固定为 10，不需要调用方选择；单独创建到 `permanent/`，不走合并。
+- **普通模式**：调用方必须显式传入 1–10 的整数 importance；缺失、布尔值、字符串、小数或越界值都会在写入前拒绝，不再默认或 clamp。校验通过后 `analyze()` → 用户传入的 `valence`/`arousal` 优先于 LLM 结果（B-09 修复）→ `_merge_or_create(raw_merge=True)`（完全相同正文幂等去重，否则默认新建）→ 原文落盘后投递 embedding outbox → 异步触发 `_check_plan_resolution()` 扫 active plans。返回 `去重→{name}` 或 `新建→{name}`。只有显式设置 `auto_merge_enabled=true` 才启用旧版语义合并，且合并后正文超过 4096 字节会强制新建。`analyze()` 或 embedding 不可用时只降级元数据/向量索引，正文仍原样落盘；**hold 永远不调 `dehydrate()`/`merge()` 压缩正文**。
 - `meaning` 追加一条“为什么值得被想起”的第一人称含义；`media` 接受持久化前可读取路径或 `data_base64+filename` 项，失败时不写失效引用。
 - `test_data=True` 只在创建时写入不可后补的可擦除 provenance，并禁止与 pinned/feel 组合；这是 `trace(hard_delete=True)` 唯一允许物理删除的来源边界。
 
-(改动注意：`pinned=True` 走单独分支直接创建到 `permanent/`，importance 强制锁 10，不走合并；用户显式传 valence/arousal=0.0 也算「有效」，必须走 `0 <= v <= 1` 判定，不能用 `if valence` 否则 0.0 会被忽略——这就是 B-09。)
+(改动注意：用户显式传 valence/arousal=0.0 也算「有效」，必须走 `0 <= v <= 1` 判定，不能用 `if valence` 否则 0.0 会被忽略——这就是 B-09。)
 
 ### 3.3 `grow` — 日记拆分归档
 
@@ -342,16 +343,16 @@ feel 桶自身：
 
 ### 3.6 `dream` — 做梦自省
 
-签名：`dream(window_hours=48)`（默认 48h 窗口；clamp 到 1~336h）
+签名：`dream(window_hours=48, catalog=False)`（`window_hours` 仅为旧客户端兼容保留）
 
-- 默认取过去 48 小时内 `created` 或 `last_active` 任一在窗口内的桶（排除 permanent/feel/pinned/protected/plan/letter）
-- 排序：先按 `last_active` 倒序；候选超过 **40 个**时改按 `decay_engine.calculate_score()` 降序截断到前 40，避免一次涌进来太多撑爆上下文
+- 默认取从调用时刻往前 48 小时内新创建的桶，只按 `created_at`（兼容旧 `created` 字段）判断；旧桶的 `last_active` 后来变化不会令它重新进入（排除 permanent/feel/pinned/protected/plan/letter）
+- 排序：先按创建时间倒序；候选超过 **40 个**时改按 `decay_engine.calculate_score()` 降序截断到前 40，避免一次涌进来太多撑爆上下文
 - 拼接桶摘要（完整正文，不截断）+ 自省引导 header
 - embedding 启用时附加：连接提示（最相似对，`>0.5`）+ feel 结晶提示（一条 feel 与 ≥2 条其它 feel 相似度 `>0.7` → 建议升级为 pinned）
 - 末尾追加 `=== 你的 active plans ===` 全量列表
 - 末尾追加 `=== 你的 feel 历史（全量，旧 feel 按 token 预算折叠）===`：按 `surfacing.feel_max_tokens`（默认 6000）做预算，超出的老 feel 折叠为 60 字符单行摘要
 
-(实现细节：用户可手动传更大的 `window_hours`，但软上限 40 仍生效。plan 历史不参与 token 预算全量返回；feel 历史走 token 预算折叠。)
+(实现细节：窗口固定为滚动 48 小时；旧客户端传入其它 `window_hours` 值仍可调用，但不会改变筛选范围。`catalog=True` 只返回候选定位元数据。plan 历史不参与 token 预算全量返回；feel 历史走 token 预算折叠。)
 
 ### 3.7 `plan` — 登记待办
 

@@ -3,13 +3,13 @@
 tools/dream/candidates.py — 候选桶筛选 + 软上限
 ========================================
 
-dream 的第一步：从全量桶里筛出「前一天新创建的表层动态桶」，超过
+dream 的第一步：从全量桶里筛出「滚动 48 小时内新创建的表层动态桶」，超过
 40 个时按 calculate_score 截断，避免一次涌进来太多炸上下文。
 
 关键行为：
 - 排除 permanent / feel / plan / letter / pinned / protected
 - 只看 created_at（兼容现有 created 字段），不看 last_active
-- “前一天”指服务本地日历的昨天，不是滚动 24/48 小时
+- 窗口固定为调用时刻往前 48 小时；window_hours 仅保留兼容性
 - 默认按创建时间倒序
 - 软上限 40，超了就改按 decay_engine 权重排序后截断
 
@@ -27,16 +27,40 @@ from .. import _runtime as rt
 from utils import parse_iso_datetime
 
 DREAM_MAX_CANDIDATES = 40
+DREAM_WINDOW_HOURS = 48
 
 
 def _created_value(meta: dict) -> str:
     return meta.get("created_at") or meta.get("created", "")
 
 
+def _created_datetime(meta: dict) -> datetime | None:
+    """Read created_at first, falling back to legacy created metadata."""
+    for key in ("created_at", "created"):
+        value = meta.get(key)
+        if not value:
+            continue
+        try:
+            return parse_iso_datetime(value)
+        except (ValueError, TypeError, OSError):
+            continue
+    return None
+
+
 def _timestamp(value: str) -> float:
     try:
         return parse_iso_datetime(value).timestamp()
     except (ValueError, TypeError, OSError):
+        return 0.0
+
+
+def _created_timestamp(meta: dict) -> float:
+    created = _created_datetime(meta)
+    if created is None:
+        return 0.0
+    try:
+        return created.timestamp()
+    except (ValueError, OSError):
         return 0.0
 
 
@@ -65,24 +89,14 @@ def collect_core_context(all_buckets: list) -> list:
     return core[:20]
 
 
-def previous_day(reference_time: datetime | None = None) -> str:
-    """Return yesterday in the service's local calendar."""
-    reference = (
-        parse_iso_datetime(reference_time)
-        if reference_time is not None
-        else datetime.now()
-    )
-    return (reference.date() - timedelta(days=1)).isoformat()
-
-
 def collect_candidates(
     all_buckets: list,
     window_hours: int | None = None,
     *,
     reference_time: datetime | None = None,
 ) -> list:
-    # window_hours stays in the Python surface for old callers, but the new
-    # contract deliberately uses the previous local calendar day only.
+    # window_hours stays in the Python surface for old callers, but the
+    # contract deliberately fixes the window at a rolling 48 hours.
     del window_hours
     candidates = [
         b for b in all_buckets
@@ -91,17 +105,20 @@ def collect_candidates(
         and not b["metadata"].get("protected", False)
         and not b["metadata"].get("dont_surface", False)
     ]
-    target_date = previous_day(reference_time)
+    reference = (
+        parse_iso_datetime(reference_time)
+        if reference_time is not None
+        else datetime.now()
+    )
+    cutoff = reference - timedelta(hours=DREAM_WINDOW_HOURS)
 
-    def _created_on_target_date(meta: dict) -> bool:
-        try:
-            return parse_iso_datetime(_created_value(meta)).date().isoformat() == target_date
-        except (ValueError, TypeError):
-            return False
-
-    recent = [b for b in candidates if _created_on_target_date(b["metadata"])]
+    recent = []
+    for bucket in candidates:
+        created = _created_datetime(bucket["metadata"])
+        if created is not None and cutoff <= created <= reference:
+            recent.append(bucket)
     recent.sort(
-        key=lambda b: _timestamp(_created_value(b["metadata"])),
+        key=lambda b: _created_timestamp(b["metadata"]),
         reverse=True,
     )
     if len(recent) > DREAM_MAX_CANDIDATES:

@@ -211,10 +211,10 @@ def _bucket_data_block(
 def format_dream_catalog(recent: list, target_date: str) -> str:
     """Explicit directory mode; never include bucket bodies."""
     if not recent:
-        return f"{target_date} 没有新创建的记忆桶。"
+        return f"{target_date}没有新创建的记忆桶。"
 
     lines = [
-        f"=== Dreaming · {target_date} 新建记忆目录（{len(recent)} 个桶）===",
+        f"=== Dreaming · {target_date}新建记忆目录（{len(recent)} 个桶）===",
         "bucket_id | 名称 | 域 | 重要度 | last_active",
     ]
     for bucket in recent:
@@ -285,7 +285,7 @@ def format_dream_output(
         )
 
     header_label = (
-        f"{target_date} 新建记忆"
+        f"{target_date}新建记忆"
         if target_date
         else f"过去 {window_hours} 小时全量记忆"
     )
