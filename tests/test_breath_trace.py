@@ -50,7 +50,11 @@ class FakeMCP:
 
 
 class FakeBucketManager:
+    def __init__(self):
+        self.list_calls = 0
+
     async def list_all(self, include_archive=False):
+        self.list_calls += 1
         return [
             {"id": "core-one", "metadata": {"name": "核心一"}},
             {"id": "dynamic-one", "metadata": {"name": "动态一"}},
@@ -154,8 +158,16 @@ async def test_authenticated_web_list_enriches_bucket_names(monkeypatch):
         max_tokens=1000,
         run_id="route-run",
     )
+    record_surface_output(
+        SAMPLE_OUTPUT,
+        kind="actual",
+        max_results=20,
+        max_tokens=1000,
+        run_id="route-run-two",
+    )
+    manager = FakeBucketManager()
     monkeypatch.setattr(breath_trace.sh, "_require_auth", lambda request: None)
-    monkeypatch.setattr(breath_trace.sh, "bucket_mgr", FakeBucketManager())
+    monkeypatch.setattr(breath_trace.sh, "bucket_mgr", manager)
     mcp = FakeMCP()
     breath_trace.register(mcp)
 
@@ -164,8 +176,10 @@ async def test_authenticated_web_list_enriches_bucket_names(monkeypatch):
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
+    assert len(payload["runs"]) == 2
     assert payload["runs"][0]["entries"][0]["name"] == "核心一"
     assert "output" not in payload["runs"][0]
+    assert manager.list_calls == 1
 
 
 def test_dashboard_contract_separates_actual_trace_from_score_debug():

@@ -59,6 +59,10 @@ _USED_RE = re.compile(r"当前约使用\s*(\d+)\s*/\s*(\d+)\s*token")
 def _parse_entries(output: str) -> list[dict]:
     """Recover the exact returned bucket order from the rendered payload."""
 
+    # MAINTENANCE COUPLING: this adapter parses the human-readable envelope
+    # emitted by surface.py.  If its section headings, bucket markers, weight
+    # label, or budget notice change, update these patterns and the cross-section
+    # parser contract in tests/test_breath_trace.py together.
     entries: list[dict] = []
     section = "unknown"
     text = str(output or "")

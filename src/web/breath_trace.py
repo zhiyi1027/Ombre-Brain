@@ -10,18 +10,24 @@ from tools.breath.trace import get_run, list_runs
 from . import _shared as sh
 
 
-async def _with_bucket_names(record: dict | None) -> dict | None:
-    if record is None:
-        return None
+async def _load_bucket_names() -> dict[str, str]:
     try:
         buckets = await sh.bucket_mgr.list_all(include_archive=False)
-        names = {
+        return {
             bucket.get("id", ""): (bucket.get("metadata") or {}).get("name")
             or bucket.get("id", "")
             for bucket in buckets
         }
     except Exception:
-        names = {}
+        return {}
+
+
+def _with_bucket_names(
+    record: dict | None,
+    names: dict[str, str],
+) -> dict | None:
+    if record is None:
+        return None
     for entry in record.get("entries") or []:
         bucket_id = entry.get("bucket_id", "")
         entry["name"] = names.get(bucket_id, bucket_id)
@@ -46,10 +52,11 @@ def register(mcp) -> None:
             return err
         run_id = str(request.query_params.get("run_id", "") or "").strip()
         if run_id:
-            row = await _with_bucket_names(get_run(run_id))
+            row = get_run(run_id)
             if row is None:
                 return _no_store_json({"error": "breath run not found"}, status_code=404)
-            return _no_store_json(row)
+            names = await _load_bucket_names()
+            return _no_store_json(_with_bucket_names(row, names))
 
         try:
             limit = max(1, min(int(request.query_params.get("limit", "20")), 50))
@@ -57,9 +64,8 @@ def register(mcp) -> None:
             return _no_store_json({"error": "limit must be an integer in [1,50]"}, status_code=400)
         kind = str(request.query_params.get("kind", "") or "").strip()
         rows = list_runs(limit=limit, kind=kind)
-        enriched = []
-        for row in rows:
-            enriched.append(await _with_bucket_names(row))
+        names = await _load_bucket_names() if rows else {}
+        enriched = [_with_bucket_names(row, names) for row in rows]
         return _no_store_json({"runs": enriched})
 
     @mcp.custom_route("/api/breath-simulate", methods=["POST"])
@@ -68,7 +74,9 @@ def register(mcp) -> None:
         if err:
             return err
         try:
-            row = await _with_bucket_names(await simulate_default_surface())
+            row = await simulate_default_surface()
+            names = await _load_bucket_names()
+            row = _with_bucket_names(row, names)
             return _no_store_json(row or {})
         except Exception as exc:
             sh.logger.exception("Exact breath simulation failed")
