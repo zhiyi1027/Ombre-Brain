@@ -21,6 +21,7 @@ from . import dashboard
 from . import system
 from . import meta
 from . import search
+from . import breath_trace
 from . import plans
 from . import letters
 from . import hooks
@@ -42,6 +43,7 @@ _WEB_MODULES = (
     ("web.system", system.register),
     ("web.meta", meta.register),
     ("web.search", search.register),
+    ("web.breath_trace", breath_trace.register),
     ("web.plans", plans.register),
     ("web.letters", letters.register),
     ("web.hooks", hooks.register),

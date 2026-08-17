@@ -37,6 +37,10 @@ def register(mcp) -> None:
             # without manual hard-refresh after upgrade. 只动字面量 /static/*.svg URL。
             for asset in ("/static/icon.svg", "/static/favicon.svg"):
                 html = html.replace(asset, f"{asset}?v={sh.version}")
+            # Keep the large single-file Dashboard stable while loading the
+            # independently testable breath trace panel as a cache-busted asset.
+            trace_script = f'<script src="/static/breath-trace.js?v={sh.version}"></script>'
+            html = html.replace("</body>", trace_script + "\n</body>")
             # 别让浏览器缓存仪表板 HTML：否则改了 dashboard.html 重新下发后，
             # 用户看到的还是旧版面（U-09 只 cache-bust 了 SVG，HTML 本身没设）。
             # HTML 很小、又是每次从磁盘读，禁缓存代价可忽略，省掉「为什么改了没生效」。
@@ -69,6 +73,7 @@ def register(mcp) -> None:
             "favicon.svg": "image/svg+xml",
             "manifest.json": "application/manifest+json",
             "RRPL.ttf": "font/truetype",
+            "breath-trace.js": "text/javascript",
         }
         if name not in allowed:
             return JSONResponse({"error": "not found"}, status_code=404)
