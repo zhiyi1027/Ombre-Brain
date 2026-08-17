@@ -159,10 +159,15 @@ matching:
   max_results: 5                  # Max results per search / 单次搜索最多返回条数
 
 # --- Surfacing defaults / 浮现默认参数 ---
-# Defaults applied when the AI calls breath() without explicit caps.
-# Front-end Settings panel writes the same fields back here.
-# AI 调用 breath() 不显式传 max_* 时使用这些默认；前端「浮现默认参数」面板会回写到这里。
+# Separate lightweight startup caps from larger manual full-surface caps.
+# Front-end Settings writes the same fields back here.
+# 无参睁眼与手动完整浮现使用两套预算；前端「浮现默认参数」面板会回写到这里。
 surfacing:
+  # Zero-argument breath() is the lightweight new-window handoff. Core buckets
+  # are index-only here; selected dynamic buckets still return verbatim bodies.
+  startup_breath_max_results: 4   # 1-12, dynamic buckets in lightweight startup breath
+  startup_breath_max_tokens: 3000 # 500-8000, hard cap for the complete startup envelope
+  # breath_advanced() and explicit search keep the larger manual-read defaults.
   breath_max_results: 20          # 1-50, hard cap of buckets returned per breath
   breath_max_tokens: 10000        # 500-20000, total token cap per breath
   feel_max_tokens: 6000           # 500-20000, full-text budget for feel history; older feels collapse to one-line summaries

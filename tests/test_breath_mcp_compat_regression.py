@@ -118,6 +118,7 @@ async def test_parameter_free_breath_still_dispatches_with_all_defaults(monkeypa
         "importance_min": -1,
         "tags": "",
         "catalog": False,
+        "startup": True,
     }
 
 

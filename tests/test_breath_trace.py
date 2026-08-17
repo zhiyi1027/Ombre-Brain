@@ -30,6 +30,16 @@ SAMPLE_OUTPUT = """=== 核心准则 ===
 
 token 预算不足：有 3 条主要浮现记忆因放不下剩余预算而未返回；已返回正文均保持完整，未截断或摘要。当前约使用 987/1000 token，如需被省略的整桶请提高 max_tokens 后重试。"""
 
+STARTUP_OUTPUT = """=== 轻量睁眼 ===
+核心准则只列索引；需要正文时用 breath_search(query=\"核心名称\")。
+
+=== 核心索引（正文按需读取） ===
+📌 [核心索引] [bucket_id:core-one] 核心一 | relationship | importance:10
+
+=== 浮现记忆 ===
+[权重:0.80] [bucket_id:dynamic-one]
+动态正文"""
+
 
 class NoopDecay:
     async def ensure_started(self):
@@ -101,10 +111,34 @@ def test_trace_preserves_order_across_sections_and_exact_output():
     assert "output" not in list_runs(limit=1)[0]
 
 
+def test_trace_understands_lightweight_core_index_without_calling_it_body():
+    row = record_surface_output(
+        STARTUP_OUTPUT,
+        kind="actual",
+        mode="startup",
+        max_results=4,
+        max_tokens=3000,
+        run_id="startup-run",
+    )
+
+    assert row["mode"] == "startup"
+    assert [entry["section"] for entry in row["entries"]] == [
+        "core_index",
+        "dynamic",
+    ]
+    assert row["entries"][0]["reason"] == "core_index_only"
+    assert row["output"] == STARTUP_OUTPUT
+
+
 @pytest.mark.asyncio
 async def test_dispatch_records_the_exact_default_breath_without_changing_it(monkeypatch):
     async def fake_surface_default(**kwargs):
-        assert kwargs == {"max_results": 12, "max_tokens": 1000, "tag_filter": []}
+        assert kwargs == {
+            "max_results": 12,
+            "max_tokens": 1000,
+            "tag_filter": [],
+            "startup": False,
+        }
         return SAMPLE_OUTPUT
 
     monkeypatch.setattr(breath_module, "surface_default", fake_surface_default)
@@ -139,13 +173,28 @@ async def test_exact_simulation_reuses_default_surface_and_is_labeled(monkeypatc
     monkeypatch.setattr(
         rt,
         "config",
-        {"surfacing": {"breath_max_results": 9, "breath_max_tokens": 1000}},
+        {
+            "surfacing": {
+                "startup_breath_max_results": 3,
+                "startup_breath_max_tokens": 1500,
+                "breath_max_results": 9,
+                "breath_max_tokens": 1000,
+            }
+        },
     )
 
     row = await breath_module.simulate_default_surface()
 
-    assert calls == [{"max_results": 9, "max_tokens": 1000, "tag_filter": []}]
+    assert calls == [
+        {
+            "max_results": 3,
+            "max_tokens": 1500,
+            "tag_filter": [],
+            "startup": True,
+        }
+    ]
     assert row["kind"] == "simulation"
+    assert row["mode"] == "startup"
     assert row["output"] == SAMPLE_OUTPUT
 
 

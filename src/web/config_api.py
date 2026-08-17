@@ -240,6 +240,8 @@ def register(mcp) -> None:
                 ],
             },
             "surfacing": {
+                "startup_breath_max_results": int(sh.config.get("surfacing", {}).get("startup_breath_max_results") or 4),
+                "startup_breath_max_tokens": int(sh.config.get("surfacing", {}).get("startup_breath_max_tokens") or 3000),
                 "breath_max_results": int(sh.config.get("surfacing", {}).get("breath_max_results") or 20),
                 "breath_max_tokens": int(sh.config.get("surfacing", {}).get("breath_max_tokens") or 10000),
                 "feel_max_tokens": int(sh.config.get("surfacing", {}).get("feel_max_tokens") or 6000),
@@ -517,6 +519,8 @@ def register(mcp) -> None:
         if "surfacing" in body and isinstance(body["surfacing"], dict):
             sf = sh.config.setdefault("surfacing", {})
             for key, lo, hi in (
+                ("startup_breath_max_results", 1, 12),
+                ("startup_breath_max_tokens", 500, 8000),
                 ("breath_max_results", 1, 50),
                 ("breath_max_tokens", 500, 20000),
                 ("feel_max_tokens", 500, 20000),
@@ -588,7 +592,13 @@ def register(mcp) -> None:
                     if not isinstance(sc_sf, dict):
                         sc_sf = {}
                         save_config["surfacing"] = sc_sf
-                    for key in ("breath_max_results", "breath_max_tokens", "feel_max_tokens"):
+                    for key in (
+                        "startup_breath_max_results",
+                        "startup_breath_max_tokens",
+                        "breath_max_results",
+                        "breath_max_tokens",
+                        "feel_max_tokens",
+                    ):
                         if key in body["surfacing"]:
                             try:
                                 sc_sf[key] = int(body["surfacing"][key])

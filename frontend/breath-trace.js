@@ -11,6 +11,7 @@
   function reasonLabel(value) {
     return ({
       core_always_surface: '核心准则',
+      core_index_only: '核心索引（无正文）',
       default_surface_order: '真实浮现顺序',
       long_inactive_association: '久未浮现',
       resolved_random_encounter: '偶然想起'
@@ -18,7 +19,7 @@
   }
 
   function sectionLabel(value) {
-    return ({core: '核心', dynamic: '动态', passive: '久未浮现', encounter: '偶遇'})[value] || value || '其它';
+    return ({core: '核心', core_index: '核心索引', dynamic: '动态', passive: '久未浮现', encounter: '偶遇'})[value] || value || '其它';
   }
 
   function runHtml(run) {
@@ -26,7 +27,9 @@
     var counts = run.counts || {};
     var limits = run.limits || {};
     var when = run.completed_at ? new Date(run.completed_at).toLocaleString() : '—';
-    var kind = run.kind === 'simulation' ? '同算法试跑' : '真实 MCP breath';
+    var kind = run.kind === 'simulation'
+      ? '轻量睁眼同算法试跑'
+      : (run.mode === 'startup' ? '真实轻量 MCP breath' : '真实完整 MCP breath');
     var entries = (run.entries || []).map(function (entry, index) {
       return '<div class="breath-trace-entry">' +
         '<span class="breath-trace-rank">' + (index + 1) + '</span>' +
@@ -136,8 +139,8 @@
     var grid = document.createElement('div');
     grid.id = 'breath-actual-section';
     grid.className = 'breath-trace-grid';
-    grid.innerHTML = '<section class="breath-trace-card"><h3>最近一次真实 Breath</h3><div class="breath-trace-note">这里记录 MCP 无参 breath 真正送进模型上下文的桶、顺序和完整正文，不是评分推测。</div><div class="breath-trace-actions"><button id="breath-refresh-actual">刷新真实记录</button><div id="breath-actual-runs" class="breath-trace-runs"></div></div><div id="breath-actual-detail"></div></section>' +
-      '<section class="breath-trace-card"><h3>同算法试跑</h3><div class="breath-trace-note">直接复用真实无参 breath 代码。它展示“一次可能的下一次结果”；存在随机采样时，之后的真实调用仍可能不同。</div><div class="breath-trace-actions"><button id="breath-simulate-exact">试跑一次真实算法</button></div><div id="breath-simulation-detail" class="breath-trace-empty">尚未试跑。</div></section>';
+    grid.innerHTML = '<section class="breath-trace-card"><h3>最近一次真实 Breath</h3><div class="breath-trace-note">这里记录 MCP 无参轻量 breath 真正送进模型上下文的核心索引、动态原文、顺序和完整输出，不是评分推测。核心正文需要时再按名称检索。</div><div class="breath-trace-actions"><button id="breath-refresh-actual">刷新真实记录</button><div id="breath-actual-runs" class="breath-trace-runs"></div></div><div id="breath-actual-detail"></div></section>' +
+      '<section class="breath-trace-card"><h3>轻量睁眼同算法试跑</h3><div class="breath-trace-note">直接复用真实无参轻量 breath 代码。它展示“一次可能的下一次结果”；存在随机采样时，之后的真实调用仍可能不同。</div><div class="breath-trace-actions"><button id="breath-simulate-exact">试跑一次轻量睁眼</button></div><div id="breath-simulation-detail" class="breath-trace-empty">尚未试跑。</div></section>';
     view.insertBefore(grid, view.firstChild);
 
     var debug = document.createElement('section');
