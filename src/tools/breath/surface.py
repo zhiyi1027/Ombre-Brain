@@ -19,7 +19,7 @@ tools/breath/surface.py — 无 query 浮现模式
 - 不返回 feel / plan / letter / archived（专用通道有自己的入口）
 - 不做关键词检索（那是 search.py 的事）
 
-对外暴露：surface_default(max_results, max_tokens, tag_filter) → str
+对外暴露：surface_default(max_results, max_tokens, tag_filter, startup=False) → str
 ========================================
 """
 
@@ -29,7 +29,7 @@ from datetime import datetime, timedelta
 
 from ombrebrain.policy.surfacing import SurfacePolicyVM
 from .. import _runtime as rt
-from utils import parse_bool, parse_iso_datetime
+from utils import count_tokens_approx, parse_bool, parse_iso_datetime
 from ._verbatim import render_stored_bucket
 
 # U-07 fix: throttle the sampling-fallback INFO log to once per 5 minutes.
@@ -38,6 +38,7 @@ from ._verbatim import render_stored_bucket
 _FALLBACK_LOG_INTERVAL_SEC = 300
 _fallback_log_state = {"last_ts": 0.0, "suppressed": 0}
 _SURFACE_POLICY = SurfacePolicyVM.default()
+_STARTUP_ENVELOPE_RESERVE = 160
 _BUDGET_NOTICE = (
     "token 预算不足：有 {omitted} 条主要浮现记忆因放不下剩余预算而未返回；"
     "已返回正文均保持完整，未截断或摘要。"
@@ -60,7 +61,31 @@ def _budget_notice(*, omitted: int, used: int, limit: int) -> str:
     return _BUDGET_NOTICE.format(omitted=omitted, used=used, limit=limit)
 
 
-async def surface_default(max_results: int, max_tokens: int, tag_filter: list) -> str:
+def _render_startup_core_index(bucket: dict) -> tuple[str, int]:
+    """Render one compact core pointer without injecting its stored body."""
+
+    meta = bucket.get("metadata") or {}
+    bucket_id = str(bucket.get("id") or "")
+    name = str(meta.get("name") or bucket_id)
+    domains = meta.get("domain") or []
+    if isinstance(domains, str):
+        domains = [domains]
+    domain_text = ",".join(str(item) for item in domains if str(item).strip()) or "未分类"
+    importance = int(meta.get("importance") or 0)
+    rendered = (
+        f"📌 [核心索引] [bucket_id:{bucket_id}] "
+        f"{name} | {domain_text} | importance:{importance}"
+    )
+    return rendered, count_tokens_approx(rendered)
+
+
+async def surface_default(
+    max_results: int,
+    max_tokens: int,
+    tag_filter: list,
+    *,
+    startup: bool = False,
+) -> str:
     try:
         all_buckets = await rt.bucket_mgr.list_all(include_archive=False)
     except Exception as e:
@@ -85,14 +110,21 @@ async def surface_default(max_results: int, max_tokens: int, tag_filter: list) -
     ]
     pinned_ids = {b["id"] for b in pinned_buckets}
     pinned_results = []
-    token_budget = max_tokens
+    entry_budget = max(
+        0,
+        max_tokens - (_STARTUP_ENVELOPE_RESERVE if startup else 0),
+    )
+    token_budget = entry_budget
     primary_omitted = 0
     for b in pinned_buckets:
         try:
-            rendered, entry_tokens = render_stored_bucket(
-                b,
-                f"📌 [核心准则] [bucket_id:{b['id']}]",
-            )
+            if startup:
+                rendered, entry_tokens = _render_startup_core_index(b)
+            else:
+                rendered, entry_tokens = render_stored_bucket(
+                    b,
+                    f"📌 [核心准则] [bucket_id:{b['id']}]",
+                )
             if entry_tokens > token_budget:
                 primary_omitted += 1
                 continue
@@ -237,7 +269,7 @@ async def surface_default(max_results: int, max_tokens: int, tag_filter: list) -
         if primary_omitted:
             return _budget_notice(
                 omitted=primary_omitted,
-                used=max_tokens - token_budget,
+                used=entry_budget - token_budget,
                 limit=max_tokens,
             )
         if rt.mark_op:
@@ -281,7 +313,7 @@ async def surface_default(max_results: int, max_tokens: int, tag_filter: list) -
                     cond_b = False
             if cond_a or cond_b:
                 passive_pool.append(b)
-        if passive_pool and not primary_omitted:
+        if passive_pool and not primary_omitted and not startup:
             random.shuffle(passive_pool)
             for b in passive_pool[:2]:
                 try:
@@ -302,7 +334,7 @@ async def surface_default(max_results: int, max_tokens: int, tag_filter: list) -
     # 设计意图：让已解决的记忆有小概率重新出现，制造"忽然想起"的温度。
     # 与无结果兜底逻辑并存；不替换主流程。
     dream_results: list[str] = []
-    if not primary_omitted and random.random() < 0.03:
+    if not startup and not primary_omitted and random.random() < 0.03:
         try:
             shown_ids = {b["id"] for b in candidates}
             resolved_pool = [
@@ -331,21 +363,44 @@ async def surface_default(max_results: int, max_tokens: int, tag_filter: list) -
         except Exception as e:
             rt.logger.warning(f"Dream surface block failed / 偶遇模块异常: {e}")
 
-    parts = []
-    if pinned_results:
-        parts.append("=== 核心准则 ===\n" + "\n---\n".join(pinned_results))
-    if dynamic_results:
-        parts.append("=== 浮现记忆 ===\n" + "\n---\n".join(dynamic_results))
-    if passive_results:
-        parts.append("=== 久未浮现 ===\n" + "\n---\n".join(passive_results))
-    if dream_results:
-        parts.append("=== 偶然想起 ===\n" + "\n---\n".join(dream_results))
-    if primary_omitted:
-        parts.append(
-            _budget_notice(
-                omitted=primary_omitted,
-                used=max_tokens - token_budget,
-                limit=max_tokens,
+    def compose_output() -> str:
+        parts = []
+        if startup:
+            parts.append(
+                "=== 轻量睁眼 ===\n"
+                "核心准则只列索引；需要正文时用 breath_search(query=\"核心名称\")。"
             )
-        )
-    return "\n\n".join(parts)
+        if pinned_results:
+            core_title = "=== 核心索引（正文按需读取） ===" if startup else "=== 核心准则 ==="
+            parts.append(core_title + "\n" + "\n---\n".join(pinned_results))
+        if dynamic_results:
+            parts.append("=== 浮现记忆 ===\n" + "\n---\n".join(dynamic_results))
+        if passive_results:
+            parts.append("=== 久未浮现 ===\n" + "\n---\n".join(passive_results))
+        if dream_results:
+            parts.append("=== 偶然想起 ===\n" + "\n---\n".join(dream_results))
+        if primary_omitted:
+            content = "\n\n".join(parts)
+            used = count_tokens_approx(content) if startup else max_tokens - token_budget
+            parts.append(
+                _budget_notice(
+                    omitted=primary_omitted,
+                    used=used,
+                    limit=max_tokens,
+                )
+            )
+        return "\n\n".join(parts)
+
+    output = compose_output()
+    if startup:
+        # The startup cap applies to the complete rendered envelope, not only
+        # bucket bodies. Never truncate a stored body: remove whole entries.
+        while count_tokens_approx(output) > max_tokens and dynamic_results:
+            dynamic_results.pop()
+            primary_omitted += 1
+            output = compose_output()
+        while count_tokens_approx(output) > max_tokens and pinned_results:
+            pinned_results.pop()
+            primary_omitted += 1
+            output = compose_output()
+    return output

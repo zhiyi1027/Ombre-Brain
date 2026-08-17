@@ -46,6 +46,7 @@ def record_run(record: dict) -> dict:
 
 _SECTION_HEADERS = {
     "=== 核心准则 ===": "core",
+    "=== 核心索引（正文按需读取） ===": "core_index",
     "=== 浮现记忆 ===": "dynamic",
     "=== 久未浮现 ===": "passive",
     "=== 偶然想起 ===": "encounter",
@@ -78,6 +79,7 @@ def _parse_entries(output: str) -> list[dict]:
             continue
         is_bucket_header = (
             (section == "core" and stripped.startswith("📌 [核心准则]"))
+            or (section == "core_index" and stripped.startswith("📌 [核心索引]"))
             or (
                 section == "dynamic"
                 and stripped.startswith(("[权重:", "💭 [权重:"))
@@ -102,6 +104,7 @@ def _parse_entries(output: str) -> list[dict]:
             "status": "returned",
             "reason": {
                 "core": "core_always_surface",
+                "core_index": "core_index_only",
                 "dynamic": "default_surface_order",
                 "passive": "long_inactive_association",
                 "encounter": "resolved_random_encounter",
@@ -140,6 +143,7 @@ def record_surface_output(
     max_results: int,
     max_tokens: int,
     run_id: str | None = None,
+    mode: str = "full",
 ) -> dict:
     """Record one exact default-surface payload without rerunning selection."""
 
@@ -157,6 +161,7 @@ def record_surface_output(
     return record_run({
         "run_id": run_id or new_run_id(),
         "kind": str(kind or "actual"),
+        "mode": str(mode or "full"),
         "started_at": utc_now_iso(),
         "completed_at": utc_now_iso(),
         "limits": {
