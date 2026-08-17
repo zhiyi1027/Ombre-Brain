@@ -36,6 +36,7 @@ from .feel import surface_feels
 from .importance import surface_by_importance
 from .surface import surface_default
 from .search import surface_search
+from .trace import get_run, new_run_id, record_surface_output
 
 
 async def dispatch(
@@ -125,11 +126,18 @@ async def dispatch(
 
     # --- 无 query：浮现模式 ---
     if not query or not query.strip():
-        return await surface_default(
+        output = await surface_default(
             max_results=max_results,
             max_tokens=max_tokens,
             tag_filter=tag_filter,
         )
+        record_surface_output(
+            output,
+            kind="actual",
+            max_results=max_results,
+            max_tokens=max_tokens,
+        )
+        return output
 
     # --- 有 query：检索模式 ---
     return await surface_search(
@@ -141,3 +149,37 @@ async def dispatch(
         arousal=arousal,
         tag_filter=tag_filter,
     )
+
+
+async def simulate_default_surface() -> dict:
+    """Run the exact default breath algorithm without injecting its output.
+
+    Default surfacing deliberately does not touch bucket activation state, so a
+    Dashboard dry run can safely reuse the same function rather than maintaining
+    a second, misleading approximation.
+    """
+
+    await rt.decay_engine.ensure_started()
+    surfacing_cfg = rt.config.get("surfacing", {}) or {}
+    max_results = min(
+        int(surfacing_cfg.get("breath_max_results") or 20),
+        50,
+    )
+    max_tokens = min(
+        int(surfacing_cfg.get("breath_max_tokens") or 10000),
+        20000,
+    )
+    output = await surface_default(
+        max_results=max_results,
+        max_tokens=max_tokens,
+        tag_filter=[],
+    )
+    run_id = new_run_id()
+    record_surface_output(
+        output,
+        kind="simulation",
+        max_results=max_results,
+        max_tokens=max_tokens,
+        run_id=run_id,
+    )
+    return get_run(run_id) or {}

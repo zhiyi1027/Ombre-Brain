@@ -1,0 +1,183 @@
+import json
+
+import pytest
+
+import tools._runtime as rt
+import tools.breath as breath_module
+from tools.breath.trace import (
+    clear_runs_for_tests,
+    get_run,
+    list_runs,
+    record_surface_output,
+)
+from web import breath_trace
+
+
+SAMPLE_OUTPUT = """=== 核心准则 ===
+📌 [核心准则] [bucket_id:core-one]
+核心一正文里即使提到 [bucket_id:not-a-returned-bucket] 也不是新桶
+---
+📌 [核心准则] [bucket_id:core-two]
+核心二正文
+
+=== 浮现记忆 ===
+💭 [权重:0.812] [bucket_id:dynamic-one]
+动态正文
+
+=== 久未浮现 ===
+🌙 [久未浮现] [bucket_id:passive-one]
+被动正文
+
+token 预算不足：有 3 条主要浮现记忆因放不下剩余预算而未返回；已返回正文均保持完整，未截断或摘要。当前约使用 987/1000 token，如需被省略的整桶请提高 max_tokens 后重试。"""
+
+
+class NoopDecay:
+    async def ensure_started(self):
+        return None
+
+
+class FakeMCP:
+    def __init__(self):
+        self.routes = {}
+
+    def custom_route(self, path, methods):
+        def decorator(fn):
+            for method in methods:
+                self.routes[(method, path)] = fn
+            return fn
+
+        return decorator
+
+
+class FakeBucketManager:
+    async def list_all(self, include_archive=False):
+        return [
+            {"id": "core-one", "metadata": {"name": "核心一"}},
+            {"id": "dynamic-one", "metadata": {"name": "动态一"}},
+        ]
+
+
+class FakeRequest:
+    query_params = {"kind": "actual", "limit": "10"}
+
+
+@pytest.fixture(autouse=True)
+def isolated_trace():
+    clear_runs_for_tests()
+    yield
+    clear_runs_for_tests()
+
+
+def test_trace_preserves_order_across_sections_and_exact_output():
+    row = record_surface_output(
+        SAMPLE_OUTPUT,
+        kind="actual",
+        max_results=20,
+        max_tokens=1000,
+        run_id="known-run",
+    )
+
+    assert [entry["bucket_id"] for entry in row["entries"]] == [
+        "core-one",
+        "core-two",
+        "dynamic-one",
+        "passive-one",
+    ]
+    assert [entry["section"] for entry in row["entries"]] == [
+        "core",
+        "core",
+        "dynamic",
+        "passive",
+    ]
+    assert row["counts"] == {"returned": 4, "omitted_budget": 3}
+    assert row["budgeted_entry_tokens"] == 987
+    assert row["limits"]["max_tokens"] == 1000
+    assert row["output"] == SAMPLE_OUTPUT
+    assert get_run("known-run")["output"] == SAMPLE_OUTPUT
+    assert "output" not in list_runs(limit=1)[0]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_records_the_exact_default_breath_without_changing_it(monkeypatch):
+    async def fake_surface_default(**kwargs):
+        assert kwargs == {"max_results": 12, "max_tokens": 1000, "tag_filter": []}
+        return SAMPLE_OUTPUT
+
+    monkeypatch.setattr(breath_module, "surface_default", fake_surface_default)
+    monkeypatch.setattr(rt, "decay_engine", NoopDecay())
+    monkeypatch.setattr(
+        rt,
+        "config",
+        {"surfacing": {"breath_max_results": 12, "breath_max_tokens": 1000}},
+    )
+    monkeypatch.setattr(rt, "mark_op", None)
+    monkeypatch.setattr(rt, "record_v3_tool_event", lambda *args, **kwargs: None)
+
+    output = await breath_module.dispatch()
+
+    assert output == SAMPLE_OUTPUT
+    runs = list_runs(limit=10, kind="actual")
+    assert len(runs) == 1
+    assert runs[0]["counts"]["returned"] == 4
+    assert get_run(runs[0]["run_id"])["output"] == SAMPLE_OUTPUT
+
+
+@pytest.mark.asyncio
+async def test_exact_simulation_reuses_default_surface_and_is_labeled(monkeypatch):
+    calls = []
+
+    async def fake_surface_default(**kwargs):
+        calls.append(kwargs)
+        return SAMPLE_OUTPUT
+
+    monkeypatch.setattr(breath_module, "surface_default", fake_surface_default)
+    monkeypatch.setattr(rt, "decay_engine", NoopDecay())
+    monkeypatch.setattr(
+        rt,
+        "config",
+        {"surfacing": {"breath_max_results": 9, "breath_max_tokens": 1000}},
+    )
+
+    row = await breath_module.simulate_default_surface()
+
+    assert calls == [{"max_results": 9, "max_tokens": 1000, "tag_filter": []}]
+    assert row["kind"] == "simulation"
+    assert row["output"] == SAMPLE_OUTPUT
+
+
+@pytest.mark.asyncio
+async def test_authenticated_web_list_enriches_bucket_names(monkeypatch):
+    record_surface_output(
+        SAMPLE_OUTPUT,
+        kind="actual",
+        max_results=20,
+        max_tokens=1000,
+        run_id="route-run",
+    )
+    monkeypatch.setattr(breath_trace.sh, "_require_auth", lambda request: None)
+    monkeypatch.setattr(breath_trace.sh, "bucket_mgr", FakeBucketManager())
+    mcp = FakeMCP()
+    breath_trace.register(mcp)
+
+    response = await mcp.routes[("GET", "/api/breath-runs")](FakeRequest())
+    payload = json.loads(response.body.decode("utf-8"))
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert payload["runs"][0]["entries"][0]["name"] == "核心一"
+    assert "output" not in payload["runs"][0]
+
+
+def test_dashboard_contract_separates_actual_trace_from_score_debug():
+    dashboard_module = open("src/web/dashboard.py", encoding="utf-8").read()
+    web_init = open("src/web/__init__.py", encoding="utf-8").read()
+    script = open("frontend/breath-trace.js", encoding="utf-8").read()
+
+    assert 'breath-trace.js?v={sh.version}' in dashboard_module
+    assert '"breath-trace.js": "text/javascript"' in dashboard_module
+    assert '("web.breath_trace", breath_trace.register)' in web_init
+    assert "/api/breath-runs?kind=actual" in script
+    assert "/api/breath-simulate" in script
+    assert "最近一次真实 Breath" in script
+    assert "四维评分调试" in script
+    assert "不代表真实无参 breath 返回顺序" in script
