@@ -137,8 +137,11 @@ async def test_dream_catalog_is_explicit_and_omits_body(monkeypatch):
 
     output = await dispatch(catalog=True)
 
-    assert "bucket_id | 名称 | 域 | 重要度 | resolved | digested | created" in output
-    assert "yesterday | 昨天的桶 | 恋爱 | 8 | true | false |" in output
+    assert (
+        "bucket_id | 名称 | 域 | 重要度 | last_active | resolved | digested | created"
+        in output
+    )
+    assert "yesterday | 昨天的桶 | 恋爱 | 8 | 2026-08-04T12:00:00 | true | false |" in output
     assert "yesterday 的完整正文" not in output
 
 
@@ -157,4 +160,7 @@ async def test_dream_catalog_parses_legacy_string_boolean_metadata(monkeypatch):
 
     output = await dispatch(catalog=True)
 
-    assert "legacy-flags | legacy-flags | 未分类 | 5 | false | true |" in output
+    assert (
+        "legacy-flags | legacy-flags | 未分类 | 5 | 2026-08-04T12:00:00 | "
+        "false | true |"
+    ) in output

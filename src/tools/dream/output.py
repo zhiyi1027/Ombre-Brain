@@ -214,13 +214,15 @@ def format_dream_catalog(recent: list, target_date: str) -> str:
     ``digested`` is read directly from the source bucket metadata.  Feel
     ``triggered_by`` links are recovery/audit evidence only; catalog rendering
     deliberately does not reverse-scan feels on the startup hot path.
+    Keep the legacy columns through ``last_active`` in their original order;
+    new metadata is append-only so positional consumers do not break.
     """
     if not recent:
         return f"{target_date}没有新创建的记忆桶。"
 
     lines = [
         f"=== Dreaming · {target_date}新建记忆目录（{len(recent)} 个桶）===",
-        "bucket_id | 名称 | 域 | 重要度 | resolved | digested | created",
+        "bucket_id | 名称 | 域 | 重要度 | last_active | resolved | digested | created",
     ]
     for bucket in recent:
         meta = bucket.get("metadata", {})
@@ -230,10 +232,12 @@ def format_dream_catalog(recent: list, target_date: str) -> str:
         domains = ",".join(str(domain) for domain in raw_domains) or "未分类"
         resolved = str(parse_bool(meta.get("resolved"), default=False)).lower()
         digested = str(parse_bool(meta.get("digested"), default=False)).lower()
+        last_active = meta.get("last_active") or ""
         created = meta.get("created_at") or meta.get("created") or ""
         lines.append(
             f"{bucket['id']} | {meta.get('name') or bucket['id']} | {domains} | "
-            f"{meta.get('importance', 0)} | {resolved} | {digested} | {created}"
+            f"{meta.get('importance', 0)} | {last_active} | {resolved} | "
+            f"{digested} | {created}"
         )
     return "\n".join(lines)
 
