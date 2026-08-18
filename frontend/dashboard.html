@@ -1977,6 +1977,10 @@
       </select>
     </label>
     <span class="bucket-sort-note" id="bucket-sort-note">按综合衰减分排列</span>
+    <button id="repair-digested-btn" type="button" onclick="repairDigestedMarkers()" title="根据 feel 的源记忆链接补回漏写的 digested 标记" style="margin-left:auto;height:30px;padding:0 11px;font-size:11px;display:inline-flex;align-items:center;gap:5px;">
+      <i data-lucide="wrench"></i> 修复消化标记
+    </button>
+    <span id="repair-digested-status" role="status" style="font-size:11px;color:var(--text-dim);"></span>
   </div>
   <div class="bucket-bulkbar">
     <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-dim);height:32px;"><input id="bucket-select-all" type="checkbox" onchange="selectAllCurrentPage(this.checked)" style="accent-color:var(--accent);cursor:pointer;"> 全选当前页</label>
@@ -4445,6 +4449,32 @@ async function loadBuckets() {
     if (generation !== bucketLoadGeneration || requestedSort !== bucketSort) return;
     document.getElementById('bucket-list').innerHTML = '<div class="loading">加载失败: ' + esc(e.message) + '</div>';
     if (window.ObPet) window.ObPet.react('connection_error');
+  }
+}
+
+async function repairDigestedMarkers() {
+  var btn = document.getElementById('repair-digested-btn');
+  var status = document.getElementById('repair-digested-status');
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = '正在查漏补缺…';
+  try {
+    var res = await fetch(BASE + '/api/buckets/repair-digested', { method: 'POST' });
+    var data = await readJsonSafe(res);
+    if (!res.ok || !data || !data.ok) {
+      throw new Error((data && data.error) || ('HTTP ' + res.status));
+    }
+    var missing = Array.isArray(data.missing_sources) ? data.missing_sources.length : 0;
+    var failed = Array.isArray(data.failed_sources) ? data.failed_sources.length : 0;
+    if (status) {
+      status.textContent = '扫描 ' + data.feels_scanned + ' 条 feel，补回 ' + data.repaired +
+        ' 个标记' + (missing ? '，' + missing + ' 个源已失效' : '') +
+        (failed ? '，' + failed + ' 个修复失败' : '');
+    }
+    await loadBuckets();
+  } catch (e) {
+    if (status) status.textContent = '修复失败：' + e.message;
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 

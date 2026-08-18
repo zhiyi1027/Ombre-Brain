@@ -86,6 +86,20 @@ async def rename_human_in_buckets(old: str, new: str) -> dict:
 
 def register(mcp) -> None:
 
+    @mcp.custom_route("/api/buckets/repair-digested", methods=["POST"])
+    async def api_repair_digested(request: Request) -> Response:
+        """Repair source digested flags from feel triggered_by links on demand."""
+        from starlette.responses import JSONResponse
+        err = sh._require_auth(request)
+        if err:
+            return err
+        try:
+            report = await sh.bucket_mgr.repair_digested_from_feels()
+            return JSONResponse({"ok": True, **report})
+        except Exception as e:
+            logger.exception("digested repair failed / 消化标记修复失败")
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
     @mcp.custom_route("/api/buckets", methods=["GET"])
     async def api_buckets(request: Request) -> Response:
         """List buckets, optionally ordered by their first-recorded time."""

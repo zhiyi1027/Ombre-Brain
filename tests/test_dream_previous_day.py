@@ -126,6 +126,8 @@ async def test_dream_catalog_is_explicit_and_omits_body(monkeypatch):
         name="昨天的桶",
         domain=["恋爱"],
         importance=8,
+        resolved=True,
+        digested=False,
     )
     monkeypatch.setattr(rt, "bucket_mgr", _StaticBucketManager(buckets))
     monkeypatch.setattr(rt, "decay_engine", _DummyDecay())
@@ -135,5 +137,30 @@ async def test_dream_catalog_is_explicit_and_omits_body(monkeypatch):
 
     output = await dispatch(catalog=True)
 
-    assert "yesterday | 昨天的桶 | 恋爱 | 8 |" in output
+    assert (
+        "bucket_id | 名称 | 域 | 重要度 | last_active | resolved | digested | created"
+        in output
+    )
+    assert "yesterday | 昨天的桶 | 恋爱 | 8 | 2026-08-04T12:00:00 | true | false |" in output
     assert "yesterday 的完整正文" not in output
+
+
+@pytest.mark.asyncio
+async def test_dream_catalog_parses_legacy_string_boolean_metadata(monkeypatch):
+    yesterday = datetime.now() - timedelta(days=1)
+    buckets = [_bucket("legacy-flags", yesterday.isoformat())]
+    buckets[0]["metadata"].update(
+        resolved="false",
+        digested="true",
+    )
+    monkeypatch.setattr(rt, "bucket_mgr", _StaticBucketManager(buckets))
+    monkeypatch.setattr(rt, "decay_engine", _DummyDecay())
+    monkeypatch.setattr(rt, "logger", MagicMock())
+    monkeypatch.setattr(rt, "fire_webhook", None)
+
+    output = await dispatch(catalog=True)
+
+    assert (
+        "legacy-flags | legacy-flags | 未分类 | 5 | 2026-08-04T12:00:00 | "
+        "false | true |"
+    ) in output
