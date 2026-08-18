@@ -46,6 +46,11 @@ def record_run(record: dict) -> dict:
 
 _SECTION_HEADERS = {
     "=== 核心准则 ===": "core",
+    "=== 最近24小时 ===": "recent",
+    "=== 较早未完事项 ===": "unfinished",
+    "=== 活动计划 ===": "plan",
+    "=== 未展开（按需读取） ===": "deferred",
+    "=== 本次预算 ===": "budget",
     "=== 浮现记忆 ===": "dynamic",
     "=== 久未浮现 ===": "passive",
     "=== 偶然想起 ===": "encounter",
@@ -78,6 +83,10 @@ def _parse_entries(output: str) -> list[dict]:
             continue
         is_bucket_header = (
             (section == "core" and stripped.startswith("📌 [核心准则]"))
+            or (section == "recent" and stripped.startswith("🕒 ["))
+            or (section == "unfinished" and stripped.startswith("🧭 [未完记忆]"))
+            or (section == "plan" and stripped.startswith("📋 [活动计划]"))
+            or (section == "deferred" and stripped.startswith("↗ [未展开]"))
             or (
                 section == "dynamic"
                 and stripped.startswith(("[权重:", "💭 [权重:"))
@@ -96,16 +105,22 @@ def _parse_entries(output: str) -> list[dict]:
             offset += len(line)
             continue
         score_match = _SCORE_RE.search(line[: match.end()])
+        reason = {
+            "core": "core_always_surface",
+            "unfinished": "older_unresolved",
+            "plan": "active_plan",
+            "deferred": "budget_pointer",
+            "dynamic": "default_surface_order",
+            "passive": "long_inactive_association",
+            "encounter": "resolved_random_encounter",
+        }.get(section, "default_surface_order")
+        if section == "recent":
+            reason = "recent_latest" if "[最近一条]" in stripped else "recent_important"
         entries.append({
             "bucket_id": match.group(1),
             "section": section,
-            "status": "returned",
-            "reason": {
-                "core": "core_always_surface",
-                "dynamic": "default_surface_order",
-                "passive": "long_inactive_association",
-                "encounter": "resolved_random_encounter",
-            }.get(section, "default_surface_order"),
+            "status": "pointer" if section == "deferred" else "returned",
+            "reason": reason,
             "tokens": 0,
             "score": float(score_match.group(1)) if score_match else None,
             "_offset": offset,
@@ -139,7 +154,9 @@ def record_surface_output(
     kind: str,
     max_results: int,
     max_tokens: int,
+    soft_tokens: int | None = None,
     run_id: str | None = None,
+    mode: str = "full",
 ) -> dict:
     """Record one exact default-surface payload without rerunning selection."""
 
@@ -147,7 +164,11 @@ def record_surface_output(
     entries = _parse_entries(text)
     omitted_match = _OMITTED_RE.search(text)
     used_match = _USED_RE.search(text)
-    omitted = int(omitted_match.group(1)) if omitted_match else 0
+    omitted = (
+        int(omitted_match.group(1))
+        if omitted_match
+        else sum(entry.get("status") == "pointer" for entry in entries)
+    )
     budgeted_tokens = (
         int(used_match.group(1))
         if used_match
@@ -157,15 +178,22 @@ def record_surface_output(
     return record_run({
         "run_id": run_id or new_run_id(),
         "kind": str(kind or "actual"),
+        "mode": str(mode or "full"),
         "started_at": utc_now_iso(),
         "completed_at": utc_now_iso(),
         "limits": {
             "max_results": int(max_results),
             "max_tokens": effective_limit,
+            "soft_tokens": (
+                min(int(soft_tokens), effective_limit)
+                if soft_tokens is not None
+                else None
+            ),
         },
         "counts": {
-            "returned": len(entries),
+            "returned": sum(entry.get("status") == "returned" for entry in entries),
             "omitted_budget": omitted,
+            "pointers": sum(entry.get("status") == "pointer" for entry in entries),
         },
         "budgeted_entry_tokens": budgeted_tokens,
         "output_tokens_estimate": count_tokens_approx(text),

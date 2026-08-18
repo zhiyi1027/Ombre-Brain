@@ -11,6 +11,11 @@
   function reasonLabel(value) {
     return ({
       core_always_surface: '核心准则',
+      recent_latest: '最近一条',
+      recent_important: '近期重要',
+      older_unresolved: '较早未完',
+      active_plan: '活动计划',
+      budget_pointer: '预算内仅列索引',
       default_surface_order: '真实浮现顺序',
       long_inactive_association: '久未浮现',
       resolved_random_encounter: '偶然想起'
@@ -18,15 +23,20 @@
   }
 
   function sectionLabel(value) {
-    return ({core: '核心', dynamic: '动态', passive: '久未浮现', encounter: '偶遇'})[value] || value || '其它';
+    return ({core: '核心', recent: '最近24h', unfinished: '未完', plan: '计划', deferred: '未展开', dynamic: '动态', passive: '久未浮现', encounter: '偶遇'})[value] || value || '其它';
   }
 
   function runHtml(run) {
     if (!run || !run.run_id) return '<div class="breath-trace-empty">没有可显示的记录。</div>';
     var counts = run.counts || {};
     var limits = run.limits || {};
+    var budgetLabel = limits.soft_tokens
+      ? Number(limits.soft_tokens) + ' 软 / ' + Number(limits.max_tokens || 0) + ' 硬'
+      : Number(limits.max_tokens || 0);
     var when = run.completed_at ? new Date(run.completed_at).toLocaleString() : '—';
-    var kind = run.kind === 'simulation' ? '同算法试跑' : '真实 MCP breath';
+    var kind = run.kind === 'simulation'
+      ? '轻量睁眼同算法试跑'
+      : (run.mode === 'startup' ? '真实轻量 MCP breath' : '真实完整 MCP breath');
     var entries = (run.entries || []).map(function (entry, index) {
       return '<div class="breath-trace-entry">' +
         '<span class="breath-trace-rank">' + (index + 1) + '</span>' +
@@ -44,9 +54,9 @@
         '<code>' + h(run.run_id.slice(0, 12)) + '</code>' +
       '</div>' +
       '<div class="breath-trace-stats">' +
-        '<span>返回 <b>' + Number(counts.returned || 0) + '</b> 桶</span>' +
-        '<span>预算省略 <b>' + omitted + '</b> 桶</span>' +
-        '<span>入选正文约 <b>' + Number(run.budgeted_entry_tokens || 0) + ' / ' + Number(limits.max_tokens || 0) + '</b> token</span>' +
+        '<span>正文返回 <b>' + Number(counts.returned || 0) + '</b> 桶</span>' +
+        '<span>仅列索引 <b>' + omitted + '</b> 桶</span>' +
+        '<span>入选内容约 <b>' + Number(run.budgeted_entry_tokens || 0) + ' / ' + budgetLabel + '</b> token</span>' +
         '<span>完整返回约 <b>' + Number(run.output_tokens_estimate || 0) + '</b> token（含标题与提示）</span>' +
       '</div>' +
       '<div class="breath-trace-entries">' + (entries || '<div class="breath-trace-empty">本次没有返回记忆桶。</div>') + '</div>' +
@@ -136,8 +146,8 @@
     var grid = document.createElement('div');
     grid.id = 'breath-actual-section';
     grid.className = 'breath-trace-grid';
-    grid.innerHTML = '<section class="breath-trace-card"><h3>最近一次真实 Breath</h3><div class="breath-trace-note">这里记录 MCP 无参 breath 真正送进模型上下文的桶、顺序和完整正文，不是评分推测。</div><div class="breath-trace-actions"><button id="breath-refresh-actual">刷新真实记录</button><div id="breath-actual-runs" class="breath-trace-runs"></div></div><div id="breath-actual-detail"></div></section>' +
-      '<section class="breath-trace-card"><h3>同算法试跑</h3><div class="breath-trace-note">直接复用真实无参 breath 代码。它展示“一次可能的下一次结果”；存在随机采样时，之后的真实调用仍可能不同。</div><div class="breath-trace-actions"><button id="breath-simulate-exact">试跑一次真实算法</button></div><div id="breath-simulation-detail" class="breath-trace-empty">尚未试跑。</div></section>';
+    grid.innerHTML = '<section class="breath-trace-card"><h3>最近一次真实 Breath</h3><div class="breath-trace-note">这里记录 MCP 无参 breath 真正送进模型上下文的短核心全文、最近 24 小时、较早未完事项和活动计划。选择过程不使用随机数。</div><div class="breath-trace-actions"><button id="breath-refresh-actual">刷新真实记录</button><div id="breath-actual-runs" class="breath-trace-runs"></div></div><div id="breath-actual-detail"></div></section>' +
+      '<section class="breath-trace-card"><h3>确定性睁眼试跑</h3><div class="breath-trace-note">直接复用真实无参 breath 代码。同一批记忆与同一时间窗口会得到相同结果；只有记忆、计划或 24 小时窗口变化时才会改变。</div><div class="breath-trace-actions"><button id="breath-simulate-exact">试跑一次睁眼简报</button></div><div id="breath-simulation-detail" class="breath-trace-empty">尚未试跑。</div></section>';
     view.insertBefore(grid, view.firstChild);
 
     var debug = document.createElement('section');

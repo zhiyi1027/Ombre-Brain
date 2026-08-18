@@ -240,6 +240,9 @@ def register(mcp) -> None:
                 ],
             },
             "surfacing": {
+                "startup_breath_max_results": int(sh.config.get("surfacing", {}).get("startup_breath_max_results") or 4),
+                "startup_breath_soft_tokens": int(sh.config.get("surfacing", {}).get("startup_breath_soft_tokens") or 3000),
+                "startup_breath_max_tokens": int(sh.config.get("surfacing", {}).get("startup_breath_max_tokens") or 5000),
                 "breath_max_results": int(sh.config.get("surfacing", {}).get("breath_max_results") or 20),
                 "breath_max_tokens": int(sh.config.get("surfacing", {}).get("breath_max_tokens") or 10000),
                 "feel_max_tokens": int(sh.config.get("surfacing", {}).get("feel_max_tokens") or 6000),
@@ -514,9 +517,13 @@ def register(mcp) -> None:
                 pass
 
         # --- Surfacing defaults (breath/feel token & result caps) ---
+        startup_soft_reconciled = False
         if "surfacing" in body and isinstance(body["surfacing"], dict):
             sf = sh.config.setdefault("surfacing", {})
             for key, lo, hi in (
+                ("startup_breath_max_results", 1, 4),
+                ("startup_breath_soft_tokens", 500, 10000),
+                ("startup_breath_max_tokens", 500, 10000),
                 ("breath_max_results", 1, 50),
                 ("breath_max_tokens", 500, 20000),
                 ("feel_max_tokens", 500, 20000),
@@ -528,6 +535,12 @@ def register(mcp) -> None:
                         updated.append(f"surfacing.{key}")
                     except (TypeError, ValueError):
                         pass
+            startup_hard = int(sf.get("startup_breath_max_tokens") or 5000)
+            startup_soft = int(sf.get("startup_breath_soft_tokens") or 3000)
+            if startup_soft > startup_hard:
+                sf["startup_breath_soft_tokens"] = startup_hard
+                startup_soft_reconciled = True
+                updated.append("surfacing.startup_breath_soft_tokens")
 
         persisted_after: dict | None = None
 
@@ -588,10 +601,20 @@ def register(mcp) -> None:
                     if not isinstance(sc_sf, dict):
                         sc_sf = {}
                         save_config["surfacing"] = sc_sf
-                    for key in ("breath_max_results", "breath_max_tokens", "feel_max_tokens"):
-                        if key in body["surfacing"]:
+                    for key in (
+                        "startup_breath_max_results",
+                        "startup_breath_soft_tokens",
+                        "startup_breath_max_tokens",
+                        "breath_max_results",
+                        "breath_max_tokens",
+                        "feel_max_tokens",
+                    ):
+                        if key in body["surfacing"] or (
+                            key == "startup_breath_soft_tokens"
+                            and startup_soft_reconciled
+                        ):
                             try:
-                                sc_sf[key] = int(body["surfacing"][key])
+                                sc_sf[key] = int(sf[key])
                             except (TypeError, ValueError):
                                 pass
                     if "sampling" in body["surfacing"] and isinstance(body["surfacing"]["sampling"], dict):

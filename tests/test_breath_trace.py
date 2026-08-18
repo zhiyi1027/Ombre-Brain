@@ -30,6 +30,30 @@ SAMPLE_OUTPUT = """=== 核心准则 ===
 
 token 预算不足：有 3 条主要浮现记忆因放不下剩余预算而未返回；已返回正文均保持完整，未截断或摘要。当前约使用 987/1000 token，如需被省略的整桶请提高 max_tokens 后重试。"""
 
+STARTUP_OUTPUT = """=== 轻量睁眼 ===
+确定性简报：核心、最近24小时、较早未完事项与活动计划。
+
+=== 核心准则 ===
+📌 [核心准则] [bucket_id:core-one]
+核心正文
+
+=== 最近24小时 ===
+🕒 [最近一条] [bucket_id:recent-one]
+最近正文
+
+=== 较早未完事项 ===
+🧭 [未完记忆] [权重:0.80] [bucket_id:unfinished-one]
+未完正文
+
+=== 活动计划 ===
+📋 [活动计划] [bucket_id:plan-one] [weight:0.90] 完成施工
+
+=== 未展开（按需读取） ===
+↗ [未展开] [bucket_id:large-one] [estimated_tokens:4000] [reason:hard_limit] 大桶
+
+=== 本次预算 ===
+软目标 3000 token，硬上限 5000 token；记忆正文只整桶返回，不截断。"""
+
 
 class NoopDecay:
     async def ensure_started(self):
@@ -93,7 +117,7 @@ def test_trace_preserves_order_across_sections_and_exact_output():
         "dynamic",
         "passive",
     ]
-    assert row["counts"] == {"returned": 4, "omitted_budget": 3}
+    assert row["counts"] == {"returned": 4, "omitted_budget": 3, "pointers": 0}
     assert row["budgeted_entry_tokens"] == 987
     assert row["limits"]["max_tokens"] == 1000
     assert row["output"] == SAMPLE_OUTPUT
@@ -101,10 +125,45 @@ def test_trace_preserves_order_across_sections_and_exact_output():
     assert "output" not in list_runs(limit=1)[0]
 
 
+def test_trace_understands_deterministic_startup_sections_and_pointer():
+    row = record_surface_output(
+        STARTUP_OUTPUT,
+        kind="actual",
+        mode="startup",
+        max_results=4,
+        max_tokens=5000,
+        run_id="startup-run",
+    )
+
+    assert row["mode"] == "startup"
+    assert [entry["section"] for entry in row["entries"]] == [
+        "core",
+        "recent",
+        "unfinished",
+        "plan",
+        "deferred",
+    ]
+    assert [entry["reason"] for entry in row["entries"]] == [
+        "core_always_surface",
+        "recent_latest",
+        "older_unresolved",
+        "active_plan",
+        "budget_pointer",
+    ]
+    assert row["entries"][-1]["status"] == "pointer"
+    assert row["counts"] == {"returned": 4, "omitted_budget": 1, "pointers": 1}
+    assert row["output"] == STARTUP_OUTPUT
+
+
 @pytest.mark.asyncio
 async def test_dispatch_records_the_exact_default_breath_without_changing_it(monkeypatch):
     async def fake_surface_default(**kwargs):
-        assert kwargs == {"max_results": 12, "max_tokens": 1000, "tag_filter": []}
+        assert kwargs == {
+            "max_results": 12,
+            "max_tokens": 1000,
+            "tag_filter": [],
+            "startup": False,
+        }
         return SAMPLE_OUTPUT
 
     monkeypatch.setattr(breath_module, "surface_default", fake_surface_default)
@@ -139,13 +198,28 @@ async def test_exact_simulation_reuses_default_surface_and_is_labeled(monkeypatc
     monkeypatch.setattr(
         rt,
         "config",
-        {"surfacing": {"breath_max_results": 9, "breath_max_tokens": 1000}},
+        {
+            "surfacing": {
+                "startup_breath_max_results": 3,
+                "startup_breath_max_tokens": 1500,
+                "breath_max_results": 9,
+                "breath_max_tokens": 1000,
+            }
+        },
     )
 
     row = await breath_module.simulate_default_surface()
 
-    assert calls == [{"max_results": 9, "max_tokens": 1000, "tag_filter": []}]
+    assert calls == [
+        {
+            "max_results": 3,
+            "max_tokens": 1500,
+            "tag_filter": [],
+            "startup": True,
+        }
+    ]
     assert row["kind"] == "simulation"
+    assert row["mode"] == "startup"
     assert row["output"] == SAMPLE_OUTPUT
 
 

@@ -9,7 +9,7 @@ breath 是「我睁眼看看自己记得什么」。这个文件根据参数把�
 - catalog.py：catalog=True → 目录模式（每桶一行元数据，0 LLM，最省 token）
 - feel.py：domain="feel"（或 tags 含 feel/__feel__）→ 拉所有 feel 桶
 - importance.py：importance_min >= 1 → 跳过语义，按 importance 拉前 20
-- surface.py：query 为空 → 浮现模式（pinned + 加权采样未解决桶 + passive）
+- surface.py：query 为空 → 浮现模式（无参公开调用走轻量睁眼，其余走完整浮现）
 - search.py：有 query → 检索模式（关键词 + 向量双通道 + 随机漂浮）
 
 关键行为：
@@ -39,6 +39,46 @@ from .search import surface_search
 from .trace import get_run, new_run_id, record_surface_output
 
 
+async def dispatch_public(
+    query: Optional[str] = "",
+    max_tokens: Optional[int] = 0,
+    domain: Optional[str] = "",
+    valence: Optional[float] = -1,
+    arousal: Optional[float] = -1,
+    max_results: Optional[int] = 0,
+    importance_min: Optional[int] = -1,
+    tags: Optional[str] = "",
+    catalog: Optional[bool] = False,
+) -> str:
+    """Preserve cached legacy arguments while identifying a true empty call."""
+
+    kwargs = {
+        "query": query,
+        "max_tokens": max_tokens,
+        "domain": domain,
+        "valence": valence,
+        "arousal": arousal,
+        "max_results": max_results,
+        "importance_min": importance_min,
+        "tags": tags,
+        "catalog": catalog,
+    }
+    is_empty_call = (
+        not str(query or "").strip()
+        and int(max_tokens or 0) == 0
+        and not str(domain or "").strip()
+        and float(valence if valence is not None else -1) == -1
+        and float(arousal if arousal is not None else -1) == -1
+        and int(max_results or 0) == 0
+        and int(importance_min if importance_min is not None else -1) == -1
+        and not str(tags or "").strip()
+        and not bool(catalog)
+    )
+    if is_empty_call:
+        kwargs["startup"] = True
+    return await dispatch(**kwargs)
+
+
 async def dispatch(
     query: Optional[str] = "",
     max_tokens: Optional[int] = 0,
@@ -49,6 +89,7 @@ async def dispatch(
     importance_min: Optional[int] = -1,
     tags: Optional[str] = "",
     catalog: Optional[bool] = False,
+    startup: bool = False,
 ) -> str:
     # --- Null-safe coercion ---
     query = "" if query is None else str(query)
@@ -97,14 +138,30 @@ async def dispatch(
         return await surface_catalog(domain_filter=domain_filter or None)
 
     surfacing_cfg = rt.config.get("surfacing", {}) or {}
-    default_results = int(surfacing_cfg.get("breath_max_results") or 20)
-    default_tokens = int(surfacing_cfg.get("breath_max_tokens") or 10000)
+    startup_surface = bool(
+        startup
+        and not query.strip()
+        and not domain.strip()
+        and importance_min < 1
+        and not tags.strip()
+        and not catalog
+    )
+    if startup_surface:
+        default_results = int(surfacing_cfg.get("startup_breath_max_results") or 4)
+        default_tokens = int(surfacing_cfg.get("startup_breath_max_tokens") or 5000)
+    else:
+        default_results = int(surfacing_cfg.get("breath_max_results") or 20)
+        default_tokens = int(surfacing_cfg.get("breath_max_tokens") or 10000)
     if max_results <= 0:
         max_results = default_results
     if max_tokens <= 0:
         max_tokens = default_tokens
-    max_results = min(max_results, 50)
-    max_tokens = min(max_tokens, 20000)
+    if startup_surface:
+        max_results = max(1, min(max_results, 4))
+        max_tokens = max(500, min(max_tokens, 10000))
+    else:
+        max_results = min(max_results, 50)
+        max_tokens = min(max_tokens, 20000)
 
     # --- 解析 tags 过滤；feel/__feel__ 映射到 feel 通道 ---
     tag_filter = [t.strip() for t in tags.split(",") if t.strip()]
@@ -130,12 +187,19 @@ async def dispatch(
             max_results=max_results,
             max_tokens=max_tokens,
             tag_filter=tag_filter,
+            startup=startup_surface,
         )
         record_surface_output(
             output,
             kind="actual",
             max_results=max_results,
             max_tokens=max_tokens,
+            soft_tokens=(
+                int(surfacing_cfg.get("startup_breath_soft_tokens") or 3000)
+                if startup_surface
+                else None
+            ),
+            mode="startup" if startup_surface else "full",
         )
         return output
 
@@ -152,7 +216,7 @@ async def dispatch(
 
 
 async def simulate_default_surface() -> dict:
-    """Run the exact default breath algorithm without injecting its output.
+    """Run the exact zero-argument startup breath without injecting its output.
 
     Default surfacing deliberately does not touch bucket activation state, so a
     Dashboard dry run can safely reuse the same function rather than maintaining
@@ -162,17 +226,18 @@ async def simulate_default_surface() -> dict:
     await rt.decay_engine.ensure_started()
     surfacing_cfg = rt.config.get("surfacing", {}) or {}
     max_results = min(
-        int(surfacing_cfg.get("breath_max_results") or 20),
-        50,
+        max(int(surfacing_cfg.get("startup_breath_max_results") or 4), 1),
+        4,
     )
     max_tokens = min(
-        int(surfacing_cfg.get("breath_max_tokens") or 10000),
-        20000,
+        max(int(surfacing_cfg.get("startup_breath_max_tokens") or 5000), 500),
+        10000,
     )
     output = await surface_default(
         max_results=max_results,
         max_tokens=max_tokens,
         tag_filter=[],
+        startup=True,
     )
     run_id = new_run_id()
     record_surface_output(
@@ -180,6 +245,8 @@ async def simulate_default_surface() -> dict:
         kind="simulation",
         max_results=max_results,
         max_tokens=max_tokens,
+        soft_tokens=int(surfacing_cfg.get("startup_breath_soft_tokens") or 3000),
         run_id=run_id,
+        mode="startup",
     )
     return get_run(run_id) or {}

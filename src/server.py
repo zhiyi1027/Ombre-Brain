@@ -541,9 +541,9 @@ async def breath(
     tags: Optional[str] = "",
     catalog: Optional[bool] = False,
 ) -> str:
-    """无参数,睁眼看看自己记得什么:返回权重最高的未解决记忆 + 置顶核心准则。0 参数是刻意设计——claude.ai 按需加载工具时会跳过参数复杂的工具,拆成 0 参数才能保证每次对话自动浮现,不用手动触发。要按关键词找记忆用 breath_search(query=...);要用 catalog/tags/importance_min/valence/arousal/max_tokens 等高级模式用 breath_advanced(...)。"""
+    """无参数确定性睁眼简报:完整返回短核心,再带最近24小时中最新/重要的记忆原文、最多一条较早未完记忆及活动计划简表;不做随机采样。默认以 startup_breath_soft_tokens 为普通目标、startup_breath_max_tokens 为完整输出硬上限,正文只整桶返回,绝不截断。0 参数是刻意设计——claude.ai 按需加载工具时会跳过参数复杂的工具,拆成 0 参数才能保证每次对话自动浮现,不用手动触发。要按关键词读整桶原文用 breath_search(query=...);要完整随机浮现或使用 catalog/tags/importance_min/valence/arousal/max_tokens 等模式用 breath_advanced(...)。"""
     return await _with_notice(
-        _t_breath.dispatch(
+        _t_breath.dispatch_public(
             query=query, max_tokens=max_tokens, domain=domain,
             valence=valence, arousal=arousal, max_results=max_results,
             importance_min=importance_min, tags=tags, catalog=catalog,

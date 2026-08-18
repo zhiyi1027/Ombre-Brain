@@ -3,8 +3,8 @@
 tools/breath/surface.py — 无 query 浮现模式
 ========================================
 
-走 breath()（不传 query）时进入这里，是 OB 主动「想到什么」的核心：
-按权重从未解决桶里浮现 + pinned 桶置顶 + 加权采样 + 久未浮现的被动联想。
+走 breath()（不传 query）时进入这里。无参公开调用转到 startup.py 生成
+确定性睁眼简报；手动完整浮现仍使用本文件原有的权重采样与被动联想。
 
 关键行为：
 - 排除 anchor 桶（anchor 是坐标系，不主动出现）
@@ -19,7 +19,7 @@ tools/breath/surface.py — 无 query 浮现模式
 - 不返回 feel / plan / letter / archived（专用通道有自己的入口）
 - 不做关键词检索（那是 search.py 的事）
 
-对外暴露：surface_default(max_results, max_tokens, tag_filter) → str
+对外暴露：surface_default(max_results, max_tokens, tag_filter, startup=False) → str
 ========================================
 """
 
@@ -31,6 +31,7 @@ from ombrebrain.policy.surfacing import SurfacePolicyVM
 from .. import _runtime as rt
 from utils import parse_bool, parse_iso_datetime
 from ._verbatim import render_stored_bucket
+from .startup import DEFAULT_SOFT_TOKENS, surface_startup
 
 # U-07 fix: throttle the sampling-fallback INFO log to once per 5 minutes.
 # 库小且 sampling=ON 时此分支每次 breath 都触发，原本会刷屏；改为 ≥300s
@@ -60,7 +61,13 @@ def _budget_notice(*, omitted: int, used: int, limit: int) -> str:
     return _BUDGET_NOTICE.format(omitted=omitted, used=used, limit=limit)
 
 
-async def surface_default(max_results: int, max_tokens: int, tag_filter: list) -> str:
+async def surface_default(
+    max_results: int,
+    max_tokens: int,
+    tag_filter: list,
+    *,
+    startup: bool = False,
+) -> str:
     try:
         all_buckets = await rt.bucket_mgr.list_all(include_archive=False)
     except Exception as e:
@@ -68,6 +75,16 @@ async def surface_default(max_results: int, max_tokens: int, tag_filter: list) -
         return "记忆系统暂时无法访问。"
 
     surfacing_cfg = rt.config.get("surfacing", {}) or {}
+    if startup:
+        return await surface_startup(
+            all_buckets,
+            max_results=max_results,
+            hard_tokens=max_tokens,
+            soft_tokens=int(
+                surfacing_cfg.get("startup_breath_soft_tokens")
+                or DEFAULT_SOFT_TOKENS
+            ),
+        )
 
     # --- pinned/protected 桶置顶（排除 letter 桶：letter 的 importance=10 不代表核心准则）---
     # 注意：pinned 提取在 anchor 过滤 *之前*，保证 anchor+pinned 桶也能出现在核心准则段。
@@ -331,21 +348,24 @@ async def surface_default(max_results: int, max_tokens: int, tag_filter: list) -
         except Exception as e:
             rt.logger.warning(f"Dream surface block failed / 偶遇模块异常: {e}")
 
-    parts = []
-    if pinned_results:
-        parts.append("=== 核心准则 ===\n" + "\n---\n".join(pinned_results))
-    if dynamic_results:
-        parts.append("=== 浮现记忆 ===\n" + "\n---\n".join(dynamic_results))
-    if passive_results:
-        parts.append("=== 久未浮现 ===\n" + "\n---\n".join(passive_results))
-    if dream_results:
-        parts.append("=== 偶然想起 ===\n" + "\n---\n".join(dream_results))
-    if primary_omitted:
-        parts.append(
-            _budget_notice(
-                omitted=primary_omitted,
-                used=max_tokens - token_budget,
-                limit=max_tokens,
+    def compose_output() -> str:
+        parts = []
+        if pinned_results:
+            parts.append("=== 核心准则 ===\n" + "\n---\n".join(pinned_results))
+        if dynamic_results:
+            parts.append("=== 浮现记忆 ===\n" + "\n---\n".join(dynamic_results))
+        if passive_results:
+            parts.append("=== 久未浮现 ===\n" + "\n---\n".join(passive_results))
+        if dream_results:
+            parts.append("=== 偶然想起 ===\n" + "\n---\n".join(dream_results))
+        if primary_omitted:
+            parts.append(
+                _budget_notice(
+                    omitted=primary_omitted,
+                    used=max_tokens - token_budget,
+                    limit=max_tokens,
+                )
             )
-        )
-    return "\n\n".join(parts)
+        return "\n\n".join(parts)
+
+    return compose_output()
