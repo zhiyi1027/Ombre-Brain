@@ -3,8 +3,8 @@
 tools/breath/surface.py — 无 query 浮现模式
 ========================================
 
-走 breath()（不传 query）时进入这里，是 OB 主动「想到什么」的核心：
-按权重从未解决桶里浮现 + pinned 桶置顶 + 加权采样 + 久未浮现的被动联想。
+走 breath()（不传 query）时进入这里。无参公开调用转到 startup.py 生成
+确定性睁眼简报；手动完整浮现仍使用本文件原有的权重采样与被动联想。
 
 关键行为：
 - 排除 anchor 桶（anchor 是坐标系，不主动出现）
@@ -29,8 +29,9 @@ from datetime import datetime, timedelta
 
 from ombrebrain.policy.surfacing import SurfacePolicyVM
 from .. import _runtime as rt
-from utils import count_tokens_approx, parse_bool, parse_iso_datetime
+from utils import parse_bool, parse_iso_datetime
 from ._verbatim import render_stored_bucket
+from .startup import DEFAULT_SOFT_TOKENS, surface_startup
 
 # U-07 fix: throttle the sampling-fallback INFO log to once per 5 minutes.
 # 库小且 sampling=ON 时此分支每次 breath 都触发，原本会刷屏；改为 ≥300s
@@ -38,7 +39,6 @@ from ._verbatim import render_stored_bucket
 _FALLBACK_LOG_INTERVAL_SEC = 300
 _fallback_log_state = {"last_ts": 0.0, "suppressed": 0}
 _SURFACE_POLICY = SurfacePolicyVM.default()
-_STARTUP_ENVELOPE_RESERVE = 160
 _BUDGET_NOTICE = (
     "token 预算不足：有 {omitted} 条主要浮现记忆因放不下剩余预算而未返回；"
     "已返回正文均保持完整，未截断或摘要。"
@@ -61,24 +61,6 @@ def _budget_notice(*, omitted: int, used: int, limit: int) -> str:
     return _BUDGET_NOTICE.format(omitted=omitted, used=used, limit=limit)
 
 
-def _render_startup_core_index(bucket: dict) -> tuple[str, int]:
-    """Render one compact core pointer without injecting its stored body."""
-
-    meta = bucket.get("metadata") or {}
-    bucket_id = str(bucket.get("id") or "")
-    name = str(meta.get("name") or bucket_id)
-    domains = meta.get("domain") or []
-    if isinstance(domains, str):
-        domains = [domains]
-    domain_text = ",".join(str(item) for item in domains if str(item).strip()) or "未分类"
-    importance = int(meta.get("importance") or 0)
-    rendered = (
-        f"📌 [核心索引] [bucket_id:{bucket_id}] "
-        f"{name} | {domain_text} | importance:{importance}"
-    )
-    return rendered, count_tokens_approx(rendered)
-
-
 async def surface_default(
     max_results: int,
     max_tokens: int,
@@ -93,6 +75,16 @@ async def surface_default(
         return "记忆系统暂时无法访问。"
 
     surfacing_cfg = rt.config.get("surfacing", {}) or {}
+    if startup:
+        return await surface_startup(
+            all_buckets,
+            max_results=max_results,
+            hard_tokens=max_tokens,
+            soft_tokens=int(
+                surfacing_cfg.get("startup_breath_soft_tokens")
+                or DEFAULT_SOFT_TOKENS
+            ),
+        )
 
     # --- pinned/protected 桶置顶（排除 letter 桶：letter 的 importance=10 不代表核心准则）---
     # 注意：pinned 提取在 anchor 过滤 *之前*，保证 anchor+pinned 桶也能出现在核心准则段。
@@ -110,21 +102,14 @@ async def surface_default(
     ]
     pinned_ids = {b["id"] for b in pinned_buckets}
     pinned_results = []
-    entry_budget = max(
-        0,
-        max_tokens - (_STARTUP_ENVELOPE_RESERVE if startup else 0),
-    )
-    token_budget = entry_budget
+    token_budget = max_tokens
     primary_omitted = 0
     for b in pinned_buckets:
         try:
-            if startup:
-                rendered, entry_tokens = _render_startup_core_index(b)
-            else:
-                rendered, entry_tokens = render_stored_bucket(
-                    b,
-                    f"📌 [核心准则] [bucket_id:{b['id']}]",
-                )
+            rendered, entry_tokens = render_stored_bucket(
+                b,
+                f"📌 [核心准则] [bucket_id:{b['id']}]",
+            )
             if entry_tokens > token_budget:
                 primary_omitted += 1
                 continue
@@ -269,7 +254,7 @@ async def surface_default(
         if primary_omitted:
             return _budget_notice(
                 omitted=primary_omitted,
-                used=entry_budget - token_budget,
+                used=max_tokens - token_budget,
                 limit=max_tokens,
             )
         if rt.mark_op:
@@ -313,7 +298,7 @@ async def surface_default(
                     cond_b = False
             if cond_a or cond_b:
                 passive_pool.append(b)
-        if passive_pool and not primary_omitted and not startup:
+        if passive_pool and not primary_omitted:
             random.shuffle(passive_pool)
             for b in passive_pool[:2]:
                 try:
@@ -334,7 +319,7 @@ async def surface_default(
     # 设计意图：让已解决的记忆有小概率重新出现，制造"忽然想起"的温度。
     # 与无结果兜底逻辑并存；不替换主流程。
     dream_results: list[str] = []
-    if not startup and not primary_omitted and random.random() < 0.03:
+    if not primary_omitted and random.random() < 0.03:
         try:
             shown_ids = {b["id"] for b in candidates}
             resolved_pool = [
@@ -365,14 +350,8 @@ async def surface_default(
 
     def compose_output() -> str:
         parts = []
-        if startup:
-            parts.append(
-                "=== 轻量睁眼 ===\n"
-                "核心准则只列索引；需要正文时用 breath_search(query=\"核心名称\")。"
-            )
         if pinned_results:
-            core_title = "=== 核心索引（正文按需读取） ===" if startup else "=== 核心准则 ==="
-            parts.append(core_title + "\n" + "\n---\n".join(pinned_results))
+            parts.append("=== 核心准则 ===\n" + "\n---\n".join(pinned_results))
         if dynamic_results:
             parts.append("=== 浮现记忆 ===\n" + "\n---\n".join(dynamic_results))
         if passive_results:
@@ -380,27 +359,13 @@ async def surface_default(
         if dream_results:
             parts.append("=== 偶然想起 ===\n" + "\n---\n".join(dream_results))
         if primary_omitted:
-            content = "\n\n".join(parts)
-            used = count_tokens_approx(content) if startup else max_tokens - token_budget
             parts.append(
                 _budget_notice(
                     omitted=primary_omitted,
-                    used=used,
+                    used=max_tokens - token_budget,
                     limit=max_tokens,
                 )
             )
         return "\n\n".join(parts)
 
-    output = compose_output()
-    if startup:
-        # The startup cap applies to the complete rendered envelope, not only
-        # bucket bodies. Never truncate a stored body: remove whole entries.
-        while count_tokens_approx(output) > max_tokens and dynamic_results:
-            dynamic_results.pop()
-            primary_omitted += 1
-            output = compose_output()
-        while count_tokens_approx(output) > max_tokens and pinned_results:
-            pinned_results.pop()
-            primary_omitted += 1
-            output = compose_output()
-    return output
+    return compose_output()

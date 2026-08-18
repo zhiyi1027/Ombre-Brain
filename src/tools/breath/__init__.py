@@ -148,7 +148,7 @@ async def dispatch(
     )
     if startup_surface:
         default_results = int(surfacing_cfg.get("startup_breath_max_results") or 4)
-        default_tokens = int(surfacing_cfg.get("startup_breath_max_tokens") or 3000)
+        default_tokens = int(surfacing_cfg.get("startup_breath_max_tokens") or 5000)
     else:
         default_results = int(surfacing_cfg.get("breath_max_results") or 20)
         default_tokens = int(surfacing_cfg.get("breath_max_tokens") or 10000)
@@ -157,8 +157,8 @@ async def dispatch(
     if max_tokens <= 0:
         max_tokens = default_tokens
     if startup_surface:
-        max_results = max(1, min(max_results, 12))
-        max_tokens = max(500, min(max_tokens, 8000))
+        max_results = max(1, min(max_results, 4))
+        max_tokens = max(500, min(max_tokens, 10000))
     else:
         max_results = min(max_results, 50)
         max_tokens = min(max_tokens, 20000)
@@ -194,6 +194,11 @@ async def dispatch(
             kind="actual",
             max_results=max_results,
             max_tokens=max_tokens,
+            soft_tokens=(
+                int(surfacing_cfg.get("startup_breath_soft_tokens") or 3000)
+                if startup_surface
+                else None
+            ),
             mode="startup" if startup_surface else "full",
         )
         return output
@@ -222,11 +227,11 @@ async def simulate_default_surface() -> dict:
     surfacing_cfg = rt.config.get("surfacing", {}) or {}
     max_results = min(
         max(int(surfacing_cfg.get("startup_breath_max_results") or 4), 1),
-        12,
+        4,
     )
     max_tokens = min(
-        max(int(surfacing_cfg.get("startup_breath_max_tokens") or 3000), 500),
-        8000,
+        max(int(surfacing_cfg.get("startup_breath_max_tokens") or 5000), 500),
+        10000,
     )
     output = await surface_default(
         max_results=max_results,
@@ -240,6 +245,7 @@ async def simulate_default_surface() -> dict:
         kind="simulation",
         max_results=max_results,
         max_tokens=max_tokens,
+        soft_tokens=int(surfacing_cfg.get("startup_breath_soft_tokens") or 3000),
         run_id=run_id,
         mode="startup",
     )

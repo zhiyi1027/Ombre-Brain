@@ -163,10 +163,11 @@ matching:
 # Front-end Settings writes the same fields back here.
 # 无参睁眼与手动完整浮现使用两套预算；前端「浮现默认参数」面板会回写到这里。
 surfacing:
-  # Zero-argument breath() is the lightweight new-window handoff. Core buckets
-  # are index-only here; selected dynamic buckets still return verbatim bodies.
-  startup_breath_max_results: 4   # 1-12, dynamic buckets in lightweight startup breath
-  startup_breath_max_tokens: 3000 # 500-8000, hard cap for the complete startup envelope
+  # Zero-argument breath() is a deterministic new-window briefing. The compact
+  # pinned core and selected memories return verbatim; plans use compact lines.
+  startup_breath_max_results: 4    # 1-4, up to 3 recent bodies + 1 older unresolved body
+  startup_breath_soft_tokens: 3000 # 500-10000, normal target; low-priority bodies defer here
+  startup_breath_max_tokens: 5000  # 500-10000, hard cap for the complete startup envelope
   # breath_advanced() and explicit search keep the larger manual-read defaults.
   breath_max_results: 20          # 1-50, hard cap of buckets returned per breath
   breath_max_tokens: 10000        # 500-20000, total token cap per breath
