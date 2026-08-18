@@ -228,6 +228,9 @@ async def surface_startup(
 ) -> str:
     """Render one deterministic startup briefing within soft/hard budgets."""
 
+    # The annotation is intentionally narrow, but parse_iso_datetime still
+    # normalizes timezone-aware datetime test hooks to OB's naive local-time
+    # convention, matching the stored created/created_at parsing above.
     reference = parse_iso_datetime(reference_time) if reference_time is not None else datetime.now()
     hard_tokens = max(500, int(hard_tokens or DEFAULT_HARD_TOKENS))
     soft_tokens = max(500, min(int(soft_tokens or DEFAULT_SOFT_TOKENS), hard_tokens))
@@ -259,6 +262,9 @@ async def surface_startup(
         return "\n\n".join(parts)
 
     def append_if_fits(collection: list[str], rendered: str, *, limit: int) -> bool:
+        # Rebuilding the complete envelope keeps budget accounting exact and is
+        # cheap under the fixed 4-memory + 5-plan startup contract.  If those
+        # caps ever grow materially, replace this with incremental accounting.
         collection.append(rendered)
         if count_tokens_approx(compose()) <= limit:
             return True
