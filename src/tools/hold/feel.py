@@ -71,12 +71,23 @@ async def store_feel(
         meaning=meaning,
         media=media,
     )
-    if source_bucket and source_bucket.strip():
+    source_id = source_bucket.strip() if source_bucket else ""
+    digest_warning = ""
+    if source_id:
         try:
             update_kwargs: dict[str, bool | float] = {"digested": True}
             if 0 <= valence <= 1:
                 update_kwargs["model_valence"] = feel_valence
-            await rt.bucket_mgr.update(source_bucket.strip(), **update_kwargs)
+            marked = await rt.bucket_mgr.update(source_id, **update_kwargs)
+            if not marked:
+                raise RuntimeError("source bucket was not found or could not be updated")
         except Exception as e:
-            rt.logger.warning(f"Failed to mark source as digested / 标记已消化失败: {e}")
-    return f"🫧feel→{bucket_id}"
+            rt.logger.warning(
+                "Failed to mark source as digested / 标记已消化失败: "
+                f"source={source_id}: {e}"
+            )
+            digest_warning = (
+                f"\n⚠️ feel 已保存，但源记忆 {source_id} 的 digested 标记回写失败。"
+                "请在 Dashboard 运行“修复消化标记”。"
+            )
+    return f"🫧feel→{bucket_id}{digest_warning}"

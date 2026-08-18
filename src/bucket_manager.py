@@ -2554,6 +2554,61 @@ class BucketManager:
         results.sort(key=lambda x: x.get("created", ""), reverse=True)
         return results
 
+    async def repair_digested_from_feels(self) -> dict:
+        """Repair missing source ``digested`` flags from feel provenance.
+
+        Source metadata remains the canonical state used by dream catalog.
+        ``triggered_by`` is scanned only when this explicit maintenance action
+        runs, never during ordinary catalog rendering.  The operation is
+        idempotent and deduplicates sources before writing.
+        """
+        feels_scanned = 0
+        linked_feels = 0
+        source_ids: set[str] = set()
+        for _root, _fname, file_path in self._iter_md_files([self.feel_dir]):
+            bucket = self._load_bucket(file_path)
+            if not bucket:
+                continue
+            feels_scanned += 1
+            meta = bucket.get("metadata", {})
+            source_id = str(meta.get("triggered_by") or "").strip()
+            if not source_id:
+                continue
+            linked_feels += 1
+            source_ids.add(source_id)
+
+        report = {
+            "feels_scanned": feels_scanned,
+            "linked_feels": linked_feels,
+            "unique_sources": len(source_ids),
+            "already_digested": 0,
+            "repaired": 0,
+            "missing_sources": [],
+            "failed_sources": [],
+        }
+        for source_id in sorted(source_ids):
+            source = await self.get(source_id)
+            if not source:
+                report["missing_sources"].append(source_id)
+                continue
+            metadata = source.get("metadata", {})
+            if parse_bool(metadata.get("digested"), default=False):
+                report["already_digested"] += 1
+                continue
+            try:
+                if await self.update(source_id, digested=True):
+                    report["repaired"] += 1
+                else:
+                    report["failed_sources"].append(source_id)
+            except Exception:
+                logger.warning(
+                    "repair_digested_from_feels failed for source=%s",
+                    source_id,
+                    exc_info=True,
+                )
+                report["failed_sources"].append(source_id)
+        return report
+
     async def list_all(self, include_archive: bool = False) -> list[dict]:
         """
         Recursively walk directories (including domain subdirs), list all buckets.
