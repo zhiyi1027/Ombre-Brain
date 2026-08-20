@@ -219,6 +219,66 @@ def test_older_unresolved_randomly_rotates_without_immediate_repeat(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_startup_returns_long_plan_verbatim_when_total_plan_budget_allows():
+    reference = datetime.fromisoformat("2026-08-18T12:00:00")
+    plan_body = "轻量睁眼应该直接带回这条完整计划正文，不能再按单条六十 token 提前折叠。" * 6
+    buckets = [
+        make_bucket(
+            "long-active-plan",
+            plan_body,
+            created="2026-08-18T09:00:00",
+            bucket_type="plan",
+            status="active",
+            weight=0.9,
+        )
+    ]
+
+    output = await surface_startup(
+        buckets,
+        max_results=1,
+        soft_tokens=3000,
+        hard_tokens=5000,
+        reference_time=reference,
+    )
+
+    assert plan_body in output
+    assert "[活动计划] [bucket_id:long-active-plan]" in output
+    assert "[未展开]" not in output
+    assert "内容较长" not in output
+
+
+@pytest.mark.asyncio
+async def test_startup_lists_plan_pointer_when_full_body_exceeds_plan_budget():
+    reference = datetime.fromisoformat("2026-08-18T12:00:00")
+    plan_body = "超出启动计划预算的正文不能被截断。" * 500
+    buckets = [
+        make_bucket(
+            "oversized-active-plan",
+            plan_body,
+            created="2026-08-18T09:00:00",
+            bucket_type="plan",
+            status="active",
+            weight=0.9,
+            name="超长活动计划",
+        )
+    ]
+
+    output = await surface_startup(
+        buckets,
+        max_results=1,
+        soft_tokens=3000,
+        hard_tokens=5000,
+        reference_time=reference,
+    )
+
+    assert plan_body not in output
+    assert "[活动计划] [bucket_id:oversized-active-plan]" in output
+    assert "↗ [未展开] 超长活动计划" in output
+    assert 'breath_advanced(domain="plan")' in output
+    assert count_tokens_approx(output) <= 5000
+
+
+@pytest.mark.asyncio
 async def test_low_priority_recent_body_defers_at_soft_target_without_truncation():
     reference = datetime.fromisoformat("2026-08-18T12:00:00")
     large_body = "低优先级长正文完整性标记。" * 180

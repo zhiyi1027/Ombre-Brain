@@ -541,7 +541,7 @@ async def breath(
     tags: Optional[str] = "",
     catalog: Optional[bool] = False,
 ) -> str:
-    """无参数轻量睁眼简报:完整返回短核心,再带最近24小时中最新/重要的记忆原文、从高权重候选池随机轮换最多一条较早未完记忆(避免连续重复),以及活动计划简表。默认以 startup_breath_soft_tokens 为普通目标、startup_breath_max_tokens 为完整输出硬上限,正文只整桶返回,绝不截断。0 参数是刻意设计——claude.ai 按需加载工具时会跳过参数复杂的工具,拆成 0 参数才能保证每次对话自动浮现,不用手动触发。要按关键词读整桶原文用 breath_search(query=...);要完整随机浮现或使用 catalog/tags/importance_min/valence/arousal/max_tokens 等模式用 breath_advanced(...)。"""
+    """无参数轻量睁眼简报:完整返回短核心,再带最近24小时中最新/重要的记忆原文、从高权重候选池随机轮换最多一条较早未完记忆(避免连续重复),以及预算内的活动计划正文。默认以 startup_breath_soft_tokens 为普通目标、startup_breath_max_tokens 为完整输出硬上限,正文只整桶返回,绝不截断。0 参数是刻意设计——claude.ai 按需加载工具时会跳过参数复杂的工具,拆成 0 参数才能保证每次对话自动浮现,不用手动触发。要按关键词读整桶原文用 breath_search(query=...);要完整随机浮现或使用 catalog/tags/importance_min/valence/arousal/max_tokens 等模式用 breath_advanced(...)。"""
     return await _with_notice(
         _t_breath.dispatch_public(
             query=query, max_tokens=max_tokens, domain=domain,
@@ -609,7 +609,7 @@ async def breath_advanced(
     tags: Optional[str] = "",
     catalog: Optional[bool] = False,
 ) -> str:
-    """breath 的完整参数版,给需要精细控制的场景用(日常用 breath()/breath_search() 就够了)。不传 query=返回权重最高的未解决记忆;传 query=融合关键词/BM25+语义检索，向量不可用时明确提示并退回关键词检索。命中后逐字返回桶内当前 content，不调用 LLM 摘要/改写；max_tokens 不足时整桶省略，绝不截断正文。catalog=True=目录模式:只返回每桶一行元数据(名称|域|重要度,0 LLM 调用,最省 token),适合开新对话先看目录再 breath_search(query=...) 精准拉取,可配 domain 过滤。max_tokens=单次返回总 token 上限(默认 config.surfacing.breath_max_tokens,fallback 10000)。domain 逗号分隔,valence/arousal 0~1(-1 忽略)。max_results=返回条数上限(默认 config.surfacing.breath_max_results,fallback 20,最大 50)。importance_min>=1=跳过语义检索,按重要度降序返回最多 20 条高重要度记忆。tags 逗号分隔,AND 过滤;tags=\"feel\" 或 \"__feel__\" 等价于 domain=\"feel\",返回所有 feel 类记忆。"""
+    """breath 的完整参数版,给需要精细控制的场景用(日常用 breath()/breath_search() 就够了)。不传 query=返回权重最高的未解决记忆;传 query=融合关键词/BM25+语义检索，向量不可用时明确提示并退回关键词检索。命中后逐字返回桶内当前 content，不调用 LLM 摘要/改写；max_tokens 不足时整桶省略，绝不截断正文。catalog=True=目录模式:只返回每桶一行元数据(名称|域|重要度,0 LLM 调用,最省 token),适合开新对话先看目录再 breath_search(query=...) 精准拉取,可配 domain 过滤。max_tokens=单次返回总 token 上限(默认 config.surfacing.breath_max_tokens,fallback 10000)。domain=\"plan\" 且不传 query 时逐字返回 active plans；domain=\"feel\" 返回所有 feel 类记忆。domain 其余值按主题域预筛,valence/arousal 0~1(-1 忽略)。max_results=返回条数上限(默认 config.surfacing.breath_max_results,fallback 20,最大 50)。importance_min>=1=跳过语义检索,按重要度降序返回最多 20 条高重要度记忆。tags 逗号分隔,AND 过滤;tags=\"feel\" 或 \"__feel__\" 等价于 domain=\"feel\"。"""
     return await _with_notice(
         _t_breath.dispatch(
             query=query, max_tokens=max_tokens, domain=domain,

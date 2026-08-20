@@ -30,7 +30,7 @@ from datetime import datetime, timedelta
 
 from ombrebrain.policy.surfacing import SurfacePolicyVM
 from .. import _runtime as rt
-from utils import parse_bool, parse_iso_datetime
+from utils import count_tokens_approx, parse_bool, parse_iso_datetime
 from ._verbatim import render_stored_bucket
 from .startup import DEFAULT_SOFT_TOKENS, surface_startup
 from .trace import list_runs
@@ -76,6 +76,70 @@ def _last_startup_unfinished_id() -> str:
             ):
                 return str(entry.get("bucket_id") or "")
     return ""
+
+
+async def surface_plans(max_tokens: int) -> str:
+    """Return active plans verbatim without entering ordinary surfacing."""
+
+    try:
+        all_buckets = await rt.bucket_mgr.list_all(include_archive=False)
+    except Exception as exc:
+        rt.logger.error(f"Plan retrieval failed / 计划读取失败: {exc}")
+        return "读取 plan 失败。"
+
+    plans = []
+    for bucket in all_buckets:
+        meta = bucket.get("metadata") or {}
+        if meta.get("type") != "plan" or meta.get("status", "active") != "active":
+            continue
+        if meta.get("deleted_at") or meta.get("tombstone") or meta.get("dont_surface"):
+            continue
+        plans.append(bucket)
+    plans.sort(
+        key=lambda bucket: (
+            float((bucket.get("metadata") or {}).get("weight") or 0.0),
+            str((bucket.get("metadata") or {}).get("created") or ""),
+            str(bucket.get("id") or ""),
+        ),
+        reverse=True,
+    )
+    if not plans:
+        return "没有计划。"
+
+    header = (
+        "=== 你的 active plans（权重高→低）===\n"
+        "完成了用 trace(bucket_id, status=\"resolved\")，"
+        "放弃了用 trace(bucket_id, status=\"abandoned\")。"
+    )
+    used = count_tokens_approx(header)
+    rendered_plans: list[str] = []
+    omitted = 0
+    for index, plan in enumerate(plans):
+        meta = plan.get("metadata") or {}
+        created = str(meta.get("created") or "")
+        rendered, entry_tokens = render_stored_bucket(
+            plan,
+            (
+                f"📋 [活动计划] [bucket_id:{plan['id']}] "
+                f"[weight:{float(meta.get('weight') or 0.0):.2f}] [{created}]"
+            ),
+        )
+        separator_tokens = count_tokens_approx("\n---\n") if rendered_plans else 0
+        if used + separator_tokens + entry_tokens > max_tokens:
+            omitted = len(plans) - index
+            break
+        rendered_plans.append(rendered)
+        used += separator_tokens + entry_tokens
+
+    output = header
+    if rendered_plans:
+        output += "\n\n" + "\n---\n".join(rendered_plans)
+    if omitted:
+        output += (
+            f"\n\n另有 {omitted} 条 plan 因 token 预算不足未返回；"
+            "正文未截断或摘要。"
+        )
+    return output
 
 
 async def surface_default(

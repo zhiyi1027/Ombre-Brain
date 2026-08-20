@@ -34,7 +34,7 @@ from .._common import check_metadata_size, check_query_size
 from .catalog import surface_catalog
 from .feel import surface_feels
 from .importance import surface_by_importance
-from .surface import surface_default
+from .surface import surface_default, surface_plans
 from .search import surface_search
 from .trace import get_run, new_run_id, record_surface_output
 
@@ -172,6 +172,10 @@ async def dispatch(
     # --- Feel 通道优先：即使无 query 也直接拉 feel ---
     if domain.strip().lower() == "feel":
         return await surface_feels(max_tokens=max_tokens)
+
+    # --- Plan 通道优先：active plan 不参与普通浮现，必须有独立读取入口 ---
+    if domain.strip().lower() == "plan" and not query.strip():
+        return await surface_plans(max_tokens=max_tokens)
 
     # --- importance_min 模式：跳过语义，按 importance 降序 ---
     if importance_min >= 1:

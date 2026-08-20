@@ -211,13 +211,21 @@ def _active_plans(all_buckets: list[dict]) -> tuple[list[dict], int]:
 
 
 def _render_plan(bucket: dict) -> str:
+    bucket_id = str(bucket.get("id") or "")
+    weight = _weight(bucket)
+    content = str(bucket.get("content") or "").strip() or "（计划正文为空）"
+    return f"📋 [活动计划] [bucket_id:{bucket_id}] [weight:{weight:.2f}] {content}"
+
+
+def _render_plan_pointer(bucket: dict) -> str:
     meta = bucket.get("metadata") or {}
     bucket_id = str(bucket.get("id") or "")
     weight = _weight(bucket)
-    content = str(bucket.get("content") or "").strip()
-    if count_tokens_approx(content) > 60:
-        content = str(meta.get("name") or bucket_id) + "（内容较长，使用 dream() 展开）"
-    return f"📋 [活动计划] [bucket_id:{bucket_id}] [weight:{weight:.2f}] {content}"
+    name = str(meta.get("name") or bucket_id)
+    return (
+        f"📋 [活动计划] [bucket_id:{bucket_id}] [weight:{weight:.2f}] "
+        f"↗ [未展开] {name}（使用 breath_advanced(domain=\"plan\") 读取）"
+    )
 
 
 def _render_pointer(bucket: dict, *, estimated_tokens: int, reason: str) -> str:
@@ -302,11 +310,22 @@ async def surface_startup(
             append_if_fits(pointers, pointer, limit=hard_tokens)
 
     plans, total_plans = _active_plans(all_buckets)
+    expanded_plans = 0
     for bucket in plans:
         rendered_plan = _render_plan(bucket)
-        if count_tokens_approx("\n---\n".join([*plan_results, rendered_plan])) > PLAN_TOKEN_BUDGET:
+        plan_section = "\n---\n".join([*plan_results, rendered_plan])
+        if (
+            count_tokens_approx(plan_section) <= PLAN_TOKEN_BUDGET
+            and append_if_fits(plan_results, rendered_plan, limit=hard_tokens)
+        ):
+            expanded_plans += 1
+            continue
+
+        pointer = _render_plan_pointer(bucket)
+        pointer_section = "\n---\n".join([*plan_results, pointer])
+        if count_tokens_approx(pointer_section) > PLAN_TOKEN_BUDGET:
             break
-        if not append_if_fits(plan_results, rendered_plan, limit=hard_tokens):
+        if not append_if_fits(plan_results, pointer, limit=hard_tokens):
             break
 
     selected, total_recent = _select_memories(
@@ -345,8 +364,11 @@ async def surface_startup(
     if total_recent > selected_recent:
         notice = f"最近24小时另有 {total_recent - selected_recent} 条记忆未进入本次 {max_results} 条正文名额。"
         append_if_fits(notices, notice, limit=hard_tokens)
-    if total_plans > len(plan_results):
-        notice = f"另有 {total_plans - len(plan_results)} 条活动计划未展开，可用 dream() 查看。"
+    if total_plans > expanded_plans:
+        notice = (
+            f"有 {total_plans - expanded_plans} 条活动计划未展开，"
+            "可用 breath_advanced(domain=\"plan\") 读取。"
+        )
         append_if_fits(notices, notice, limit=hard_tokens)
     if pointers:
         notice = f"有 {len(pointers)} 条记忆只列索引；可按 bucket_id 精准读取正文。"
