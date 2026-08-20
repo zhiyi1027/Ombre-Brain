@@ -9,6 +9,7 @@ latest revision for each source/day into one evidence-linked impression.
 from __future__ import annotations
 
 import asyncio
+import copy
 import contextlib
 from datetime import date, datetime, time as datetime_time, timedelta, timezone
 import hashlib
@@ -337,21 +338,9 @@ class DailyContinuityService:
     def _bucket_time(self, bucket: dict[str, Any]) -> datetime | None:
         meta = bucket.get("metadata") or {}
         raw = meta.get("created_at") or meta.get("created")
-        if not raw:
-            return None
-        text = str(raw).strip()
-        if text.endswith(("Z", "z")):
-            text = text[:-1] + "+00:00"
-        try:
-            parsed = datetime.fromisoformat(text)
-        except ValueError:
-            return None
-        if parsed.tzinfo is None:
-            system_tz = datetime.now().astimezone().tzinfo or timezone.utc
-            parsed = parsed.replace(tzinfo=system_tz)
-        return parsed.astimezone(self.tz)
+        return self._parse_aware_datetime(raw)
 
-    def _metadata_time(self, raw: Any) -> datetime | None:
+    def _parse_aware_datetime(self, raw: Any) -> datetime | None:
         if not raw:
             return None
         text = str(raw).strip()
@@ -401,7 +390,7 @@ class DailyContinuityService:
                 for change in meta.get("change_log") or []:
                     if not isinstance(change, dict):
                         continue
-                    changed = self._metadata_time(change.get("ts"))
+                    changed = self._parse_aware_datetime(change.get("ts"))
                     if changed is not None and start <= changed < end:
                         relevant_time = max(relevant_time or changed, changed)
             if relevant_time is not None:
@@ -424,7 +413,7 @@ class DailyContinuityService:
                 for change in meta.get("change_log") or []:
                     if not isinstance(change, dict):
                         continue
-                    changed = self._metadata_time(change.get("ts"))
+                    changed = self._parse_aware_datetime(change.get("ts"))
                     if changed is not None and start <= changed < end:
                         relevant_changes.append(change)
                 content = (
@@ -505,15 +494,16 @@ class DailyContinuityService:
 
     @staticmethod
     def _fit_render_budget(memory_day: date, result: dict[str, Any]) -> str:
-        rendered = DailyContinuityService._render_impression(memory_day, result)
+        fitted = copy.deepcopy(result)
+        rendered = DailyContinuityService._render_impression(memory_day, fitted)
         if count_tokens_approx(rendered) <= MAX_RENDER_TOKENS:
             return rendered
         # Preserve whole entries.  Optional feeling/open-loop tails go first;
         # never slice prose mid-sentence merely to hit an estimate.
         for key in ("impressions", "open_loops", "events"):
-            while result.get(key):
-                result[key].pop()
-                rendered = DailyContinuityService._render_impression(memory_day, result)
+            while fitted.get(key):
+                fitted[key].pop()
+                rendered = DailyContinuityService._render_impression(memory_day, fitted)
                 if count_tokens_approx(rendered) <= MAX_RENDER_TOKENS:
                     return rendered
         return ""

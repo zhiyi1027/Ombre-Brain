@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 from datetime import date, datetime, timezone
 import importlib.util
 import json
@@ -268,6 +269,27 @@ def test_pending_day_waits_until_after_cutoff(tmp_path):
     shanghai = ZoneInfo("Asia/Shanghai")
     assert service.pending_days(datetime(2026, 8, 21, 3, 59, tzinfo=shanghai)) == []
     assert service.pending_days(datetime(2026, 8, 21, 4, 1, tzinfo=shanghai)) == [date(2026, 8, 20)]
+
+
+def test_render_budget_does_not_mutate_generation_result(monkeypatch):
+    import daily_continuity as daily_module
+
+    result = {
+        "skip": False,
+        "events": [{"text": "事件" * 100, "source_ids": ["note:cc:2026-08-20"]}],
+        "open_loops": [
+            {"text": "待办" * 100, "source_ids": ["note:cc:2026-08-20"]}
+        ],
+        "impressions": [
+            {"text": "感受" * 100, "source_ids": ["note:cc:2026-08-20"]}
+        ],
+    }
+    original = copy.deepcopy(result)
+    monkeypatch.setattr(daily_module, "MAX_RENDER_TOKENS", 10)
+
+    DailyContinuityService._fit_render_budget(date(2026, 8, 20), result)
+
+    assert result == original
 
 
 @pytest.mark.asyncio
