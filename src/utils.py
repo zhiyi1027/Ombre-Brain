@@ -451,6 +451,7 @@ def load_config(config_path: Optional[str] = None) -> dict:
             "cutoff_hour": 4,
             "poll_seconds": 300,
             "catchup_days": 7,
+            "bucket_fallback_start_day": "2026-08-20",
             "max_note_chars": 50_000,
             "max_input_chars": 60_000,
             "max_output_tokens": 1_400,

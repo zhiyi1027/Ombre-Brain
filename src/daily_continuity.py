@@ -32,6 +32,7 @@ DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_CUTOFF_HOUR = 4
 DEFAULT_POLL_SECONDS = 300
 DEFAULT_CATCHUP_DAYS = 7
+DEFAULT_BUCKET_FALLBACK_START_DAY = "2026-08-20"
 DEFAULT_MAX_NOTE_CHARS = 50_000
 DEFAULT_MAX_INPUT_CHARS = 60_000
 DEFAULT_MAX_OUTPUT_TOKENS = 1_400
@@ -204,6 +205,10 @@ class DailyContinuityService:
         self.catchup_days = _positive_int(
             cfg.get("catchup_days"), DEFAULT_CATCHUP_DAYS, 1, 31
         )
+        self.bucket_fallback_start_day = _parse_day(
+            cfg.get("bucket_fallback_start_day")
+            or DEFAULT_BUCKET_FALLBACK_START_DAY
+        )
         self.max_note_chars = _positive_int(
             cfg.get("max_note_chars"), DEFAULT_MAX_NOTE_CHARS, 1_000, 200_000
         )
@@ -334,15 +339,25 @@ class DailyContinuityService:
         self,
         memory_day: date,
         source_revisions: dict[str, str],
+        legacy_source_revisions: dict[str, str],
     ) -> bool:
         parsed = _read_document(self._impression_path(memory_day))
         if not parsed:
             return False
         meta, _body = parsed
+        if meta.get("kind") != "daily_impression":
+            return False
+        stored_revisions = meta.get("source_revisions") or {}
+        prompt_version = str(meta.get("prompt_version") or "")
+        if prompt_version == PROMPT_VERSION:
+            return stored_revisions == source_revisions
+        # v2 remains valid when its original, model-visible source slices are
+        # unchanged.  This prevents a v3 deployment from rewriting history only
+        # to add evidence metadata; a genuinely changed/late source still
+        # upgrades the day through the normal generation path.
         return bool(
-            meta.get("kind") == "daily_impression"
-            and meta.get("prompt_version") == PROMPT_VERSION
-            and (meta.get("source_revisions") or {}) == source_revisions
+            prompt_version == "daily-impression-v2"
+            and stored_revisions == legacy_source_revisions
         )
 
     @staticmethod
@@ -746,12 +761,29 @@ class DailyContinuityService:
             return {"ok": False, "skipped": "disabled"}
         target = _parse_day(memory_day) if not isinstance(memory_day, date) else memory_day
         async with self._generate_lock:
+            if (
+                target < self.bucket_fallback_start_day
+                and not self._impression_path(target).exists()
+            ):
+                return {
+                    "ok": True,
+                    "skipped": "before_bucket_fallback_start",
+                    "memory_day": target.isoformat(),
+                }
             notes = self._notes_for_day(target)
             sources = await self._collect_sources(target, notes)
             if not sources:
                 return {"ok": True, "skipped": "no_sources", "memory_day": target.isoformat()}
             revisions = self._source_revisions(sources)
-            if self._impression_is_current(target, revisions):
+            legacy_revisions = {
+                source["source_id"]: _content_hash(source["content"])
+                for source in sources
+            }
+            if self._impression_is_current(
+                target,
+                revisions,
+                legacy_revisions,
+            ):
                 return {"ok": True, "skipped": "current", "memory_day": target.isoformat()}
             allowed_sources = {source["source_id"] for source in sources}
             user_payload = json.dumps(
@@ -849,7 +881,13 @@ class DailyContinuityService:
                 candidate = _parse_day(prefix)
             except DailyContinuityError:
                 continue
-            if earliest <= candidate <= completed_through:
+            if (
+                earliest <= candidate <= completed_through
+                and (
+                    candidate >= self.bucket_fallback_start_day
+                    or self._impression_path(candidate).exists()
+                )
+            ):
                 candidates.add(candidate)
         for bucket in buckets or []:
             meta = bucket.get("metadata") or {}
@@ -868,7 +906,13 @@ class DailyContinuityService:
                         relevant_times.append(changed)
             for relevant_time in relevant_times:
                 candidate = logical_day(relevant_time, self.tz, self.cutoff_hour)
-                if earliest <= candidate <= completed_through:
+                if (
+                    earliest <= candidate <= completed_through
+                    and (
+                        candidate >= self.bucket_fallback_start_day
+                        or self._impression_path(candidate).exists()
+                    )
+                ):
                     candidates.add(candidate)
         return sorted(candidates)
 

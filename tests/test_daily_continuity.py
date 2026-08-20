@@ -297,6 +297,76 @@ async def test_bucket_only_day_generates_without_handoff_note(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_pre_start_day_is_not_backfilled_from_note_or_bucket(tmp_path):
+    dehydrator = FakeDehydrator()
+    bucket = {
+        "id": "historical-bucket",
+        "content": "不应因部署兜底而回填的旧日正文",
+        "metadata": {
+            "type": "dynamic",
+            "created": "2026-08-19T12:00:00+00:00",
+        },
+    }
+    service = make_service(tmp_path, dehydrator=dehydrator, buckets=[bucket])
+    service.ingest_note(
+        note_payload("# 2026-08-19 便签（周三）\n旧日便签", day="2026-08-19")
+    )
+
+    result = await service.generate_day("2026-08-19")
+
+    assert result["skipped"] == "before_bucket_fallback_start"
+    assert dehydrator.calls == []
+
+
+@pytest.mark.asyncio
+async def test_unchanged_v2_impression_is_not_rewritten_but_source_change_upgrades(
+    tmp_path,
+):
+    dehydrator = FakeDehydrator(
+        {
+            "skip": False,
+            "events": [
+                {
+                    "text": "我保留了旧日印象，直到来源真的变化。",
+                    "source_ids": ["note:cc:2026-08-19"],
+                }
+            ],
+            "open_loops": [],
+            "impressions": [],
+        }
+    )
+    service = make_service(tmp_path, dehydrator=dehydrator)
+    first = "# 2026-08-19 便签（周三）\n第一版"
+    second = "# 2026-08-19 便签（周三）\n第二版"
+    service.ingest_note(note_payload(first, day="2026-08-19"))
+    service.bucket_fallback_start_day = date(2026, 8, 19)
+    await service.generate_day("2026-08-19")
+    impression_path = service._impression_path(date(2026, 8, 19))
+    impression_path.write_text(
+        impression_path.read_text(encoding="utf-8").replace(
+            "prompt_version: daily-impression-v3",
+            "prompt_version: daily-impression-v2",
+        ),
+        encoding="utf-8",
+    )
+    service.bucket_fallback_start_day = date(2026, 8, 20)
+    dehydrator.calls.clear()
+
+    current = await service.generate_day("2026-08-19")
+    assert current["skipped"] == "current"
+    assert dehydrator.calls == []
+
+    service.ingest_note(note_payload(second, day="2026-08-19"))
+    upgraded = await service.generate_day("2026-08-19")
+
+    assert upgraded["status"] == "ready"
+    assert len(dehydrator.calls) == 1
+    assert "prompt_version: daily-impression-v3" in impression_path.read_text(
+        encoding="utf-8"
+    )
+
+
+@pytest.mark.asyncio
 async def test_daily_generation_includes_feel_as_evidence(tmp_path):
     dehydrator = FakeDehydrator(
         {
@@ -495,6 +565,27 @@ def test_pending_days_include_bucket_only_day(tmp_path):
         datetime(2026, 8, 21, 4, 1, tzinfo=shanghai),
         buckets=[bucket],
     ) == [date(2026, 8, 20)]
+
+
+def test_pending_days_do_not_backfill_pre_start_sources(tmp_path):
+    service = make_service(tmp_path)
+    service.ingest_note(
+        note_payload("# 2026-08-19 便签（周三）\n旧日便签", day="2026-08-19")
+    )
+    bucket = {
+        "id": "historical-bucket",
+        "content": "旧日正文",
+        "metadata": {
+            "type": "dynamic",
+            "created": "2026-08-19T12:00:00+00:00",
+        },
+    }
+    shanghai = ZoneInfo("Asia/Shanghai")
+
+    assert service.pending_days(
+        datetime(2026, 8, 21, 4, 1, tzinfo=shanghai),
+        buckets=[bucket],
+    ) == []
 
 
 def test_render_budget_does_not_mutate_generation_result(monkeypatch):
