@@ -135,6 +135,34 @@ def test_daily_prompt_requires_first_person_without_inventing_feelings():
     assert "知知" in DAILY_IMPRESSION_PROMPT
     assert "用户”“助手”“AI”“顾凛认为/表示/说" in DAILY_IMPRESSION_PROMPT
     assert "第一人称只规定叙述视角，不授权补写心理活动" in DAILY_IMPRESSION_PROMPT
+    assert "events 最多4项" in DAILY_IMPRESSION_PROMPT
+    assert "450-650 token" in DAILY_IMPRESSION_PROMPT
+
+
+def test_daily_generation_uses_expanded_visible_and_json_budgets(tmp_path):
+    import daily_continuity as daily_module
+
+    service = make_service(tmp_path)
+    source = "note:cc:2026-08-20"
+    entry = {"text": "有依据的条目", "source_ids": [source]}
+    parsed = service._parse_generation(
+        json.dumps(
+            {
+                "skip": False,
+                "events": [entry] * 6,
+                "open_loops": [entry] * 5,
+                "impressions": [entry] * 5,
+            },
+            ensure_ascii=False,
+        ),
+        allowed_sources={source},
+    )
+
+    assert service.max_output_tokens == 1_400
+    assert daily_module.MAX_RENDER_TOKENS == 900
+    assert len(parsed["events"]) == 4
+    assert len(parsed["open_loops"]) == 3
+    assert len(parsed["impressions"]) == 3
 
 
 def test_ingest_upserts_one_revision_per_client_day(tmp_path):

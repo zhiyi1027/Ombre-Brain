@@ -70,7 +70,7 @@ Authorization: Bearer <OMBRE_DAILY_NOTE_TOKEN>
 
 ## 生成与读取
 
-后台默认每 5 分钟检查最近 7 个已结束记忆日。只有 source revision 或 prompt 版本变化才调用一次配置的压缩 LLM；默认复用 `dehydration.model`，不另配模型。
+后台默认每 5 分钟检查最近 7 个已结束记忆日。只有 source revision 或 prompt 版本变化才调用一次配置的压缩 LLM；默认复用 `dehydration.model`，不另配模型。可见正文以 450–650 token 为目标，最多保留 4 条事件、3 条未完事项和 3 条明确感受；整张成品约 900 token 硬预算，只按完整条目取舍，不截断句子。内部 JSON 输出上限默认 1400 token，为 `source_ids` 等结构开销留余量。
 
 生成结果保存在 `<vault>/daily_continuity/`，不位于 BucketManager 的活动目录。启动 `breath()` 在核心准则之后、最近记忆之前插入前一个已结束记忆日的成品；硬预算放不下时只给显式读取指针。
 
