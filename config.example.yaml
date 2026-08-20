@@ -156,6 +156,12 @@ scoring_weights:
 # --- Fuzzy matching / 模糊匹配参数 ---
 matching:
   fuzzy_threshold: 50             # Minimum match score (0-100) / 最低匹配分数
+  # 纯语义候选进入结果池的最低余弦相似度（默认 0.55）。
+  # 一条记忆哪怕一个关键词都不沾，只要语义相似度到这个数就能被检索到——
+  # 「问我的工作」这类查询全靠它，因为"我的工作"四个字不会字面出现在记忆里。
+  # 调高：召回更准但更少；调低：捞得更多但开始混进噪音。
+  # 3.2.0 从 0.65 下调到 0.55，依据见 src/bucket_manager.py 的扫描记录。
+  vector_recall_threshold: 0.55
   max_results: 5                  # Max results per search / 单次搜索最多返回条数
 
 # --- Surfacing defaults / 浮现默认参数 ---

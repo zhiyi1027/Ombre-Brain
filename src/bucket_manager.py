@@ -40,6 +40,8 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 
+from plan_history import append_plan_change_log
+
 # 统一错误体系：越界 clamp 时上报 OB-W001/OB-W002（rule.md §11）
 try:
     from errors import push_warning as _ob_push_warning  # type: ignore
@@ -347,7 +349,33 @@ _MAX_METADATA_NODES = 10_000
 
 # --- search 评分 ---
 _VECTOR_TOPK = 50          # embedding 预取 top_k（仅作 semantic 分源，不窄化候选集）
-_VECTOR_RECALL_THRESHOLD = 0.65  # 纯语义候选进入结果池的最低余弦相似度
+# 纯语义候选进入结果池的最低余弦相似度。config.matching.vector_recall_threshold 可覆盖。
+#
+# 2026-08-18 从 0.65 下调到 0.55，依据是对 917 桶真实记忆的只读扫描：
+#
+#   阈值    平均新增/查询   双通道印证率   新增相似度中位
+#   0.65        0.1          100.0%         0.661   ← 旧值
+#   0.55        8.6           88.3%         0.566   ← 拐点
+#   0.50       55.1           69.0%         0.520
+#   0.45      170.8           60.6%         0.483
+#
+# 0.65 之下这条语义直通路**事实上不存在**：9 个宽泛查询一共只有 1 条桶能靠它
+# 进来，「我的工作」「同事」「情绪」全是 0。代码里写着 text_match or
+# semantic_match，但后一支从来不为真——OB 名义上是混合检索，实际是纯关键词检索。
+#
+# 原因是 semantic 权重只占 2.5/13.5≈18.5%：一条桶哪怕相似度 0.9，单靠这一维也
+# 只贡献约 16.7 分，离 fuzzy_threshold=50 差得远，必须同时在 topic（关键词重合）
+# 上得分才过得去。而「我的工作」这几个字根本不会字面出现在记忆里。
+#
+# 选 0.55 而不是更低：双通道印证率（新召回的桶里同时被关键词命中的比例）在这里
+# **不降反升**到 88.3%，说明捞回的是"关键词也认、只是加权分被七维稀释掉"的桶；
+# 再往下印证率单调劣化，0.45 时每查询涌进 170 条、印证率只剩 60%，那是拿噪音换召回。
+#
+# ⚠️ 已知弱点：印证率用"关键词也命中"当作"真的相关"的代理，而宽泛查询恰恰是
+# 关键词最不管用的场景——它能证明 0.45 是坏的，不能独立证明 0.55 是好的。
+# 0.55 最终由人工逐条看过新召回内容后确认（面试、薪资与配得感、上线那一刻的
+# 踏实感，都是该出现却一条都出不来的记忆）。调整前请重跑扫描，不要直接改数字。
+_VECTOR_RECALL_THRESHOLD = 0.55
 _RESOLVED_RANK_PENALTY = 0.3   # resolved 桶仅在排序时降权
 _LITERAL_MATCH_BONUS = 25.0    # 查询串原样命中 name/tags/domain/正文时的召回加分（修短查询召回）
 
@@ -401,6 +429,15 @@ class BucketManager:
         self.plan_dir = os.path.join(self.base_dir, "plans")
         self.letter_dir = os.path.join(self.base_dir, "letters")
         self.fuzzy_threshold = config.get("matching", {}).get("fuzzy_threshold", 50)
+        # 纯语义候选的门槛。见 _VECTOR_RECALL_THRESHOLD 上方的扫描依据。
+        try:
+            self.vector_recall_threshold = float(
+                config.get("matching", {}).get(
+                    "vector_recall_threshold", _VECTOR_RECALL_THRESHOLD
+                )
+            )
+        except (TypeError, ValueError):
+            self.vector_recall_threshold = _VECTOR_RECALL_THRESHOLD
         self.max_results = config.get("matching", {}).get("max_results", 5)
 
         # --- Search scoring weights / 检索权重配置 ---
@@ -1570,6 +1607,106 @@ class BucketManager:
 
         return {"buckets_changed": changed, "replacements": total}
 
+    async def update_content_fragment(
+        self,
+        bucket_id: str,
+        *,
+        old_str: str,
+        new_str: str,
+        append_plan_history: bool = False,
+        **kwargs,
+    ) -> dict[str, Any]:
+        """Atomically replace one unique literal fragment in a bucket body.
+
+        The match and the write deliberately happen under the same per-bucket
+        cross-process lock.  Computing the replacement from an earlier
+        ``get()`` result would let a concurrent trace/update be overwritten by
+        a stale full-body snapshot.
+
+        ``new_str`` may be empty (delete the matched fragment).  Zero matches
+        and multiple matches are both non-mutating results so callers never
+        have to guess which occurrence was intended.
+        """
+        old_text = str(old_str)
+        replacement = str(new_str)
+        if not old_text:
+            return {"ok": False, "error": "empty_old_str", "matches": 0}
+        if "content" in kwargs:
+            return {"ok": False, "error": "content_conflict", "matches": 0}
+
+        async with self._bucket_turn(bucket_id):
+            file_path = self._find_bucket_file(bucket_id)
+            if not file_path:
+                return {"ok": False, "error": "not_found", "matches": 0}
+            try:
+                post = frontmatter.load(file_path)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to load bucket for content patch %s: %s",
+                    bucket_id,
+                    exc,
+                )
+                return {"ok": False, "error": "read_failed", "matches": 0}
+
+            current_content = str(post.content or "")
+            # ``str.count`` ignores overlapping occurrences ("aa" in "aaa"),
+            # which could silently patch the first of two valid match starts.
+            # Only 0/1/many matters, so stop at the second start rather than
+            # scanning every pathological overlapping match.
+            first_match = current_content.find(old_text)
+            if first_match < 0:
+                return {
+                    "ok": False,
+                    "error": "old_str_not_found",
+                    "matches": 0,
+                }
+            second_match = current_content.find(old_text, first_match + 1)
+            if second_match >= 0:
+                return {
+                    "ok": False,
+                    "error": "old_str_ambiguous",
+                    "matches": 2,
+                }
+
+            updated_content = self._sanitize_text(
+                current_content.replace(old_text, replacement, 1)
+            )
+            if updated_content == current_content:
+                return {"ok": False, "error": "unchanged", "matches": 1}
+            if not updated_content.strip():
+                return {
+                    "ok": False,
+                    "error": "invalid_content",
+                    "matches": 1,
+                    "message": "替换后正文不能为空；如需移除整个桶，请使用归档。",
+                }
+
+            updates = dict(kwargs)
+            if append_plan_history and str(post.get("type") or "") == "plan":
+                history = list(post.get("change_log") or [])
+                if "status" in updates and updates["status"] != post.get("status"):
+                    history = append_plan_change_log(
+                        history,
+                        "status",
+                        **{"from": post.get("status"), "to": updates["status"]},
+                    )
+                updates["change_log"] = append_plan_change_log(history, "edit")
+            updates["content"] = updated_content
+            try:
+                committed = await self._update_locked(bucket_id, **updates)
+            except ValueError as exc:
+                return {
+                    "ok": False,
+                    "error": "invalid_content",
+                    "matches": 1,
+                    "message": str(exc),
+                }
+            return {
+                "ok": bool(committed),
+                "error": "" if committed else "update_failed",
+                "matches": 1,
+            }
+
     # ---------------------------------------------------------
     # Update bucket
     # 更新桶
@@ -2402,7 +2539,7 @@ class BucketManager:
                 text_match = normalized >= self.fuzzy_threshold or literal_hit
                 semantic_match = (
                     semantic_score is not None
-                    and semantic_score >= _VECTOR_RECALL_THRESHOLD
+                    and semantic_score >= self.vector_recall_threshold
                 )
                 if text_match or semantic_match:
                     # Resolved buckets get ranking penalty (but still reachable by keyword)

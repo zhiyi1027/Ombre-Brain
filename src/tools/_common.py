@@ -42,6 +42,7 @@ import time
 import uuid
 
 from utils import parse_bool
+from plan_history import append_plan_change_log as append_plan_change_log
 
 from . import _runtime as rt
 
@@ -663,23 +664,6 @@ async def enforce_pinned_quota(pinned: bool) -> bool:
             f"当前已有 {cur} 条 pinned（硬上限 {cap}），接近上限",
         )
     return True
-
-
-def append_plan_change_log(old_history, action: str, **fields) -> list:
-    """plan 桶 change_log 唯一写入口（iter 2.0 §10 U-01 修复）。
-
-    把旧 history 复制一份、追加一条带 ISO 时间戳的新条目，返回新 list。
-    所有写 plan change_log 的地方（plan_create / trace plan / dashboard plan action）
-    都必须走这里，保证字段顺序、时间戳精度、复制语义一致。
-    """
-    from datetime import datetime as _dt
-    history = list(old_history or [])
-    entry = {"ts": _dt.now().isoformat(timespec="seconds"), "action": action}
-    for k, v in fields.items():
-        if v is not None:
-            entry[k] = v
-    history.append(entry)
-    return history
 
 
 async def merge_or_create(

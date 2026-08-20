@@ -142,3 +142,26 @@ async def test_trace_core_records_v3_tool_event_without_content_body(monkeypatch
     assert calls[0][1]["delete"] is True
     assert calls[0][1]["content_length"] == len("private replacement")
     assert "content" not in calls[0][1]
+
+
+@pytest.mark.asyncio
+async def test_trace_core_records_v3_tool_event_without_patch_bodies(monkeypatch) -> None:
+    calls = []
+
+    rt.init(config={}, mark_op=None)
+    monkeypatch.setattr(rt, "record_v3_tool_event", lambda name, payload: calls.append((name, payload)))
+
+    result = await trace_mod.trace_core(
+        bucket_id="",
+        old_str="private old fragment",
+        new_str="private new fragment",
+    )
+
+    assert "bucket_id" in result
+    assert calls[0][0] == "trace"
+    assert calls[0][1]["content_length"] == 0
+    assert calls[0][1]["old_str_length"] == len("private old fragment")
+    assert calls[0][1]["new_str_length"] == len("private new fragment")
+    assert "content" not in calls[0][1]
+    assert "old_str" not in calls[0][1]
+    assert "new_str" not in calls[0][1]

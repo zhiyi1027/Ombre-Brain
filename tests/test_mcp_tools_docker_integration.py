@@ -92,6 +92,8 @@ EXPECTED_TOOL_PROPERTIES = {
         "media_replace",
         "hard_delete",
         "delete_reason",
+        "old_str",
+        "new_str",
     },
     "anchor": {"bucket_id"},
     "release": {"bucket_id"},
@@ -446,6 +448,39 @@ def test_trace_existing_bucket_without_changes_is_a_clean_noop(mcp_client):
     bucket_id = _hold(mcp_client, _marker("trace-noop"))
     result = mcp_client.call("trace", {"bucket_id": bucket_id})
     assert result == "没有任何字段需要修改。"
+
+
+def test_trace_patches_unique_tail_fragment_of_long_pinned_bucket(mcp_client):
+    marker = _marker("trace-patch-long")
+    filler = f"{marker} 长桶填充行，必须保留。\n" * 700
+    old_str = "目标旧片段第一行🙂\n目标旧片段第二行 **原样**"
+    new_str = "目标新片段第一行🙂\n目标新片段第二行 **原样**"
+    suffix = "\n长桶尾声不能丢。"
+    bucket_id = _hold(
+        mcp_client,
+        filler + old_str + suffix,
+        pinned=True,
+        importance=10,
+    )
+
+    result = mcp_client.call(
+        "trace",
+        {
+            "bucket_id": bucket_id,
+            "old_str": old_str,
+            "new_str": new_str,
+        },
+    )
+    recalled = mcp_client.call(
+        "breath_advanced",
+        {"query": bucket_id, "max_results": 1, "max_tokens": 20_000},
+    )
+
+    assert "content=已局部替换" in result
+    assert new_str in recalled
+    assert old_str not in recalled
+    assert filler[:100] in recalled
+    assert suffix in recalled
 
 
 def test_anchor_marks_a_bucket(mcp_client):

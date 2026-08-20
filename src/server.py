@@ -696,12 +696,15 @@ async def trace(
     media_replace: Optional[list | str] = None,
     hard_delete: Optional[bool] = False,
     delete_reason: Optional[str] = "",
+    old_str: Optional[str] = "",
+    new_str: Optional[str] = None,
 ) -> str:
     """仅在明确需要修改某条已存在记忆时调用，不要猜测 bucket_id 或自行改写记忆。
 
     resolved=1 标记已放下；resolved=0 重新激活。pinned=1 标记永久核心并锁定
-    importance=10；pinned=0 取消。digested=1 标记已消化。content 会替换正文并
-    重建 embedding。status/weight 用于 plan；dont_surface 控制日常浮现；
+    importance=10；pinned=0 取消。digested=1 标记已消化。content 会完整替换正文；
+    old_str/new_str 会在完整原文中做唯一、逐字的局部替换（new_str 可为空以删除），
+    两种方式都会重建 embedding，且不能同时使用。status/weight 用于 plan；dont_surface 控制日常浮现；
     why_remembered、meaning_append/replace、media_append/replace 更新相应元数据。
 
     删除边界：delete=True 只会把 Markdown 移入 archive 并标记 deleted_at，不会
@@ -719,6 +722,7 @@ async def trace(
             meaning_append=meaning_append, meaning_replace=meaning_replace,
             media_append=media_append, media_replace=media_replace,
             hard_delete=hard_delete, delete_reason=delete_reason,
+            old_str=old_str, new_str=new_str,
         ),
         op="trace",
         args={
@@ -728,6 +732,8 @@ async def trace(
             "content_len": len(content or ""), "delete": delete, "status": status,
             "hard_delete": hard_delete,
             "delete_reason_len": len(str(delete_reason or "")),
+            "old_str_len": len(str(old_str or "")),
+            "new_str_len": len(str(new_str or "")) if new_str is not None else 0,
             "weight": weight, "dont_surface": dont_surface,
             "why_len": len(why_remembered or ""),
             "meaning_append_len": len(meaning_append or ""),
@@ -735,6 +741,27 @@ async def trace(
             "media_append_count": len(media_append or []),
             "media_replace_count": len(media_replace or []),
         },
+    )
+
+
+# Reject misspelled/unknown trace arguments instead of letting Pydantic's
+# default extra=ignore silently degrade an intended edit into a bucket-id-only
+# no-op.  This is especially important for old_str/new_str patch calls.
+try:
+    _trace_public_tool = mcp._tool_manager.get_tool("trace")
+    if _trace_public_tool is None:
+        raise RuntimeError("registered trace tool is missing")
+    _trace_arg_model = _trace_public_tool.fn_metadata.arg_model
+    _trace_arg_model.model_config["extra"] = "forbid"
+    _trace_arg_model.model_rebuild(force=True)
+    # FastMCP caches the public input schema when the tool is registered.
+    # Keep that cache in sync so clients can discover that unknown arguments
+    # are rejected instead of learning only after a failed invocation.
+    _trace_public_tool.parameters = _trace_arg_model.model_json_schema()
+except (AttributeError, RuntimeError, TypeError, ValueError) as _trace_schema_exc:
+    logger.warning(
+        "trace strict-argument adapter unavailable: %s",
+        _trace_schema_exc,
     )
 
 
