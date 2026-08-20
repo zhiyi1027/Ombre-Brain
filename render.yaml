@@ -31,6 +31,8 @@ services:
       # provisioning time so an anonymous first request cannot claim setup.
       - key: OMBRE_DASHBOARD_PASSWORD
         generateValue: true
+      - key: OMBRE_DAILY_NOTE_TOKEN
+        sync: false          # Long random secret shared only with the note uploader
       - key: OMBRE_BUCKETS_DIR
         value: /opt/render/project/src/buckets
       - key: OMBRE_CONFIG_PATH

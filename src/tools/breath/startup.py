@@ -246,6 +246,7 @@ async def surface_startup(
     soft_tokens: int,
     reference_time: datetime | None = None,
     exclude_older_id: str = "",
+    daily_impression: str = "",
 ) -> str:
     """Render one bounded startup briefing within soft/hard budgets."""
 
@@ -258,6 +259,7 @@ async def surface_startup(
     max_results = max(1, int(max_results or 1))
 
     core_results: list[str] = []
+    daily_results: list[str] = []
     recent_results: list[str] = []
     unfinished_results: list[str] = []
     plan_results: list[str] = []
@@ -271,6 +273,8 @@ async def surface_startup(
         parts = ["=== 轻量睁眼 ===\n轻量简报：核心、最近24小时、随机轮换的较早未完事项与活动计划。"]
         if core_results:
             parts.append("=== 核心准则 ===\n" + "\n---\n".join(core_results))
+        if daily_results:
+            parts.extend(daily_results)
         if recent_results:
             parts.append("=== 最近24小时 ===\n" + "\n---\n".join(recent_results))
         if unfinished_results:
@@ -309,6 +313,18 @@ async def surface_startup(
                 reason="hard_limit",
             )
             append_if_fits(pointers, pointer, limit=hard_tokens)
+
+    daily_text = str(daily_impression or "").strip()
+    if daily_text and not append_if_fits(
+        daily_results,
+        daily_text,
+        limit=hard_tokens,
+    ):
+        append_if_fits(
+            pointers,
+            '↗ [未展开] 昨日印象（使用 breath_advanced(domain="daily_impression") 读取）',
+            limit=hard_tokens,
+        )
 
     plans, total_plans = _active_plans(all_buckets)
     expanded_plans = 0

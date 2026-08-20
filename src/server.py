@@ -49,6 +49,7 @@ from embedding_engine import EmbeddingEngine
 from embedding_outbox import EmbeddingOutbox
 from import_memory import ImportEngine
 from migrate_engine import MigrateEngine
+from daily_continuity import DailyContinuityService
 from utils import get_version, load_config, setup_logging
 
 # --- iter 2.1：MCP 工具实现已按代码路径拆分到 tools/ 子包 ---
@@ -219,6 +220,12 @@ dehydrator = Dehydrator(config)                      # Dehydrator / 脱水器
 decay_engine = DecayEngine(config, bucket_mgr)       # Decay engine / 衰减引擎
 import_engine = ImportEngine(config, bucket_mgr, dehydrator, embedding_engine)  # Import engine / 导入引擎
 migrate_engine = MigrateEngine(config, bucket_mgr, embedding_engine)              # Migrate engine / 记忆包迁移引擎
+daily_continuity = DailyContinuityService(
+    config,
+    bucket_mgr=bucket_mgr,
+    dehydrator=dehydrator,
+    logger=logger,
+)
 
 # --- GitHub Sync / GitHub 同步 ---
 from github_sync import GitHubSync  # type: ignore
@@ -357,6 +364,7 @@ _wsh.init_runtime(
     embedding_outbox=embedding_outbox,
     import_engine=import_engine,
     migrate_engine=migrate_engine,
+    daily_continuity=daily_continuity,
     github_sync_instance=github_sync_instance,
     restart_github_auto_task=_restart_github_auto_task,
 )
@@ -518,6 +526,7 @@ _tools_runtime.init(
     decay_engine=decay_engine,
     embedding_engine=embedding_engine,
     import_engine=import_engine,
+    daily_continuity=daily_continuity,
     logger=logger,
     fire_webhook=_fire_webhook,
     mark_op=_mark_op,
@@ -981,6 +990,7 @@ if __name__ == "__main__":
             logger=logger,
             decay_engine=decay_engine,
             embedding_outbox=embedding_outbox,
+            daily_continuity=daily_continuity,
             ensure_ollama_child=_ollama_local.ensure_child_on_boot,
             stop_ollama_child=_ollama_local.stop_child,
             load_tunnel_config=_load_tunnel_config,

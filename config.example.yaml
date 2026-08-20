@@ -117,6 +117,21 @@ dehydration:
   temperature: 0.1
   timeout_seconds: 120             # LLM request timeout seconds / LLM 请求超时秒数
 
+# --- Daily continuity / 每日连续性 ---------------------------------
+# CC/Codex 换窗便签通过私有 HTTP 入口写入独立暂存区；不会进入普通记忆桶、
+# 搜索、dream 或 feel。每天按上海时间凌晨 4 点切日，复用上面的压缩 LLM
+# 生成一张约 250-350 token 的昨日印象。
+daily_continuity:
+  enabled: true
+  timezone: "Asia/Shanghai"
+  cutoff_hour: 4
+  poll_seconds: 300
+  catchup_days: 7
+  max_note_chars: 50000
+  max_input_chars: 60000
+  max_output_tokens: 900
+  # token: ""  # Prefer OMBRE_DAILY_NOTE_TOKEN; falls back to OMBRE_HOOK_TOKEN.
+
 # --- Decay parameters / 记忆衰减参数 ---
 # Simulates Ebbinghaus forgetting curve, auto-archives inactive memories
 # 模拟艾宾浩斯遗忘曲线，自动归档不活跃的记忆

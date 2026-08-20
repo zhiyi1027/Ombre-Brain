@@ -43,7 +43,7 @@
 
 三个入口共用同一套内部逻辑，只是暴露的参数不同——`breath()` 故意做成 0 参数，是因为 claude.ai 按需加载工具时会跳过参数复杂的工具，塞太多参数会导致它常年加载不上、记忆没法自动浮现。
 
-- **`breath()`** — 无参轻量睁眼 → 短核心全文 + 最近 24 小时（最新一条优先，其余按重要度）+ 从高权重池随机轮换最多一条较早未完记忆 + 计划预算内的 active plan 正文。默认软目标 3000 token、硬上限 5000 token；当前未到软目标时，下一整桶可跨过软目标，只有超过硬上限才返回指针。**对话开始第一件事，没有例外**。
+- **`breath()`** — 无参轻量睁眼 → 短核心全文 + 已生成的昨日印象 + 最近 24 小时（最新一条优先，其余按重要度）+ 从高权重池随机轮换最多一条较早未完记忆 + 计划预算内的 active plan 正文。默认软目标 3000 token、硬上限 5000 token；当前未到软目标时，下一整桶可跨过软目标，只有超过硬上限才返回指针。**对话开始第一件事，没有例外**。
 - **`breath_search(query, domain="", max_results=0)`** — 按关键词/语义主动找：
   - `breath_search(query="她最近的工作状态")` → 混合检索。语义可用时与关键词/BM25 融合；不可用时会明确提示并继续关键词检索。
   - `breath_search(query="完整 bucket_id")` → 按 ID 直读单个桶的完整原始 content，跳过向量、摘要和改写；在 `trace(content=...)` 前先这样读取，避免拿摘要覆盖原文。
@@ -51,6 +51,7 @@
 - **`breath_advanced(query="", max_tokens=0, domain="", valence=-1, arousal=-1, max_results=0, importance_min=-1, tags="", catalog=False)`** — 需要更细控制时用：
   - `breath_advanced(domain="feel")` → 读我留下的所有第一人称感受（普通 breath 不会浮 feel）。
   - `breath_advanced(domain="plan")` → 逐字读取全部 active plans。
+  - `breath_advanced(domain="daily_impression")` → 读取独立保存的最近日印象；它们不进入普通桶召回。
   - `breath_advanced(importance_min=8)` → 拉所有我标过 importance≥8 的核心事项，按重要度降序。
   - `breath_advanced(tags="承诺")` → 标签 AND 过滤。`tags="feel"` 等价于 `domain="feel"`。
   - `breath_advanced(catalog=True)` → **目录模式（最省 token）**：每桶只回一行「名称|域|重要度」，不带正文、0 次 LLM 调用。上下文紧张 / token 预算敏感时，开新对话可先看目录定位，再 `breath_search(query=...)` 精准拉取需要的那几条。可配 `domain` 过滤。

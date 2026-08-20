@@ -49,6 +49,8 @@
 - `OMBRE_HOOK_TOKEN`：Hook 鉴权令牌。
 - `OMBRE_HOOK_SKIP`：跳过 Hook。
 - `OMBRE_HOOK_ALLOW_PUBLIC`：允许公网 Hook 地址。
+- `OMBRE_DAILY_NOTE_TOKEN`：`POST /internal/daily-notes` 的私有上传密钥；未设置时回退使用 `OMBRE_HOOK_TOKEN`。
+- `OMBRE_DAILY_NOTE_URL`：CC/Codex VPS 上传器使用的完整接收地址；只作用于 `sync-daily-note.py`，不由 OB 服务端读取。
 - `TUNNEL_EDGE`：cloudflared 边缘节点覆盖值。
 - `TUNNEL_TRANSPORT_PROTOCOL`：cloudflared 传输协议。
 

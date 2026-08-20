@@ -142,6 +142,19 @@ async def surface_plans(max_tokens: int) -> str:
     return output
 
 
+async def surface_daily_impressions(max_tokens: int) -> str:
+    """Read generated daily continuity artifacts outside ordinary buckets."""
+
+    service = getattr(rt, "daily_continuity", None)
+    if service is None or not getattr(service, "enabled", False):
+        return "日印象未启用。"
+    try:
+        return service.read_recent(max_tokens=max_tokens)
+    except Exception as exc:
+        rt.logger.error("Daily impression retrieval failed: %s", exc)
+        return "读取日印象失败。"
+
+
 async def surface_default(
     max_results: int,
     max_tokens: int,
@@ -157,6 +170,13 @@ async def surface_default(
 
     surfacing_cfg = rt.config.get("surfacing", {}) or {}
     if startup:
+        daily_impression = ""
+        service = getattr(rt, "daily_continuity", None)
+        if service is not None and getattr(service, "enabled", False):
+            try:
+                daily_impression = service.read_previous()
+            except Exception as exc:
+                rt.logger.warning("Daily startup impression unavailable: %s", exc)
         return await surface_startup(
             all_buckets,
             max_results=max_results,
@@ -166,6 +186,7 @@ async def surface_default(
                 or DEFAULT_SOFT_TOKENS
             ),
             exclude_older_id=_last_startup_unfinished_id(),
+            daily_impression=daily_impression,
         )
 
     # --- pinned/protected 桶置顶（排除 letter 桶：letter 的 importance=10 不代表核心准则）---

@@ -445,6 +445,16 @@ def load_config(config_path: Optional[str] = None) -> dict:
         "storage": {
             "external_change_poll_seconds": 1.0,
         },
+        "daily_continuity": {
+            "enabled": True,
+            "timezone": "Asia/Shanghai",
+            "cutoff_hour": 4,
+            "poll_seconds": 300,
+            "catchup_days": 7,
+            "max_note_chars": 50_000,
+            "max_input_chars": 60_000,
+            "max_output_tokens": 900,
+        },
         "embedding": {
             "enabled": True,
             "background_indexing": True,

@@ -20,6 +20,7 @@ x-common-env: &common-env
   OMBRE_EMBED_API_KEY: ${OMBRE_EMBED_API_KEY:-}
   OMBRE_EMBED_BASE_URL: ${OMBRE_EMBED_BASE_URL:-}
   OMBRE_EMBED_MODEL: ${OMBRE_EMBED_MODEL:-}
+  OMBRE_DAILY_NOTE_TOKEN: ${OMBRE_DAILY_NOTE_TOKEN:-}
   # Trust only the last-hop reverse proxy CIDRs supplied by the operator.
   OMBRE_TRUSTED_PROXY_CIDRS: "${OMBRE_TRUSTED_PROXY_CIDRS:-127.0.0.0/8,::1/128}"
   # 跳过 SRV edge discovery，兼容 VPN DNS；双 region 保留 Tunnel 冗余。

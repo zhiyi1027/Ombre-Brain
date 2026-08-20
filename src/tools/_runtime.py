@@ -35,6 +35,7 @@ dehydrator: Any = None
 decay_engine: Any = None
 embedding_engine: Any = None
 import_engine: Any = None
+daily_continuity: Any = None
 logger: Any = None
 v3_runtime: Any = None
 
