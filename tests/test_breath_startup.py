@@ -6,6 +6,7 @@ import pytest
 
 import tools._runtime as rt
 import tools.breath as breath_module
+import tools.breath.startup as startup_module
 from tools.breath.startup import surface_startup
 from utils import count_tokens_approx
 from web import config_api
@@ -163,6 +164,58 @@ async def test_startup_is_deterministic_and_reconnects_recent_unfinished_and_pla
     assert "久未浮现" not in first
     assert "偶然想起" not in first
     assert count_tokens_approx(first) <= 5000
+
+
+def test_older_unresolved_randomly_rotates_without_immediate_repeat(monkeypatch):
+    reference = datetime.fromisoformat("2026-08-18T12:00:00")
+    buckets = [
+        make_bucket(
+            "older-high",
+            "高权重旧记忆。",
+            created="2026-08-14T09:00:00",
+            importance=10,
+        ),
+        make_bucket(
+            "older-mid",
+            "中权重旧记忆。",
+            created="2026-08-13T09:00:00",
+            importance=8,
+        ),
+        make_bucket(
+            "older-low",
+            "低权重旧记忆。",
+            created="2026-08-12T09:00:00",
+            importance=6,
+        ),
+    ]
+    seen_pools = []
+
+    def pick_first(pool):
+        seen_pools.append([bucket["id"] for bucket in pool])
+        return pool[0]
+
+    monkeypatch.setattr(startup_module.random, "choice", pick_first)
+    first, _ = startup_module._select_memories(
+        buckets,
+        max_results=1,
+        reference_time=reference,
+    )
+    first_id = first[0][0]["id"]
+    second, _ = startup_module._select_memories(
+        buckets,
+        max_results=1,
+        reference_time=reference,
+        exclude_older_id=first_id,
+    )
+    second_id = second[0][0]["id"]
+
+    assert first_id == "older-high"
+    assert second_id == "older-mid"
+    assert first_id != second_id
+    assert seen_pools == [
+        ["older-high", "older-mid", "older-low"],
+        ["older-mid", "older-low"],
+    ]
 
 
 @pytest.mark.asyncio

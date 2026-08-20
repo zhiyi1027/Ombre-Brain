@@ -4,7 +4,8 @@ tools/breath/surface.py — 无 query 浮现模式
 ========================================
 
 走 breath()（不传 query）时进入这里。无参公开调用转到 startup.py 生成
-确定性睁眼简报；手动完整浮现仍使用本文件原有的权重采样与被动联想。
+轻量睁眼简报；其中较早未完事项从高权重候选池随机轮换，手动完整浮现
+仍使用本文件原有的权重采样与被动联想。
 
 关键行为：
 - 排除 anchor 桶（anchor 是坐标系，不主动出现）
@@ -32,6 +33,7 @@ from .. import _runtime as rt
 from utils import parse_bool, parse_iso_datetime
 from ._verbatim import render_stored_bucket
 from .startup import DEFAULT_SOFT_TOKENS, surface_startup
+from .trace import list_runs
 
 # U-07 fix: throttle the sampling-fallback INFO log to once per 5 minutes.
 # 库小且 sampling=ON 时此分支每次 breath 都触发，原本会刷屏；改为 ≥300s
@@ -61,6 +63,21 @@ def _budget_notice(*, omitted: int, used: int, limit: int) -> str:
     return _BUDGET_NOTICE.format(omitted=omitted, used=used, limit=limit)
 
 
+def _last_startup_unfinished_id() -> str:
+    """Return the last actually surfaced startup unfinished bucket, if any."""
+
+    for run in list_runs(limit=20, kind="actual"):
+        if run.get("mode") != "startup":
+            continue
+        for entry in run.get("entries") or []:
+            if (
+                entry.get("section") == "unfinished"
+                and entry.get("status") == "returned"
+            ):
+                return str(entry.get("bucket_id") or "")
+    return ""
+
+
 async def surface_default(
     max_results: int,
     max_tokens: int,
@@ -84,6 +101,7 @@ async def surface_default(
                 surfacing_cfg.get("startup_breath_soft_tokens")
                 or DEFAULT_SOFT_TOKENS
             ),
+            exclude_older_id=_last_startup_unfinished_id(),
         )
 
     # --- pinned/protected 桶置顶（排除 letter 桶：letter 的 importance=10 不代表核心准则）---

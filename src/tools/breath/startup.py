@@ -1,14 +1,15 @@
-"""Deterministic, bounded zero-argument Breath handoff.
+"""Bounded zero-argument Breath handoff.
 
 The startup surface is a briefing, not an associative sample.  It returns the
 small pinned core verbatim, reconnects the newest/most important memories from
-the last 24 hours, carries one older unresolved item, and lists active plans.
-Random sampling remains available only through the full/manual surface.
+the last 24 hours, randomly rotates one older unresolved item without an
+immediate repeat, and lists active plans.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import random
 
 from ombrebrain.policy.surfacing import SurfacePolicyVM
 
@@ -21,6 +22,7 @@ RECENT_HOURS = 24
 RECENT_LIMIT = 3
 PLAN_LIMIT = 5
 PLAN_TOKEN_BUDGET = 350
+OLDER_UNRESOLVED_POOL_LIMIT = 20
 DEFAULT_SOFT_TOKENS = 3000
 DEFAULT_HARD_TOKENS = 5000
 _PRIVATE_TYPES = {"permanent", "feel", "plan", "letter", "self", "i"}
@@ -114,8 +116,9 @@ def _select_memories(
     *,
     max_results: int,
     reference_time: datetime,
+    exclude_older_id: str = "",
 ) -> tuple[list[tuple[dict, str]], int]:
-    """Select latest + important recent memories, then one older unresolved."""
+    """Select recent memories, then rotate one high-quality older unresolved."""
 
     eligible = [bucket for bucket in all_buckets if _is_startup_memory(bucket)]
     cutoff = reference_time - timedelta(hours=RECENT_HOURS)
@@ -173,7 +176,16 @@ def _select_memories(
             reverse=True,
         )
         if older_unresolved:
-            selected.append((older_unresolved[0], "older_unresolved"))
+            pool = older_unresolved[:OLDER_UNRESOLVED_POOL_LIMIT]
+            if len(pool) > 1 and exclude_older_id:
+                without_previous = [
+                    bucket
+                    for bucket in pool
+                    if str(bucket.get("id") or "") != exclude_older_id
+                ]
+                if without_previous:
+                    pool = without_previous
+            selected.append((random.choice(pool), "older_unresolved"))
 
     return selected[:max_results], len(recent)
 
@@ -225,8 +237,9 @@ async def surface_startup(
     hard_tokens: int,
     soft_tokens: int,
     reference_time: datetime | None = None,
+    exclude_older_id: str = "",
 ) -> str:
-    """Render one deterministic startup briefing within soft/hard budgets."""
+    """Render one bounded startup briefing within soft/hard budgets."""
 
     # The annotation is intentionally narrow, but parse_iso_datetime still
     # normalizes timezone-aware datetime test hooks to OB's naive local-time
@@ -246,7 +259,7 @@ async def surface_startup(
     ]
 
     def compose() -> str:
-        parts = ["=== 轻量睁眼 ===\n确定性简报：核心、最近24小时、较早未完事项与活动计划。"]
+        parts = ["=== 轻量睁眼 ===\n轻量简报：核心、最近24小时、随机轮换的较早未完事项与活动计划。"]
         if core_results:
             parts.append("=== 核心准则 ===\n" + "\n---\n".join(core_results))
         if recent_results:
@@ -300,6 +313,7 @@ async def surface_startup(
         all_buckets,
         max_results=max_results,
         reference_time=reference,
+        exclude_older_id=exclude_older_id,
     )
     for bucket, reason in selected:
         if reason == "recent_latest":
