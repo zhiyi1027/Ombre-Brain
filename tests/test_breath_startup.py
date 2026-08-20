@@ -279,7 +279,7 @@ async def test_startup_lists_plan_pointer_when_full_body_exceeds_plan_budget():
 
 
 @pytest.mark.asyncio
-async def test_low_priority_recent_body_defers_at_soft_target_without_truncation():
+async def test_next_whole_body_may_cross_soft_target_then_stops_selection():
     reference = datetime.fromisoformat("2026-08-18T12:00:00")
     large_body = "低优先级长正文完整性标记。" * 180
     buckets = [
@@ -289,6 +289,12 @@ async def test_low_priority_recent_body_defers_at_soft_target_without_truncation
             large_body,
             created="2026-08-18T10:00:00",
             importance=5,
+        ),
+        make_bucket(
+            "later-low",
+            "跨过软目标后不应继续选择下一条正文。",
+            created="2026-08-18T09:00:00",
+            importance=4,
         ),
     ]
 
@@ -301,9 +307,12 @@ async def test_low_priority_recent_body_defers_at_soft_target_without_truncation
     )
 
     assert "最新正文。" in output
-    assert large_body not in output
-    assert "[未展开] [bucket_id:large-low]" in output
-    assert "[reason:soft_target]" in output
+    assert large_body in output
+    assert count_tokens_approx(output) > 700
+    assert "[未展开] [bucket_id:large-low]" not in output
+    assert "soft_target" not in output
+    assert "跨过软目标后不应继续选择下一条正文。" not in output
+    assert "达到软目标后停止继续取桶" in output
     assert count_tokens_approx(output) <= 5000
 
 

@@ -263,7 +263,8 @@ async def surface_startup(
     plan_results: list[str] = []
     pointers: list[str] = []
     notices: list[str] = [
-        f"软目标 {soft_tokens} token，硬上限 {hard_tokens} token；记忆正文只整桶返回，不截断。"
+        f"软目标 {soft_tokens} token，硬上限 {hard_tokens} token；"
+        "到达软目标后不再取下一桶，已选正文可整桶跨越，绝不截断。"
     ]
 
     def compose() -> str:
@@ -334,7 +335,16 @@ async def surface_startup(
         reference_time=reference,
         exclude_older_id=exclude_older_id,
     )
-    for bucket, reason in selected:
+    returned_recent = 0
+    soft_deferred = 0
+    for index, (bucket, reason) in enumerate(selected):
+        # The soft budget is a selection target, not a second hard cap.  Once
+        # the envelope reaches it we stop taking another optional memory, but
+        # the last memory selected below the target may cross it as one whole
+        # bucket.  Only the hard limit is allowed to turn a body into a pointer.
+        if count_tokens_approx(compose()) >= soft_tokens:
+            soft_deferred = len(selected) - index
+            break
         if reason == "recent_latest":
             prefix = f"🕒 [最近一条] [bucket_id:{bucket['id']}]"
             collection = recent_results
@@ -345,24 +355,25 @@ async def surface_startup(
             prefix = f"🧭 [未完记忆] [权重:{_score(bucket):.2f}] [bucket_id:{bucket['id']}]"
             collection = unfinished_results
         rendered, entry_tokens = render_stored_bucket(bucket, prefix)
-        stretch_to_hard = reason == "recent_latest" or _importance(bucket) >= 8
-        limit = hard_tokens if stretch_to_hard else soft_tokens
-        if append_if_fits(collection, rendered, limit=limit):
+        if append_if_fits(collection, rendered, limit=hard_tokens):
+            if reason.startswith("recent_"):
+                returned_recent += 1
             continue
-        collection.append(rendered)
-        candidate_tokens = count_tokens_approx(compose())
-        collection.pop()
-        pointer_reason = "hard_limit" if candidate_tokens > hard_tokens else "soft_target"
         pointer = _render_pointer(
             bucket,
             estimated_tokens=entry_tokens,
-            reason=pointer_reason,
+            reason="hard_limit",
         )
         append_if_fits(pointers, pointer, limit=hard_tokens)
 
-    selected_recent = sum(1 for _, reason in selected if reason.startswith("recent_"))
-    if total_recent > selected_recent:
-        notice = f"最近24小时另有 {total_recent - selected_recent} 条记忆未进入本次 {max_results} 条正文名额。"
+    if total_recent > returned_recent:
+        notice = f"最近24小时另有 {total_recent - returned_recent} 条记忆未进入本次 {max_results} 条正文名额。"
+        append_if_fits(notices, notice, limit=hard_tokens)
+    if soft_deferred:
+        notice = (
+            f"达到软目标后停止继续取桶；另有 {soft_deferred} 条已选候选"
+            "未进入本次正文。"
+        )
         append_if_fits(notices, notice, limit=hard_tokens)
     if total_plans > expanded_plans:
         notice = (
