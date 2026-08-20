@@ -542,6 +542,8 @@ def is_importance_audit_candidate(
         return False
     if parse_bool(metadata.get("dont_surface"), default=False):
         return False
+    if str(metadata.get("superseded_by") or "").strip():
+        return False
     if is_terminal_memory_metadata(metadata):
         return False
     bucket_type = str(metadata.get("type") or "dynamic").strip().lower()
@@ -682,6 +684,7 @@ async def merge_or_create(
     media: list | str | None = None,
     test_data: bool = False,
     quotes: list[dict] | None = None,
+    state_key: str = "",
 ) -> Tuple[str, WriteDisposition, str]:
     """
     完全相同正文做幂等去重，否则默认新建。返回
@@ -711,7 +714,7 @@ async def merge_or_create(
             valence=valence, arousal=arousal, name=name, raw_merge=raw_merge,
             why_remembered=why_remembered, source_tool=source_tool,
             grow_batch_id=grow_batch_id, meaning=meaning, media=media,
-            test_data=test_data, quotes=quotes,
+            test_data=test_data, quotes=quotes, state_key=state_key,
         )
 
 
@@ -731,6 +734,7 @@ async def _merge_or_create_inner(
     media: list | str | None = None,
     test_data: bool = False,
     quotes: list[dict] | None = None,
+    state_key: str = "",
 ) -> Tuple[str, WriteDisposition, str]:
     """实际的 exact-deduplicate→optional-merge/create 逻辑。"""
     # Cache invalidation and a concurrent list_all() refresh can cross: an old
@@ -751,6 +755,28 @@ async def _merge_or_create_inner(
                 exact_id = str(exact.get("id") or "").strip()
                 if exact_id:
                     quote_warning = ""
+                    exact_meta = exact.get("metadata") or {}
+                    exact_key = str(exact_meta.get("state_key") or "").strip()
+                    if state_key and not exact_key:
+                        try:
+                            keyed = await rt.bucket_mgr.update(
+                                exact_id,
+                                state_key=state_key,
+                                allow_embedding_fallback=True,
+                            )
+                        except Exception as exc:
+                            keyed = False
+                            rt.logger.warning(
+                                "Exact duplicate state_key append failed for %s: %s",
+                                exact_id,
+                                type(exc).__name__,
+                            )
+                        if not keyed:
+                            quote_warning = "原记忆已找到，但本次 state_key 未能写入，请稍后重试。"
+                    elif state_key and exact_key != state_key:
+                        quote_warning = (
+                            f"原记忆已有不同 state_key={exact_key}，系统未自动覆盖。"
+                        )
                     if quotes:
                         try:
                             appended = await rt.bucket_mgr.update(
@@ -766,14 +792,15 @@ async def _merge_or_create_inner(
                                 type(exc).__name__,
                             )
                         if not appended:
-                            quote_warning = "原记忆已找到，但本次原话未能追加，请稍后重试。"
+                            suffix = "原记忆已找到，但本次原话未能追加，请稍后重试。"
+                            quote_warning = f"{quote_warning} {suffix}".strip()
                     rt.logger.info(
                         "op=merge_or_create phase=branch branch=deduplicate "
                         f"bucket_id={exact_id} source_tool={source_tool or '_'}"
                     )
                     return exact_id, WriteDisposition.DEDUPLICATED, quote_warning
 
-    auto_merge_enabled = parse_bool(
+    auto_merge_enabled = not state_key and parse_bool(
         rt.config.get("auto_merge_enabled"), default=False
     )
     existing = []
@@ -977,6 +1004,7 @@ async def _merge_or_create_inner(
             media=media,
             test_data=test_data,
             quotes=quotes,
+            state_key=state_key,
             # hold 的铁律：正文优先落盘。打标/embedding 可降级，但绝不压缩或撤销记忆。
             allow_embedding_fallback=(raw_merge and source_tool == "hold"),
         )

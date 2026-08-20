@@ -305,6 +305,9 @@ _SOURCE_TOOL_MAX = 32
 _GROW_BATCH_ID_MAX = 64
 _WHY_REMEMBERED_MAX = 500
 _TRIGGERED_BY_MAX = 64
+_STATE_KEY_MAX = 120
+_SUPERSEDED_BY_MAX = 256
+_SUPERSEDED_AT_MAX = 64
 _DEFAULT_MAX_BUCKET_BYTES = 50 * 1024
 _MAX_TAGS = 64
 _MAX_TAG_CHARS = 128
@@ -338,6 +341,9 @@ _METADATA_TEXT_LIMITS = {
     "grow_batch_id": _GROW_BATCH_ID_MAX,
     "last_merged_by": _SOURCE_TOOL_MAX,
     "_pre_anchor_source_tool": _SOURCE_TOOL_MAX,
+    "state_key": _STATE_KEY_MAX,
+    "superseded_by": _SUPERSEDED_BY_MAX,
+    "superseded_at": _SUPERSEDED_AT_MAX,
 }
 
 # --- _time_ripple：时间涾漪 ---
@@ -377,6 +383,7 @@ _VECTOR_TOPK = 50          # embedding 预取 top_k（仅作 semantic 分源，�
 # 踏实感，都是该出现却一条都出不来的记忆）。调整前请重跑扫描，不要直接改数字。
 _VECTOR_RECALL_THRESHOLD = 0.55
 _RESOLVED_RANK_PENALTY = 0.3   # resolved 桶仅在排序时降权
+_SUPERSEDED_RANK_PENALTY = 0.12  # 历史状态显式搜索仍可达，但排在当前版本之后
 _LITERAL_MATCH_BONUS = 25.0    # 查询串原样命中 name/tags/domain/正文时的召回加分（修短查询召回）
 
 # topic/emotion/time/touch 四个评分维度的纯函数 + 权重常量已拆到
@@ -1060,6 +1067,7 @@ class BucketManager:
         media: Any = None,
         test_data: bool = False,
         quotes: Any = None,
+        state_key: str = "",
     ) -> str:
         """
         Create a new memory bucket, return bucket ID.
@@ -1161,6 +1169,8 @@ class BucketManager:
             metadata["source_tool"] = str(source_tool).strip()[:_SOURCE_TOOL_MAX]
         if grow_batch_id:
             metadata["grow_batch_id"] = str(grow_batch_id).strip()[:_GROW_BATCH_ID_MAX]
+        if state_key:
+            metadata["state_key"] = str(state_key).strip()[:_STATE_KEY_MAX]
 
         # --- iter 1.8: 让记忆带「为什么记得」 / why this is worth remembering ---
         # 自由文本字段。模型 / 人类手写。不参与评分，只参与展示与搜索。
@@ -1517,6 +1527,11 @@ class BucketManager:
         so an in-process lock would not actually serialize them.
         """
         return _filesystem_turn(str(self.base_dir), f"bucket-{bucket_id}")
+
+    def state_chain_turn(self):
+        """Serialize multi-bucket current-state relationship updates."""
+
+        return _filesystem_turn(str(self.base_dir), "memory-state-chain")
 
     def human_name_change_turn(self):
         """Serialize config + vault human-name migrations as one transaction.
@@ -1983,7 +1998,9 @@ class BucketManager:
                   # 表示「最后一次合并是 hold 还是 grow 触发的」。
                   # _pre_anchor_source_tool 是 anchor 时保存的原始 source_tool，
                   # release 时自动恢复；None 表示删除该字段。
-                  "source_tool", "grow_batch_id", "last_merged_by", "_pre_anchor_source_tool"):
+                  "source_tool", "grow_batch_id", "last_merged_by", "_pre_anchor_source_tool",
+                  # 显式、可撤销的当前事实版本链。普通旧桶没有这些字段时行为不变。
+                  "state_key", "superseded_by", "superseded_at"):
             if k in kwargs:
                 if k == "weight" and kwargs[k] is not None:
                     post[k] = _clamp01(kwargs[k], _DEFAULT_VALENCE)
@@ -2573,6 +2590,8 @@ class BucketManager:
                     # 已解决的桶仅在排序时降权
                     if meta.get("resolved", False):
                         normalized *= _RESOLVED_RANK_PENALTY
+                    if str(meta.get("superseded_by") or "").strip():
+                        normalized *= _SUPERSEDED_RANK_PENALTY
                     bucket["score"] = round(normalized, 2)
                     if semantic_match and not text_match:
                         bucket["vector_match"] = True

@@ -4683,7 +4683,8 @@ function _paintBuckets() {
     // iter 1.8: dont_surface = 主动遗忘（仍在磁盘） / first_of_kind = 首次出现的标签组合
     // 图标：feel→计算表情、letter→信封、pinned→可发光的钉、其余沿用原逻辑
     var iconCls = 'icon', iconHtml;
-    if (b.dont_surface)        iconHtml = '<i data-lucide="eye-off"></i>';
+    if (b.superseded_by)       iconHtml = '<i data-lucide="history"></i>';
+    else if (b.dont_surface)   iconHtml = '<i data-lucide="eye-off"></i>';
     else if (b.pinned)       { iconHtml = '<i data-lucide="pin"></i>'; iconCls = 'icon pin-ic'; }
     else if (b.type === 'feel')   iconHtml = feelFace(b.valence, b.arousal);
     else if (b.type === 'letter') iconHtml = '<i data-lucide="mail"></i>';
@@ -4691,6 +4692,7 @@ function _paintBuckets() {
     else if (b.resolved)     iconHtml = '<i data-lucide="moon"></i>';
     else                     iconHtml = '<i data-lucide="message-circle"></i>';
     var firstBadge = b.first_of_kind ? ' <i data-lucide="sparkles" title="首次出现" style="width:12px;height:12px;color:var(--accent);vertical-align:-1px;"></i>' : '';
+    var historyBadge = b.superseded_by ? ' <span class="daily-status" title="已被新事实取代">历史状态</span>' : '';
     var vPos = Math.round(b.valence * 100);
     var modelV = b.model_valence != null ? ' → V' + b.model_valence.toFixed(1) : '';
     var activityTime = firstValidBucketTime(
@@ -4709,7 +4711,7 @@ function _paintBuckets() {
     // 久未浮现（>45 天且非钉选/锚点/已遗忘）→ 稀疏虚线，视觉上「模糊、遥远」
     var stale = !b.pinned && !b.anchor && !b.dont_surface && daysSince(activityTime) >= 45;
     var rowCls = 'bucket-row' + (stale ? ' faded' : '');
-    var inlineStyle = b.dont_surface ? 'opacity:0.45;' : '';
+    var inlineStyle = b.dont_surface ? 'opacity:0.45;' : (b.superseded_by ? 'opacity:0.68;' : '');
     var rowClick = 'onclick="showDetail(this.dataset.id)"';
     var domainHtml = (b.domain || []).length
       ? '<span class="domain-pill">' + esc((b.domain || []).join(', ')) + '</span>'
@@ -4719,7 +4721,7 @@ function _paintBuckets() {
       '<div class="bucket-row-top">' +
         '<input class="bucket-select" type="checkbox" data-id="' + escAttr(b.id) + '" onclick="event.stopPropagation()" onchange="toggleBucketSelection(this.dataset.id,this.checked)"' + (selectedBucketIds.has(b.id) ? ' checked' : '') + '>' +
         '<span class="' + iconCls + '">' + iconHtml + '</span>' +
-        '<span class="name" title="' + escAttr(b.name) + '">' + esc(b.name) + firstBadge + '</span>' +
+        '<span class="name" title="' + escAttr(b.name) + '">' + esc(b.name) + firstBadge + historyBadge + '</span>' +
         '<div class="bucket-row-tags">' +
           domainHtml +
           emotionHtml +
@@ -4819,6 +4821,16 @@ async function showDetail(id) {
     var weightHtml = (meta.type === 'plan' && meta.weight != null) ? ('<div class="field"><label>承诺重量</label><span style="display:inline-block;width:80px;height:6px;background:var(--border);border-radius:3px;vertical-align:middle;overflow:hidden;"><span style="display:block;width:' + Math.round(meta.weight*100) + '%;height:100%;background:var(--accent);"></span></span> ' + (meta.weight*100).toFixed(0) + '% · ' + weightAnchorLabel(meta.weight) + '</div>') : '';
     // iter 1.9 D3: triggered_by 渲染成可跳转链接
     var triggerHtml = meta.triggered_by ? ('<div class="field"><label>源 bucket</label><a href="#" data-bucket-id="' + escAttr(meta.triggered_by) + '" onclick="showDetail(this.dataset.bucketId);return false" style="color:var(--accent);text-decoration:underline;font-size:11px;">' + esc(meta.triggered_by) + ' →</a></div>') : '';
+    var stateKeyHtml = meta.state_key
+      ? '<div class="field"><label>状态主题 / State key</label><code>' + esc(meta.state_key) + '</code></div>'
+      : '';
+    var supersessionHtml = meta.superseded_by
+      ? '<div style="margin:12px 0;padding:10px 14px;border-left:3px solid var(--warning);background:var(--surface-solid);font-size:12px;line-height:1.7;">' +
+          '<strong>这是历史状态</strong> · 已由 ' +
+          '<a href="#" data-bucket-id="' + escAttr(meta.superseded_by) + '" onclick="showDetail(this.dataset.bucketId);return false" style="color:var(--accent);text-decoration:underline;">' + esc(meta.superseded_by) + '</a> 取代' +
+          (meta.superseded_at ? ' · ' + esc(_dailyTime(meta.superseded_at)) : '') +
+        '</div>'
+      : '';
     // iter 1.9 D2: 反向链——这条触发了哪些 feel
     var triggeredFeelsHtml = '';
     if (b.triggered_feels && b.triggered_feels.length) {
@@ -4851,15 +4863,22 @@ async function showDetail(id) {
         '<div class="field"><label>Anchor</label>' + (meta.anchor ? _SV.anchor+' 坐标系 / anchor' : '—') + '</div>' +
         '<div class="field"><label>创建 / Created</label>' + esc(meta.created || '—') + '</div>' +
         '<div class="field"><label>最后活跃 / Last active</label>' + esc(meta.last_active || '—') + '</div>' +
+        stateKeyHtml +
         weightHtml +
         triggerHtml +
       '</div>' +
+      supersessionHtml +
       triggeredFeelsHtml +
       '<div class="detail-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0;">' +
         '<button data-bucket-id="' + escAttr(id) + '" onclick="bucketPin(this.dataset.bucketId)" class="icon-btn">' + (meta.pinned ? '<i data-lucide="pin-off"></i> 取消钉选' : '<i data-lucide="pin"></i> 钉选') + '</button>' +
         '<button data-bucket-id="' + escAttr(id) + '" onclick="bucketAnchor(this.dataset.bucketId)" class="icon-btn" title="anchor = 坐标系，不主动浮现，硬上限 24">' + (meta.anchor ? '<i data-lucide="anchor"></i> 释放 anchor' : '<i data-lucide="anchor"></i> 设为 anchor') + '</button>' +
         '<button data-bucket-id="' + escAttr(id) + '" onclick="bucketResolve(this.dataset.bucketId)" class="icon-btn">' + (meta.resolved ? '<i data-lucide="rotate-ccw"></i> 取消已解决' : '<i data-lucide="check"></i> 标记已解决') + '</button>' +
         '<button data-bucket-id="' + escAttr(id) + '" onclick="bucketForget(this.dataset.bucketId)" class="icon-btn">' + (meta.dont_surface ? '<i data-lucide="eye"></i> 重新允许浮现' : '<i data-lucide="eye-off"></i> 主动遗忘') + '</button>' +
+        ((!meta.type || meta.type === 'dynamic' || meta.type === 'permanent') ?
+          (meta.superseded_by
+            ? '<button data-bucket-id="' + escAttr(id) + '" onclick="bucketClearSupersession(this.dataset.bucketId)" class="icon-btn"><i data-lucide="undo-2"></i> 撤销历史标记</button>'
+            : '<button data-bucket-id="' + escAttr(id) + '" data-state-key="' + escAttr(meta.state_key || '') + '" onclick="bucketSupersede(this.dataset.bucketId,this.dataset.stateKey)" class="icon-btn"><i data-lucide="history"></i> 标记为历史版本</button>')
+          : '') +
         '<button data-bucket-id="' + escAttr(id) + '" onclick="bucketArchive(this.dataset.bucketId)" class="icon-btn"><i data-lucide="archive"></i> 归档</button>' +
         '<button data-bucket-id="' + escAttr(id) + '" onclick="bucketDelete(this.dataset.bucketId)" class="icon-btn" style="color:#b85c3c;"><i data-lucide="trash-2"></i> 删除到档案</button>' +
       '</div>' +
@@ -4992,6 +5011,53 @@ async function bucketDelete(id) {
 function closeDetail() {
   detailLoadGeneration++;
   document.getElementById('detail-panel').classList.remove('open', 'letter-mode', 'anchor-mode');
+}
+
+async function bucketSupersede(id, currentKey) {
+  const key = prompt('这组“当前状态”的 state_key：\n例如 project:kiwi-mem', currentKey || '');
+  if (key === null) return;
+  const normalizedKey = key.trim();
+  if (!normalizedKey) return alert('state_key 不能为空。');
+  const targetId = prompt('哪一条新记忆取代了它？请粘贴新桶的完整 bucket_id：', '');
+  if (targetId === null) return;
+  const normalizedTarget = targetId.trim();
+  if (!normalizedTarget) return alert('新桶 bucket_id 不能为空。');
+  if (!confirm('确认把 ' + id + ' 标为历史版本，并由 ' + normalizedTarget + ' 取代？两条原文都会保留。')) return;
+  try {
+    const response = await authFetch('/api/bucket/' + encodeURIComponent(id) + '/supersession', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        state_key: normalizedKey,
+        superseded_by: normalizedTarget,
+        confirm: true,
+      }),
+    });
+    if (!response) return;
+    const data = await readJsonSafe(response);
+    if (!response.ok) throw new Error(data.error || '状态关系保存失败');
+    await showDetail(id);
+    await loadBuckets();
+  } catch (error) {
+    alert('标记失败：' + error.message);
+  }
+}
+
+async function bucketClearSupersession(id) {
+  if (!confirm('撤销这条记忆的历史标记，让它重新参与普通浮现？原有 state_key 会保留。')) return;
+  try {
+    const response = await authFetch(
+      '/api/bucket/' + encodeURIComponent(id) + '/supersession?confirm=true',
+      {method:'DELETE'}
+    );
+    if (!response) return;
+    const data = await readJsonSafe(response);
+    if (!response.ok) throw new Error(data.error || '撤销失败');
+    await showDetail(id);
+    await loadBuckets();
+  } catch (error) {
+    alert('撤销失败：' + error.message);
+  }
 }
 
 // ============================================================

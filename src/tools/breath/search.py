@@ -53,6 +53,21 @@ def _can_surface_search(bucket: dict) -> bool:
     return _SURFACE_POLICY.evaluate_bucket(bucket, mode="search").allowed
 
 
+def _can_surface_spontaneous(bucket: dict) -> bool:
+    return _SURFACE_POLICY.evaluate_bucket(bucket, mode="spontaneous").allowed
+
+
+def _state_header(metadata: dict) -> str:
+    target = str(metadata.get("superseded_by") or "").strip()
+    if not target:
+        return ""
+    state_key = str(metadata.get("state_key") or "").strip()
+    return (
+        f" [historical_state:true] [state_key:{state_key or '—'}]"
+        f" [superseded_by:{target}]"
+    )
+
+
 async def _semantic_scores(query: str, top_k: int) -> tuple[dict[str, float], str]:
     """Run the vector query once and return scores plus an optional notice."""
     engine = rt.embedding_engine
@@ -114,7 +129,8 @@ async def surface_search(
         ):
             rendered, entry_tokens = render_stored_bucket(
                 exact_bucket,
-                f"[exact_bucket_id:true] [bucket_id:{exact_bucket['id']}]",
+                f"[exact_bucket_id:true] [bucket_id:{exact_bucket['id']}]"
+                f"{_state_header(meta)}",
             )
             if with_quotes:
                 quote_block = render_quotes(quotes_from_metadata(meta))
@@ -166,12 +182,15 @@ async def surface_search(
         meta = bucket["metadata"]
         bucket_id = bucket["id"]
         is_core = meta.get("pinned") or meta.get("protected") or meta.get("type") == "permanent"
-        if is_core:
+        if meta.get("superseded_by"):
+            header = f"[历史状态] [bucket_id:{bucket_id}]"
+        elif is_core:
             header = f"📌 [核心准则] [bucket_id:{bucket_id}]"
         elif bucket.get("vector_match"):
             header = f"[语义关联] [bucket_id:{bucket_id}]"
         else:
             header = f"[bucket_id:{bucket_id}]"
+        header += _state_header(meta)
         rendered, entry_tokens = render_stored_bucket(bucket, header)
         if with_quotes:
             quote_block = render_quotes(quotes_from_metadata(meta))
@@ -198,6 +217,7 @@ async def surface_search(
             low_weight = [
                 b for b in all_buckets
                 if b["id"] not in matched_ids
+                and _can_surface_spontaneous(b)
                 and b["metadata"].get("type") not in ("feel", "plan", "letter")
                 and rt.decay_engine.calculate_score(b["metadata"]) < 2.0
             ]

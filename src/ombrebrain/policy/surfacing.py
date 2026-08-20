@@ -80,6 +80,8 @@ class SurfacePolicyVM:
         )
 
         if normalized_mode in (SurfaceMode.SPONTANEOUS, SurfaceMode.DREAM):
+            if str(metadata.get("superseded_by") or "").strip():
+                reasons.append("superseded")
             if _truthy(metadata.get("dont_surface")):
                 reasons.append("dont_surface")
             if _truthy(metadata.get("digested")) and not never_digested:
@@ -89,6 +91,8 @@ class SurfacePolicyVM:
             if bucket_type in self.private_types:
                 reasons.append("private_type")
         elif normalized_mode == SurfaceMode.IMPORTANCE:
+            if str(metadata.get("superseded_by") or "").strip():
+                reasons.append("superseded")
             if _truthy(metadata.get("dont_surface")):
                 reasons.append("dont_surface")
             if bucket_type in self.private_types:

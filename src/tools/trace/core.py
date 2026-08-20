@@ -34,6 +34,12 @@ from contextlib import AsyncExitStack
 from typing import Optional
 
 from memory_messages import resolved_hint
+from ombrebrain.storage.state_chain import (
+    StateChainError,
+    clear_supersession,
+    normalize_state_key,
+    set_supersession,
+)
 from utils import parse_bool
 from .. import _runtime as rt
 from .._common import (
@@ -72,6 +78,8 @@ async def trace_core(
     delete_reason: Optional[str] = "",
     old_str: Optional[str] = "",
     new_str: Optional[str] = None,
+    state_key: Optional[str] = "",
+    superseded_by: Optional[str] = "",
 ) -> str:
     bucket_id = "" if bucket_id is None else str(bucket_id)
     if name is None:
@@ -111,6 +119,8 @@ async def trace_core(
     new_str_provided = new_str is not None
     old_str = "" if old_str is None else str(old_str)
     new_str = "" if new_str is None else str(new_str)
+    state_key = "" if state_key is None else str(state_key).strip()
+    superseded_by = "" if superseded_by is None else str(superseded_by).strip()
     content = str(content)
     name = str(name)
     domain = str(domain)
@@ -153,6 +163,8 @@ async def trace_core(
         why_remembered=why_remembered,
         meaning_append=meaning_append,
         delete_reason=delete_reason,
+        state_key=state_key,
+        superseded_by=superseded_by,
     )
     if metadata_err:
         return metadata_err
@@ -179,6 +191,8 @@ async def trace_core(
         "weight": weight,
         "dont_surface": dont_surface,
         "why_remembered_length": len(why_remembered or ""),
+        "state_key": state_key,
+        "superseded_by": superseded_by,
     })
 
     if not bucket_id or not bucket_id.strip():
@@ -202,6 +216,11 @@ async def trace_core(
         )
     if patch_args_supplied and old_str == new_str:
         return "old_str 与 new_str 完全相同，没有内容需要替换；本次未修改。"
+    if superseded_by and (delete or hard_delete):
+        return (
+            "superseded_by 必须单独确认，不能与 delete/hard_delete 同时提交；"
+            "本次未修改、未删除、未归档。"
+        )
 
     # --- Delete 模式（F-10：普通记忆只允许软删除/归档）---
     if hard_delete and delete:
@@ -241,6 +260,51 @@ async def trace_core(
     bucket = await rt.bucket_mgr.get(bucket_id)
     if not bucket:
         return f"未找到记忆桶: {bucket_id}"
+
+    if superseded_by:
+        non_state_change = bool(
+            name or domain or tags or content or status or why_remembered
+            or meaning_append or meaning_replace is not None
+            or media_append or media_replace is not None
+            or patch_args_supplied or delete or hard_delete
+            or any(value != -1 for value in (
+                valence, arousal, importance, resolved, pinned, digested,
+                weight, dont_surface,
+            ))
+        )
+        if non_state_change:
+            return "superseded_by 必须单独确认，不能与其他 trace 修改同时提交；本次未修改。"
+        try:
+            if superseded_by == r"\clear":
+                if state_key:
+                    return (
+                        "撤销历史标记时不要同时传 state_key；"
+                        "原有 state_key 会保留，本次未修改。"
+                    )
+                result = await clear_supersession(
+                    rt.bucket_mgr,
+                    old_bucket_id=bucket_id,
+                )
+                if result["status"] == "unchanged":
+                    return f"记忆桶 {bucket_id} 当前不是历史版本，无需撤销。"
+                return (
+                    f"已撤销记忆桶 {bucket_id} 的过时标记；state_key="
+                    f"{result.get('state_key') or '—'}，重新参与普通浮现。"
+                )
+            result = await set_supersession(
+                rt.bucket_mgr,
+                old_bucket_id=bucket_id,
+                new_bucket_id=superseded_by,
+                state_key=state_key,
+            )
+            if result["status"] == "unchanged":
+                return f"记忆桶 {bucket_id} 已经由 {superseded_by} 取代，无需重复标记。"
+            return (
+                f"已把记忆桶 {bucket_id} 标为历史版本：state_key="
+                f"{result['state_key']}，当前版本={superseded_by}。"
+            )
+        except StateChainError as exc:
+            return f"未建立状态关系：{exc}"
 
     meta = bucket.get("metadata", {})
     current_pinned = parse_bool(meta.get("pinned"), default=False)
@@ -389,6 +453,24 @@ async def trace_core(
             updates["weight"] = float(weight)
         if dont_surface in (0, 1):
             updates["dont_surface"] = bool(dont_surface)
+        if state_key:
+            try:
+                normalized_state_key = normalize_state_key(state_key)
+            except StateChainError as exc:
+                return f"state_key 无效，本次未修改：{exc}"
+            bucket_type = str(meta.get("type") or "dynamic").strip().lower()
+            if bucket_type not in {"dynamic", "permanent"}:
+                return (
+                    "state_key 仅用于普通 dynamic/permanent 记忆；"
+                    f"{bucket_type or 'unknown'} 请使用自身状态机制，本次未修改。"
+                )
+            current_state_key = str(meta.get("state_key") or "").strip()
+            if current_state_key and current_state_key != normalized_state_key:
+                return (
+                    f"记忆桶已有 state_key={current_state_key}，不能直接改成"
+                    f" {normalized_state_key}；请先检查状态链，本次未修改。"
+                )
+            updates["state_key"] = normalized_state_key
         if (
             reserves_high_importance
             and final_importance != requested_importance

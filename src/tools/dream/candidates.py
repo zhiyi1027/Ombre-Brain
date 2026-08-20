@@ -74,6 +74,7 @@ def collect_core_context(all_buckets: list) -> list:
         )
         and b["metadata"].get("type") not in ("letter", "self", "i")
         and not b["metadata"].get("dont_surface", False)
+        and not str(b["metadata"].get("superseded_by") or "").strip()
     ]
     core.sort(
         key=lambda b: (
@@ -104,6 +105,7 @@ def collect_candidates(
         and not b["metadata"].get("pinned", False)
         and not b["metadata"].get("protected", False)
         and not b["metadata"].get("dont_surface", False)
+        and not str(b["metadata"].get("superseded_by") or "").strip()
     ]
     reference = (
         parse_iso_datetime(reference_time)

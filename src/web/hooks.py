@@ -272,8 +272,13 @@ def register(mcp) -> None:
                 all_buckets = await sh.bucket_mgr.list_all(include_archive=False)
                 pinned = [
                     bucket for bucket in all_buckets
-                    if bucket["metadata"].get("pinned")
-                    or bucket["metadata"].get("protected")
+                    if (
+                        bucket["metadata"].get("pinned")
+                        or bucket["metadata"].get("protected")
+                    )
+                    and not str(
+                        bucket["metadata"].get("superseded_by") or ""
+                    ).strip()
                 ]
                 pinned.sort(
                     key=lambda bucket: (
@@ -290,6 +295,9 @@ def register(mcp) -> None:
                     and not bucket["metadata"].get("pinned")
                     and not bucket["metadata"].get("protected")
                     and not bucket["metadata"].get("dont_surface", False)
+                    and not str(
+                        bucket["metadata"].get("superseded_by") or ""
+                    ).strip()
                 ]
                 scored = sorted(
                     unresolved,

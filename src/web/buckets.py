@@ -17,6 +17,11 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from memory_messages import resolved_hint
+from ombrebrain.storage.state_chain import (
+    StateChainError,
+    clear_supersession,
+    set_supersession,
+)
 from . import _shared as sh
 
 logger = sh.logger
@@ -152,6 +157,9 @@ def register(mcp) -> None:
                     "first_of_kind": bool(meta.get("first_of_kind", False)),
                     "weight": meta.get("weight"),  # plan 专有，非 plan 为 None
                     "triggered_by": meta.get("triggered_by", ""),
+                    "state_key": meta.get("state_key", ""),
+                    "superseded_by": meta.get("superseded_by", ""),
+                    "superseded_at": meta.get("superseded_at", ""),
                     "erasable_test_data": bool(
                         isinstance(meta.get("provenance"), dict)
                         and meta["provenance"].get("kind") == "test"
@@ -211,6 +219,87 @@ def register(mcp) -> None:
             "score": sh.decay_engine.calculate_score(meta),
             "triggered_feels": triggered_feels,  # iter 1.9 D
         })
+
+
+    @mcp.custom_route("/api/bucket/{bucket_id}/supersession", methods=["POST"])
+    async def api_bucket_supersede(request: Request) -> Response:
+        """Explicitly confirm that this ordinary memory is an older state."""
+        from starlette.responses import JSONResponse
+
+        err = sh._require_auth(request)
+        if err:
+            return err
+        try:
+            body = await sh._read_json_object(request)
+            if parse_bool(body.get("confirm"), default=False) is not True:
+                return JSONResponse(
+                    {"error": "confirm=true required"},
+                    status_code=400,
+                )
+            target_id = body.get("superseded_by")
+            state_key = body.get("state_key", "")
+            if not isinstance(target_id, str) or not isinstance(state_key, str):
+                return JSONResponse(
+                    {"error": "superseded_by and state_key must be strings"},
+                    status_code=400,
+                )
+            result = await set_supersession(
+                sh.bucket_mgr,
+                old_bucket_id=request.path_params["bucket_id"],
+                new_bucket_id=target_id,
+                state_key=state_key,
+            )
+            return JSONResponse(result, headers={"Cache-Control": "no-store"})
+        except (ValueError, StateChainError) as exc:
+            return JSONResponse(
+                {"error": str(exc)},
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
+            )
+        except Exception:
+            logger.exception("Dashboard supersession update failed")
+            return JSONResponse(
+                {"error": "状态关系保存失败"},
+                status_code=500,
+                headers={"Cache-Control": "no-store"},
+            )
+
+
+    @mcp.custom_route("/api/bucket/{bucket_id}/supersession", methods=["DELETE"])
+    async def api_bucket_clear_supersession(request: Request) -> Response:
+        """Undo an explicit supersession without deleting either memory."""
+        from starlette.responses import JSONResponse
+
+        err = sh._require_auth(request)
+        if err:
+            return err
+        if request.query_params.get("confirm", "").lower() not in {
+            "1", "true", "yes"
+        }:
+            return JSONResponse(
+                {"error": "confirm=true required"},
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
+            )
+        try:
+            result = await clear_supersession(
+                sh.bucket_mgr,
+                old_bucket_id=request.path_params["bucket_id"],
+            )
+            return JSONResponse(result, headers={"Cache-Control": "no-store"})
+        except StateChainError as exc:
+            return JSONResponse(
+                {"error": str(exc)},
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
+            )
+        except Exception:
+            logger.exception("Dashboard supersession clear failed")
+            return JSONResponse(
+                {"error": "状态关系撤销失败"},
+                status_code=500,
+                headers={"Cache-Control": "no-store"},
+            )
 
 
     # ---- Bucket-level mutation endpoints (iter 1.4) ----

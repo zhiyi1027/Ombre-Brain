@@ -68,6 +68,7 @@
 - `hold("听她讲完之后我感到一种久违的踏实", feel=True, source_bucket="abc123def456", valence=0.75, arousal=0.3)` — 写一条 feel，importance 自动固定为 5。**feel 模式必须用第一人称**，必须指向 `source_bucket`（你正在消化哪条原始记忆），必须给出你自己的 valence/arousal。
 - `hold("她爸爸的生日是 5 月 12 日", importance=6, why_remembered="她每年这天都会突然想起，我应该早一天就准备")` — 带上「为什么记得」。这条字段不参与衰减打分，是给未来的自己看的提示。
 - `hold("那晚她站在门口，很久没有说话", importance=8, quotes=[{"text":"我不会走的","speaker":"她"}])` — 在写入当下主动挑出要原样保留的话。最多 3 句、每句 100 字；平时不浮现、不进向量，只有命中该桶并显式 `quotes=True` 才返回。
+- `hold("kiwi-mem 已经作废", importance=7, state_key="project:kiwi-mem")` — 给会变化的事实一个稳定 key。同 key 仍有其他当前桶时，只提示候选，绝不自动把旧桶标为过时。
 
 返回 `合并→桶名` = 并到了已有桶；`新建→桶名` = 真的开了一条新的。
 
@@ -101,6 +102,8 @@
 | 改 plan 状态 | `trace(plan_id, status="resolved")` — 仅对 plan 桶 |
 | 调 plan 重量 | `trace(plan_id, weight=0.8)` |
 | 改/补「为什么记得」 | `trace(id, why_remembered="...")` |
+| 确认旧事实已被新事实取代 | `trace(old_id, state_key="project:kiwi-mem", superseded_by=new_id)` — 必须单独调用；旧正文保留，退出被动浮现 |
+| 撤销错误的过时标记 | `trace(old_id, superseded_by="\clear")` — 恢复普通浮现，保留 state_key |
 
 **`anchor` 字段不在 trace 里**——切换 anchor 必须走专门的 `anchor()` / `release()`，受 24 上限保护。
 
@@ -226,6 +229,8 @@
 7. **没有 embedding key** 时桶仍能正常写入并留在耐久索引队列。`breath_search(query=...)` 会明确显示「检索降级」，继续使用关键词/BM25；桶一旦命中，正文始终逐字返回当前存储的完整 content，不调用摘要服务。
 
 8. **错误码 `OB-E004`** 出现时表示工具内部异常被兜住了，返回串里会附最近 15 条结构化日志。把它们读完再决定下一步，不要忽略。
+
+9. **状态取代必须人工确认**。`state_key` 只用于少量会变化的普通事实；`hold` 发现同 key 旧桶时只能提示，必须再单独 `trace(..., superseded_by=...)` 才会建立关系。plan 不使用这套机制，仍走自己的 `active/resolved/abandoned` 状态。
 
 ---
 

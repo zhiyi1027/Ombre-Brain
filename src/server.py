@@ -657,8 +657,9 @@ async def hold(
     media: Optional[list | str] = None,
     test_data: Optional[bool] = False,
     quotes: Optional[list] = None,
+    state_key: Optional[str] = "",
 ) -> str:
-    """仅在对话中已明确决定“这段内容值得成为长期记忆”时调用；不要因普通聊天、猜测或工具名称联想而自行调用。存入一条一句话级记忆，content 必须保留原意和事实，不得先改写成摘要；OB 的 hold 路径也绝不会压缩正文。系统优先自动打标，API 不可用时使用本地中性元数据继续逐字保存。tags 逗号分隔。普通 hold 必须显式选择 importance 1-10，不传则拒绝写入；feel 固定为 5、pinned 固定为 10，这两个分支无需传 importance。pinned=True=标记为永久核心,不衰减不合并。feel=True=存为感受类记忆(不参与普通浮现,仅通过 feel 检索读取)。source_bucket=正在消化的原始记忆桶 ID,会被标为已消化以加速淡化。why_remembered=记录原因(可选,自由文本,仅用于展示不计分)。meaning=可选,这条记忆为什么值得被想起——不是摘要,是我自己的话,只在真正觉得有重量时才写,不必每次都写。每次传入的是新增的一条,系统自动追加到该桶的 meaning 列表,不会覆盖已有的。media=可选,可传服务器可读的单个临时路径，或列表；列表项使用 path，或使用 data_base64+filename。quotes 是我在写入这一刻主动决定原样记住的话，可传字符串列表或含 text/speaker/at 的对象列表；最多 3 句、每句 100 字，超限拒绝且绝不截断。quotes 平时不浮现、不参与向量化，只有 breath_search(..., quotes=True) 命中该桶时才出现。"""
+    """仅在对话中已明确决定“这段内容值得成为长期记忆”时调用；不要因普通聊天、猜测或工具名称联想而自行调用。存入一条一句话级记忆，content 必须保留原意和事实，不得先改写成摘要；OB 的 hold 路径也绝不会压缩正文。系统优先自动打标，API 不可用时使用本地中性元数据继续逐字保存。tags 逗号分隔。普通 hold 必须显式选择 importance 1-10，不传则拒绝写入；feel 固定为 5、pinned 固定为 10，这两个分支无需传 importance。pinned=True=标记为永久核心,不衰减不合并。feel=True=存为感受类记忆。state_key 是普通记忆可选的当前状态主题（如 project:kiwi-mem）；同 key 只提示可能的旧版本，绝不自动取代，确认后再用 trace(..., superseded_by=新桶ID)。"""
     return await _with_notice(
         _t_hold.dispatch(
             content=content, tags=tags, importance=importance,
@@ -666,6 +667,7 @@ async def hold(
             valence=valence, arousal=arousal, why_remembered=why_remembered,
             meaning=meaning, media=media, test_data=test_data,
             quotes=quotes,
+            state_key=state_key,
         ),
         op="hold",
         args={
@@ -676,6 +678,7 @@ async def hold(
             "media_count": len(media or []),
             "test_data": bool(test_data),
             "quotes_count": len(quotes or []),
+            "state_key": state_key,
         },
     )
 
@@ -718,6 +721,8 @@ async def trace(
     delete_reason: Optional[str] = "",
     old_str: Optional[str] = "",
     new_str: Optional[str] = None,
+    state_key: Optional[str] = "",
+    superseded_by: Optional[str] = "",
 ) -> str:
     """仅在明确需要修改某条已存在记忆时调用，不要猜测 bucket_id 或自行改写记忆。
 
@@ -727,6 +732,8 @@ async def trace(
     old_str/new_str 会在完整原文中做唯一、逐字的局部替换（new_str 可为空以删除），
     两种方式都会重建 embedding，且不能同时使用。status/weight 用于 plan；dont_surface 控制日常浮现；
     why_remembered、meaning_append/replace、media_append/replace 更新相应元数据。
+    state_key 给少数会变化的当前事实分组；superseded_by=新桶ID 是一次显式确认，
+    把当前桶标成历史版本；superseded_by="\\clear" 撤销关系。plan 不使用这套机制。
 
     删除边界：delete=True 只会把 Markdown 移入 archive 并标记 deleted_at，不会
     物理抹除。hard_delete=True 仅用于清理创建时明确标记 test_data=True 的测试桶，
@@ -744,6 +751,7 @@ async def trace(
             media_append=media_append, media_replace=media_replace,
             hard_delete=hard_delete, delete_reason=delete_reason,
             old_str=old_str, new_str=new_str,
+            state_key=state_key, superseded_by=superseded_by,
         ),
         op="trace",
         args={
@@ -761,6 +769,8 @@ async def trace(
             "meaning_replace_count": len(meaning_replace or []),
             "media_append_count": len(media_append or []),
             "media_replace_count": len(media_replace or []),
+            "state_key": state_key,
+            "superseded_by": superseded_by,
         },
     )
 

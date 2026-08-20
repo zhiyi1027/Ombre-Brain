@@ -67,9 +67,9 @@ Ombre Brain 的使用者是**模型自己**，不是它背后的人。所以这�
 | `breath` | 睁眼。**0 参数**，让权重最高的未解决事浮现 + 置顶核心准则。**每次对话第一件事**。故意做成 0 参数：claude.ai 按需加载工具时会跳过参数复杂的工具，塞太多参数会导致它常年加载不上。 |
 | `breath_search` | 按关键词 / 语义找记忆：`query`（必填）/ `domain` / `max_results`。融合关键词/BM25 + 语义检索，向量不可用时自动退回关键词检索。 |
 | `breath_advanced` | `breath` 的完整参数版：`catalog=True` 目录模式（每桶一行元数据，0 LLM，最省 token）、`tags`、`importance_min`、`valence`/`arousal`、`max_tokens` 等精细控制，日常用不到时用前两个就够。 |
-| `hold` | 记下当下一件事（一句话级）。自动打标 + 与近似桶合并；打标失败时仍会原样落盘，绝不压缩正文。所有记忆的向量索引都在原文落盘后由后台生成，失败会自动重试。`pinned=True` 钉为永久核心；`feel=True` 写第一人称感受。 |
+| `hold` | 记下当下一件事（一句话级）。自动打标；打标失败时仍会原样落盘，绝不压缩正文。可选 `state_key` 只用于少数会变化的当前事实：发现同 key 旧版本时仅提示，不自动判过时。 |
 | `grow` | 整理一段长内容（日记 / 总结），自动拆成 2~6 条独立桶。要存多条时用它，别连续 `hold`。 |
-| `trace` | 唯一的元数据写入口：resolved / pinned / 改情感坐标 / 替换正文 / 删除到档案 / 改 plan 状态。只传要改的字段。 |
+| `trace` | 唯一的元数据写入口：resolved / pinned / 改情感坐标 / 替换正文 / 删除到档案 / 改 plan 状态。`superseded_by=新桶ID` 可显式确认一条普通记忆已被取代，`\clear` 撤销。 |
 | `dream` | `catalog=True` 轻量列出过去 48h 新记忆及 `resolved/digested` 状态；按 ID 精读后真有沉淀才写 feel。完整 dream 需要整体消化时再调。 |
 
 ### 低频 7 个

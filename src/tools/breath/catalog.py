@@ -53,7 +53,12 @@ async def surface_catalog(domain_filter: list[str] | None = None) -> str:
             imp = 0
         name = meta.get("name") or b["id"]
         pin_mark = "📌" if (meta.get("pinned") or meta.get("protected")) else ""
-        line = f"{pin_mark}{name} | {','.join(domains) or '未分类'} | {imp}"
+        history_mark = (
+            f" [历史→{meta.get('superseded_by')}]"
+            if str(meta.get("superseded_by") or "").strip()
+            else ""
+        )
+        line = f"{pin_mark}{name}{history_mark} | {','.join(domains) or '未分类'} | {imp}"
         btype = meta.get("type")
         key = btype if btype in grouped else "dynamic"
         grouped[key].append((imp, line))

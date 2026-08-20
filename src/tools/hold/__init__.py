@@ -24,6 +24,7 @@ core（普通存入 + 自动合并）。
 from typing import Optional
 
 from ombrebrain.storage.quote_store import normalize_quotes
+from ombrebrain.storage.state_chain import StateChainError, normalize_state_key
 from utils import parse_bool
 
 from .. import _runtime as rt
@@ -51,6 +52,7 @@ async def dispatch(
     media: Optional[list | str] = None,
     test_data: Optional[bool] = False,
     quotes: Optional[list] = None,
+    state_key: Optional[str] = "",
 ) -> str:
     content = "" if content is None else str(content)
     if tags is None:
@@ -72,6 +74,14 @@ async def dispatch(
         meaning = ""
     meaning = str(meaning).strip()
     test_data = parse_bool(test_data, default=False)
+    if state_key is None:
+        state_key = ""
+    try:
+        state_key = normalize_state_key(state_key) if str(state_key).strip() else ""
+    except StateChainError as exc:
+        return f"state_key 无效，未创建任何桶：{exc}"
+    if state_key and feel:
+        return "state_key 只用于普通事实记忆；feel 本次未创建。"
     if test_data and (pinned or feel):
         return "测试数据不能创建为 pinned 或 feel；请使用普通测试桶。"
     if feel:
@@ -208,5 +218,6 @@ async def dispatch(
         media=media,
         test_data=test_data,
         quotes=normalized_quotes or None,
+        state_key=state_key,
     )
     return result

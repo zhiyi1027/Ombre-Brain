@@ -33,6 +33,7 @@ from .._common import (
     check_duplicate_for,
     check_plan_resolution,
 )
+from ombrebrain.storage.state_chain import current_state_candidates
 
 
 async def store_core(
@@ -46,6 +47,7 @@ async def store_core(
     media: list | str | None = None,
     test_data: bool = False,
     quotes: list[dict] | None = None,
+    state_key: str = "",
 ) -> str:
     metadata_fallback = False
     try:
@@ -91,6 +93,7 @@ async def store_core(
         media=media,
         test_data=test_data,
         quotes=quotes,
+        state_key=state_key,
     )
 
     action = {
@@ -106,4 +109,26 @@ async def store_core(
         result += f"\n⚠️ {embed_warn}"
     if metadata_fallback:
         result += "\n⚠️ 打标 API 暂不可用：正文已逐字保存，未做任何压缩；元数据暂用本地中性值。"
+    if state_key:
+        try:
+            candidates = await current_state_candidates(
+                rt.bucket_mgr,
+                state_key,
+                exclude_id=result_name,
+            )
+        except Exception as exc:
+            rt.logger.warning(
+                "state_key candidate lookup failed for %s: %s",
+                state_key,
+                type(exc).__name__,
+            )
+            candidates = []
+        if candidates:
+            candidate_ids = ", ".join(str(item.get("id") or "") for item in candidates[:5])
+            result += (
+                f"\nℹ️ state_key={state_key} 还有 {len(candidates)} 条未标记过时的版本："
+                f"{candidate_ids}。系统没有自动取代；确认后用 "
+                f'trace(bucket_id="旧桶ID", state_key="{state_key}", '
+                f'superseded_by="{result_name}")。'
+            )
     return result

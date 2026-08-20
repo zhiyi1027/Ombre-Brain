@@ -106,6 +106,8 @@ def register(mcp) -> None:
                     "valence": meta.get("valence", 0.5),
                     "arousal": meta.get("arousal", 0.3),
                     "content_preview": strip_wikilinks(b.get("content", ""))[:200],
+                    "state_key": meta.get("state_key", ""),
+                    "superseded_by": meta.get("superseded_by", ""),
                 })
             response = JSONResponse(result)
             # 响应体保持纯数组不变（前端 Array.isArray(results) 依赖这个形状），
