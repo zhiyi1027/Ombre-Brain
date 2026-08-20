@@ -130,13 +130,14 @@ def test_logical_day_changes_at_four_in_shanghai():
 
 
 def test_daily_prompt_requires_first_person_without_inventing_feelings():
-    assert PROMPT_VERSION == "daily-impression-v2"
+    assert PROMPT_VERSION == "daily-impression-v3"
     assert "所有 text 都从当事人“我”的第一人称视角书写" in DAILY_IMPRESSION_PROMPT
     assert "知知" in DAILY_IMPRESSION_PROMPT
     assert "用户”“助手”“AI”“顾凛认为/表示/说" in DAILY_IMPRESSION_PROMPT
     assert "第一人称只规定叙述视角，不授权补写心理活动" in DAILY_IMPRESSION_PROMPT
     assert "events 最多4项" in DAILY_IMPRESSION_PROMPT
     assert "450-650 token" in DAILY_IMPRESSION_PROMPT
+    assert "当天明确写下的 feel" in DAILY_IMPRESSION_PROMPT
 
 
 def test_daily_generation_uses_expanded_visible_and_json_budgets(tmp_path):
@@ -259,6 +260,142 @@ async def test_late_bucket_regenerates_without_note_revision(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_bucket_only_day_generates_without_handoff_note(tmp_path):
+    dehydrator = FakeDehydrator(
+        {
+            "skip": False,
+            "events": [
+                {
+                    "text": "我在没有换窗便签时仍接上了当天发生的事。",
+                    "source_ids": ["memory_bucket:bucket-only"],
+                }
+            ],
+            "open_loops": [],
+            "impressions": [],
+        }
+    )
+    bucket = {
+        "id": "bucket-only",
+        "content": "当天已经存入 OB 的正文",
+        "metadata": {
+            "type": "dynamic",
+            "created": "2026-08-20T12:00:00+00:00",
+        },
+    }
+    service = make_service(tmp_path, dehydrator=dehydrator, buckets=[bucket])
+
+    generated = await service.generate_day("2026-08-20")
+
+    assert generated["status"] == "ready"
+    assert dehydrator.calls[0][1]["sources"][0]["source_id"] == (
+        "memory_bucket:bucket-only"
+    )
+    assert "revision_sha256" not in dehydrator.calls[0][1]["sources"][0]
+    state = service.get_day("2026-08-20")
+    assert state["note_sources"] == []
+    assert "仍接上了当天发生的事" in state["generated_content"]
+
+
+@pytest.mark.asyncio
+async def test_daily_generation_includes_feel_as_evidence(tmp_path):
+    dehydrator = FakeDehydrator(
+        {
+            "skip": False,
+            "events": [],
+            "open_loops": [],
+            "impressions": [
+                {
+                    "text": "我明确留下了被理解的踏实。",
+                    "source_ids": ["feel:feel-that-day"],
+                }
+            ],
+        }
+    )
+    buckets = [
+        {
+            "id": "feel-that-day",
+            "content": "2026-08-20，我明确感到被理解后的踏实。",
+            "metadata": {
+                "type": "feel",
+                "created": "2026-08-20T12:00:00+00:00",
+            },
+        },
+        {
+            "id": "letter-that-day",
+            "content": "信件不应进入日印象来源",
+            "metadata": {
+                "type": "letter",
+                "created": "2026-08-20T12:00:00+00:00",
+            },
+        },
+    ]
+    service = make_service(tmp_path, dehydrator=dehydrator, buckets=buckets)
+
+    generated = await service.generate_day("2026-08-20")
+
+    assert generated["status"] == "ready"
+    source_ids = {
+        source["source_id"] for source in dehydrator.calls[0][1]["sources"]
+    }
+    assert "feel:feel-that-day" in source_ids
+    assert "memory_bucket:letter-that-day" not in source_ids
+
+
+@pytest.mark.asyncio
+async def test_generated_entries_preserve_per_item_source_ids(tmp_path):
+    service = make_service(tmp_path)
+    service.ingest_note(note_payload("# 2026-08-20 便签（周四）\n正文"))
+
+    generated = await service.generate_day("2026-08-20")
+    state = service.get_day("2026-08-20")
+
+    assert generated["status"] == "ready"
+    assert state["generated_entries"]["events"] == [
+        {
+            "text": "知知和我确认了日印象的时间归属。",
+            "source_ids": ["note:cc:2026-08-20"],
+        }
+    ]
+    assert state["generated_entries"]["open_loops"][0]["source_ids"] == [
+        "note:cc:2026-08-20"
+    ]
+    assert state["cited_source_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_full_bucket_revision_detects_changes_beyond_model_slice(tmp_path):
+    dehydrator = FakeDehydrator(
+        {
+            "skip": False,
+            "events": [
+                {
+                    "text": "我保留了长桶变化的证据。",
+                    "source_ids": ["memory_bucket:long-bucket"],
+                }
+            ],
+            "open_loops": [],
+            "impressions": [],
+        }
+    )
+    bucket = {
+        "id": "long-bucket",
+        "content": "前" * 4_100 + "旧尾巴",
+        "metadata": {
+            "type": "dynamic",
+            "created": "2026-08-20T12:00:00+00:00",
+        },
+    }
+    service = make_service(tmp_path, dehydrator=dehydrator, buckets=[bucket])
+    await service.generate_day("2026-08-20")
+    bucket["content"] = "前" * 4_100 + "新尾巴"
+
+    regenerated = await service.generate_day("2026-08-20")
+
+    assert regenerated["status"] == "ready"
+    assert len(dehydrator.calls) == 2
+
+
+@pytest.mark.asyncio
 async def test_manual_impression_survives_regeneration_and_can_restore(tmp_path):
     dehydrator = FakeDehydrator()
     service = make_service(tmp_path, dehydrator=dehydrator)
@@ -340,6 +477,24 @@ def test_pending_day_waits_until_after_cutoff(tmp_path):
     shanghai = ZoneInfo("Asia/Shanghai")
     assert service.pending_days(datetime(2026, 8, 21, 3, 59, tzinfo=shanghai)) == []
     assert service.pending_days(datetime(2026, 8, 21, 4, 1, tzinfo=shanghai)) == [date(2026, 8, 20)]
+
+
+def test_pending_days_include_bucket_only_day(tmp_path):
+    service = make_service(tmp_path)
+    bucket = {
+        "id": "bucket-only",
+        "content": "当天正文",
+        "metadata": {
+            "type": "dynamic",
+            "created": "2026-08-20T12:00:00+00:00",
+        },
+    }
+    shanghai = ZoneInfo("Asia/Shanghai")
+
+    assert service.pending_days(
+        datetime(2026, 8, 21, 4, 1, tzinfo=shanghai),
+        buckets=[bucket],
+    ) == [date(2026, 8, 20)]
 
 
 def test_render_budget_does_not_mutate_generation_result(monkeypatch):
@@ -574,3 +729,5 @@ def test_dashboard_contains_daily_continuity_read_and_edit_surface():
     assert "/api/daily-continuity" in dashboard
     assert "CC/Codex 实际上传的内容" in dashboard
     assert "恢复 DS 版本" in dashboard
+    assert "generated_entries" in dashboard
+    assert "openDailyEvidenceBucket" in dashboard

@@ -7784,6 +7784,49 @@ async function selectDailyDay(memoryDay) {
   }
 }
 
+function _dailyEvidenceSource(sourceId) {
+  const value = String(sourceId || '');
+  const bucket = value.match(/^(memory_bucket|plan|feel):(.+)$/);
+  if (bucket) {
+    return '<button type="button" class="daily-status" data-bucket-id="' +
+      escAttr(bucket[2]) + '" onclick="openDailyEvidenceBucket(this.dataset.bucketId)" ' +
+      'title="打开来源记忆" style="cursor:pointer;border:1px solid var(--border);">' +
+      esc(value) + '</button>';
+  }
+  return '<span class="daily-status" title="便签来源">' + esc(value) + '</span>';
+}
+
+function renderDailyEvidence(day) {
+  const generated_entries = day.generated_entries || {};
+  const sections = [
+    ['events', '发生了什么'],
+    ['open_loops', '还停在哪里'],
+    ['impressions', '我留下的感觉'],
+  ];
+  const blocks = [];
+  sections.forEach(function(section) {
+    const entries = Array.isArray(generated_entries[section[0]])
+      ? generated_entries[section[0]] : [];
+    entries.forEach(function(entry) {
+      const citations = (entry.source_ids || []).map(_dailyEvidenceSource).join(' ');
+      blocks.push(
+        '<div style="padding:9px 0;border-bottom:1px solid var(--border);">' +
+          '<div style="font-size:10px;color:var(--text-light);margin-bottom:4px;">' + esc(section[1]) + '</div>' +
+          '<div style="font-size:12px;line-height:1.65;">' + esc(entry.text || '') + '</div>' +
+          '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">' + citations + '</div>' +
+        '</div>'
+      );
+    });
+  });
+  if (!blocks.length) return '';
+  return '<details style="margin-top:10px;"><summary style="cursor:pointer;font-size:11px;color:var(--text-dim);">逐条来源证据 · ' +
+    Number(day.cited_source_count || 0) + ' 个被引用来源</summary>' + blocks.join('') + '</details>';
+}
+
+async function openDailyEvidenceBucket(bucketId) {
+  await openImportedBucketEditor(bucketId);
+}
+
 function renderDailyDetail(day) {
   const detail = document.getElementById('daily-detail');
   const sources = day.note_sources || [];
@@ -7797,6 +7840,10 @@ function renderDailyDetail(day) {
     '</details>';
   }).join('') : '<div class="loading" style="padding:18px 0;">这一天没有便签正文。</div>';
   const generated = day.generated_content || '';
+  const generatedEvidence = renderDailyEvidence(day);
+  const missingNote = generated && !sources.length
+    ? '<div style="margin:10px 0;padding:9px 11px;border-left:3px solid var(--warning);background:var(--surface);font-size:11px;color:var(--text-dim);">本日没有收到换窗便签；这份日印象仅根据当天已存入 OB 的记忆与 feel 生成。</div>'
+    : '';
   const editable = day.generation_status !== 'pending';
   const current = day.manual_active ? (day.manual_content || '') : generated;
   const stale = day.manual_stale
@@ -7814,6 +7861,7 @@ function renderDailyDetail(day) {
     '<div style="height:1px;background:var(--border);margin:22px 0;"></div>' +
     '<div><strong style="font-size:13px;">DS 原稿 <span class="en">Generated · Preserved</span></strong>' +
       (generated ? '<pre class="daily-document" style="margin-top:9px;">' + esc(generated) + '</pre>' : '<div class="loading" style="padding:18px 0;">' + (day.generation_status === 'skipped' ? '资料不足，DS 没有生成正文。' : '尚未生成，通常会在凌晨 4 点后整理。') + '</div>') +
+      generatedEvidence + missingNote +
     '</div>' + stale +
     '<div style="margin-top:20px;"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">' +
       '<strong style="font-size:13px;">当前用于 Breath 的版本 <span class="en">Effective · Editable</span></strong>' +

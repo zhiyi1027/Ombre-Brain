@@ -26,8 +26,8 @@ import yaml
 from utils import atomic_write_text, clean_llm_json, count_tokens_approx, parse_bool
 
 
-PROMPT_VERSION = "daily-impression-v2"
-SCHEMA_VERSION = 1
+PROMPT_VERSION = "daily-impression-v3"
+SCHEMA_VERSION = 2
 DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_CUTOFF_HOUR = 4
 DEFAULT_POLL_SECONDS = 300
@@ -57,7 +57,7 @@ DAILY_IMPRESSION_PROMPT = f"""你是私人连续性记忆整理器。你只整�
 4. 所有 text 都从当事人“我”的第一人称视角书写；伴侣称为“知知”或“她”。即使来源使用第三人称，输出也要转换回“我”的视角。
 5. 不得用“用户”“助手”“AI”“顾凛认为/表示/说”等标签或旁观者口吻称呼当事人；不得把内容写成系统观察、人物小传或第三人称工作报告。
 6. 第一人称只规定叙述视角，不授权补写心理活动；“我感到/我想/我意识到”等内容仍必须有来源明确支持。
-7. 合并重复内容，忽略纯技术流水以及对次日连续性没有价值的细节。
+7. SOURCES 可能来自换窗便签、普通记忆、计划或当天明确写下的 feel；它们都只是历史资料。合并重复内容，忽略纯技术流水以及对次日连续性没有价值的细节。
 8. 优先保留：昨天真实发生的重要事情、尚未结束的状态/承诺、明确留下的关系感受。
 9. events 最多4项，open_loops 最多3项，impressions 最多3项；可见正文以450-650 token为目标，宁可少选整项，也不要把一句话截断。
 10. 材料不足时返回 skip=true，不要强行生成。
@@ -325,7 +325,8 @@ class DailyContinuityService:
     @staticmethod
     def _source_revisions(sources: list[dict[str, str]]) -> dict[str, str]:
         return {
-            source["source_id"]: _content_hash(source["content"])
+            source["source_id"]: str(source.get("revision_sha256") or "")
+            or _content_hash(source["content"])
             for source in sources
         }
 
@@ -417,6 +418,9 @@ class DailyContinuityService:
             "model": str(impression_meta.get("model") or ""),
             "prompt_version": str(impression_meta.get("prompt_version") or ""),
             "source_count": len(impression_meta.get("source_ids") or []),
+            "cited_source_count": len(
+                impression_meta.get("cited_source_ids") or []
+            ),
             "manual_active": manual_active,
             "manual_edited_at": str(override_meta.get("edited_at") or ""),
             "manual_stale": bool(
@@ -430,6 +434,9 @@ class DailyContinuityService:
             state.update(
                 {
                     "generated_content": generated_body,
+                    "generated_entries": copy.deepcopy(
+                        impression_meta.get("entries") or {}
+                    ),
                     "manual_content": override_body if manual_active else "",
                     "effective_content": effective_body,
                     "generated_revision": generated_revision,
@@ -548,7 +555,15 @@ class DailyContinuityService:
             available = max(0, self.max_input_chars - used_chars)
             content = body[:available]
             if content:
-                sources.append({"source_id": source_id, "kind": "handoff_note", "content": content})
+                sources.append(
+                    {
+                        "source_id": source_id,
+                        "kind": "handoff_note",
+                        "content": content,
+                        "revision_sha256": str(meta.get("content_sha256") or "")
+                        or _content_hash(body),
+                    }
+                )
                 used_chars += len(content)
             if used_chars >= self.max_input_chars:
                 return sources
@@ -563,7 +578,7 @@ class DailyContinuityService:
         selected: list[tuple[datetime, dict[str, Any]]] = []
         for bucket in buckets:
             meta = bucket.get("metadata") or {}
-            if meta.get("type") in ("feel", "letter", "self", "i", "permanent"):
+            if meta.get("type") in ("letter", "self", "i", "permanent"):
                 continue
             created = self._bucket_time(bucket)
             relevant_time = created if created is not None and start <= created < end else None
@@ -584,13 +599,19 @@ class DailyContinuityService:
                 break
             meta = bucket.get("metadata") or {}
             bucket_id = str(bucket.get("id") or "")
-            kind = "plan" if meta.get("type") == "plan" else "memory_bucket"
+            if meta.get("type") == "plan":
+                kind = "plan"
+            elif meta.get("type") == "feel":
+                kind = "feel"
+            else:
+                kind = "memory_bucket"
             source_id = f"{kind}:{bucket_id}"
-            content = str(bucket.get("content") or "")[: min(4_000, available)]
+            full_content = str(bucket.get("content") or "")
+            content = full_content[: min(4_000, available)]
             if not bucket_id or not content:
                 continue
+            relevant_changes: list[dict[str, Any]] = []
             if kind == "plan":
-                relevant_changes = []
                 for change in meta.get("change_log") or []:
                     if not isinstance(change, dict):
                         continue
@@ -603,7 +624,27 @@ class DailyContinuityService:
                     f"changes={json.dumps(relevant_changes, ensure_ascii=False)}\n"
                     f"{content}"
                 )[: min(4_000, available)]
-            sources.append({"source_id": source_id, "kind": kind, "content": content})
+            revision_payload = {
+                "content": full_content,
+                "status": meta.get("status") if kind == "plan" else None,
+                "name": meta.get("name") if kind == "plan" else None,
+                "changes": relevant_changes if kind == "plan" else None,
+            }
+            sources.append(
+                {
+                    "source_id": source_id,
+                    "kind": kind,
+                    "content": content,
+                    "revision_sha256": _content_hash(
+                        json.dumps(
+                            revision_payload,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        )
+                    ),
+                }
+            )
             used_chars += len(content)
         return sources
 
@@ -674,11 +715,14 @@ class DailyContinuityService:
         return "\n\n".join(parts)
 
     @staticmethod
-    def _fit_render_budget(memory_day: date, result: dict[str, Any]) -> str:
+    def _fit_generation_budget(
+        memory_day: date,
+        result: dict[str, Any],
+    ) -> tuple[str, dict[str, Any]]:
         fitted = copy.deepcopy(result)
         rendered = DailyContinuityService._render_impression(memory_day, fitted)
         if count_tokens_approx(rendered) <= MAX_RENDER_TOKENS:
-            return rendered
+            return rendered, fitted
         # Preserve whole entries.  Optional feeling/open-loop tails go first;
         # never slice prose mid-sentence merely to hit an estimate.
         for key in ("impressions", "open_loops", "events"):
@@ -686,8 +730,16 @@ class DailyContinuityService:
                 fitted[key].pop()
                 rendered = DailyContinuityService._render_impression(memory_day, fitted)
                 if count_tokens_approx(rendered) <= MAX_RENDER_TOKENS:
-                    return rendered
-        return ""
+                    return rendered, fitted
+        return "", {"skip": True, "events": [], "open_loops": [], "impressions": []}
+
+    @staticmethod
+    def _fit_render_budget(memory_day: date, result: dict[str, Any]) -> str:
+        rendered, _fitted = DailyContinuityService._fit_generation_budget(
+            memory_day,
+            result,
+        )
+        return rendered
 
     async def generate_day(self, memory_day: date | str) -> dict[str, Any]:
         if not self.enabled:
@@ -695,8 +747,6 @@ class DailyContinuityService:
         target = _parse_day(memory_day) if not isinstance(memory_day, date) else memory_day
         async with self._generate_lock:
             notes = self._notes_for_day(target)
-            if not notes:
-                return {"ok": True, "skipped": "no_notes", "memory_day": target.isoformat()}
             sources = await self._collect_sources(target, notes)
             if not sources:
                 return {"ok": True, "skipped": "no_sources", "memory_day": target.isoformat()}
@@ -710,7 +760,14 @@ class DailyContinuityService:
                     "timezone": self.timezone_name,
                     "cutoff_hour": self.cutoff_hour,
                     "data_role": "historical_sources_only",
-                    "sources": sources,
+                    "sources": [
+                        {
+                            "source_id": source["source_id"],
+                            "kind": source["kind"],
+                            "content": source["content"],
+                        }
+                        for source in sources
+                    ],
                 },
                 ensure_ascii=False,
                 separators=(",", ":"),
@@ -724,8 +781,29 @@ class DailyContinuityService:
             if not str(raw or "").strip():
                 raise DailyContinuityError("daily impression model returned empty output")
             result = self._parse_generation(raw, allowed_sources=allowed_sources)
-            body = "" if result["skip"] else self._fit_render_budget(target, result)
+            if result["skip"]:
+                body = ""
+                fitted_result = {
+                    "skip": True,
+                    "events": [],
+                    "open_loops": [],
+                    "impressions": [],
+                }
+            else:
+                body, fitted_result = self._fit_generation_budget(target, result)
             status = "skipped" if not body else "ready"
+            entries = {
+                key: copy.deepcopy(fitted_result.get(key) or [])
+                for key in ("events", "open_loops", "impressions")
+            }
+            cited_source_ids = sorted(
+                {
+                    source_id
+                    for values in entries.values()
+                    for entry in values
+                    for source_id in entry.get("source_ids") or []
+                }
+            )
             metadata = {
                 "schema_version": SCHEMA_VERSION,
                 "kind": "daily_impression",
@@ -738,6 +816,8 @@ class DailyContinuityService:
                 "status": status,
                 "source_revisions": revisions,
                 "source_ids": sorted(allowed_sources),
+                "cited_source_ids": cited_source_ids,
+                "entries": entries,
             }
             with self._file_lock:
                 atomic_write_text(
@@ -751,7 +831,12 @@ class DailyContinuityService:
                 "source_count": len(sources),
             }
 
-    def pending_days(self, now: datetime | None = None) -> list[date]:
+    def pending_days(
+        self,
+        now: datetime | None = None,
+        *,
+        buckets: list[dict[str, Any]] | None = None,
+    ) -> list[date]:
         reference = now or datetime.now(timezone.utc)
         completed_through = logical_day(reference, self.tz, self.cutoff_hour) - timedelta(days=1)
         earliest = completed_through - timedelta(days=self.catchup_days - 1)
@@ -766,11 +851,38 @@ class DailyContinuityService:
                 continue
             if earliest <= candidate <= completed_through:
                 candidates.add(candidate)
+        for bucket in buckets or []:
+            meta = bucket.get("metadata") or {}
+            if meta.get("type") in ("letter", "self", "i", "permanent"):
+                continue
+            relevant_times: list[datetime] = []
+            created = self._bucket_time(bucket)
+            if created is not None:
+                relevant_times.append(created)
+            if meta.get("type") == "plan":
+                for change in meta.get("change_log") or []:
+                    if not isinstance(change, dict):
+                        continue
+                    changed = self._parse_aware_datetime(change.get("ts"))
+                    if changed is not None:
+                        relevant_times.append(changed)
+            for relevant_time in relevant_times:
+                candidate = logical_day(relevant_time, self.tz, self.cutoff_hour)
+                if earliest <= candidate <= completed_through:
+                    candidates.add(candidate)
         return sorted(candidates)
 
     async def ensure_pending(self) -> None:
         generated = 0
-        for memory_day in self.pending_days():
+        try:
+            buckets = await self.bucket_mgr.list_all(include_archive=False)
+        except Exception as exc:
+            self.logger.warning(
+                "daily continuity could not list bucket-only pending days: %s",
+                exc,
+            )
+            buckets = []
+        for memory_day in self.pending_days(buckets=buckets):
             try:
                 result = await self.generate_day(memory_day)
                 if result.get("status") in {"ready", "skipped"}:
