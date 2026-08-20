@@ -19,6 +19,7 @@ breath_search(query=...) 精准拉取需要的记忆——代替把全部记忆�
 """
 
 from .. import _runtime as rt
+from errors import safe_error_detail
 
 # 类型 → (区头, 排序位)。未知类型归入动态区兜底。
 _SECTIONS = [
@@ -35,7 +36,7 @@ async def surface_catalog(domain_filter: list[str] | None = None) -> str:
     try:
         buckets = await rt.bucket_mgr.list_all(include_archive=False)
     except Exception as e:
-        return f"获取记忆目录失败: {e}"
+        return f"获取记忆目录失败: {safe_error_detail(e)}"
 
     if not buckets:
         return "记忆库为空。"

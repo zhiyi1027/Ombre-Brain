@@ -45,6 +45,7 @@ async def store_core(
     meaning: str = "",
     media: list | str | None = None,
     test_data: bool = False,
+    quotes: list[dict] | None = None,
 ) -> str:
     metadata_fallback = False
     try:
@@ -89,6 +90,7 @@ async def store_core(
         meaning=meaning,
         media=media,
         test_data=test_data,
+        quotes=quotes,
     )
 
     action = {

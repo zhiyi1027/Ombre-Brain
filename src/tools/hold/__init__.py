@@ -17,12 +17,13 @@ core（普通存入 + 自动合并）。
 - 不返回结构化数据，统一返回供模型阅读的中文短句
 
 对外暴露：dispatch(content, tags, importance, pinned, feel, source_bucket,
-                   valence, arousal, why_remembered, meaning, media) → str
+                   valence, arousal, why_remembered, meaning, media, quotes) → str
 ========================================
 """
 
 from typing import Optional
 
+from ombrebrain.storage.quote_store import normalize_quotes
 from utils import parse_bool
 
 from .. import _runtime as rt
@@ -49,6 +50,7 @@ async def dispatch(
     meaning: Optional[str] = "",
     media: Optional[list | str] = None,
     test_data: Optional[bool] = False,
+    quotes: Optional[list] = None,
 ) -> str:
     content = "" if content is None else str(content)
     if tags is None:
@@ -100,6 +102,11 @@ async def dispatch(
     )
     if metadata_err:
         return metadata_err
+
+    try:
+        normalized_quotes = normalize_quotes(quotes)
+    except ValueError as exc:
+        return f"引语无效，未创建任何桶：{exc}"
     if rt.mark_op:
         rt.mark_op("hold")
     rt.record_v3_tool_event("hold", {
@@ -112,6 +119,7 @@ async def dispatch(
         "valence": valence,
         "arousal": arousal,
         "why_remembered_length": len(why_remembered or ""),
+        "quotes_count": len(normalized_quotes),
     })
     await rt.decay_engine.ensure_started()
 
@@ -172,6 +180,7 @@ async def dispatch(
             why_remembered=why_remembered,
             meaning=meaning,
             media=media,
+            quotes=normalized_quotes or None,
         )
         return result
 
@@ -184,6 +193,7 @@ async def dispatch(
             why_remembered=why_remembered,
             meaning=meaning,
             media=media,
+            quotes=normalized_quotes or None,
         )
         return result
 
@@ -197,5 +207,6 @@ async def dispatch(
         meaning=meaning,
         media=media,
         test_data=test_data,
+        quotes=normalized_quotes or None,
     )
     return result

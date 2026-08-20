@@ -29,6 +29,7 @@ breath 是「我睁眼看看自己记得什么」。这个文件根据参数把�
 
 from typing import Optional
 
+from utils import parse_bool
 from .. import _runtime as rt
 from .._common import check_metadata_size, check_query_size
 from .catalog import surface_catalog
@@ -90,6 +91,7 @@ async def dispatch(
     tags: Optional[str] = "",
     catalog: Optional[bool] = False,
     startup: bool = False,
+    quotes: Optional[bool] = False,
 ) -> str:
     # --- Null-safe coercion ---
     query = "" if query is None else str(query)
@@ -107,6 +109,7 @@ async def dispatch(
     tags = "" if tags is None else str(tags)
     if catalog is None:
         catalog = False
+    quotes = parse_bool(quotes, default=False)
 
     query_err = check_query_size(query)
     if query_err:
@@ -127,6 +130,7 @@ async def dispatch(
         "importance_min": importance_min,
         "tags": tags,
         "catalog": catalog,
+        "quotes": quotes,
     })
     await rt.decay_engine.ensure_started()
 
@@ -220,6 +224,7 @@ async def dispatch(
         valence=valence,
         arousal=arousal,
         tag_filter=tag_filter,
+        with_quotes=quotes,
     )
 
 

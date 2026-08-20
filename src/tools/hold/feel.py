@@ -50,6 +50,7 @@ async def store_feel(
     why_remembered: str,
     meaning: str = "",
     media: list | None = None,
+    quotes: list[dict] | None = None,
 ) -> str:
     feel_valence = valence if 0 <= valence <= 1 else 0.5
     feel_arousal = arousal if 0 <= arousal <= 1 else 0.3
@@ -70,6 +71,7 @@ async def store_feel(
         allow_embedding_fallback=True,
         meaning=meaning,
         media=media,
+        quotes=quotes,
     )
     source_id = source_bucket.strip() if source_bucket else ""
     digest_warning = ""

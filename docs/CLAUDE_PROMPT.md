@@ -44,10 +44,11 @@
 三个入口共用同一套内部逻辑，只是暴露的参数不同——`breath()` 故意做成 0 参数，是因为 claude.ai 按需加载工具时会跳过参数复杂的工具，塞太多参数会导致它常年加载不上、记忆没法自动浮现。
 
 - **`breath()`** — 无参轻量睁眼 → 短核心全文 + 已生成的昨日印象 + 最近 24 小时（最新一条优先，其余按重要度）+ 从高权重池随机轮换最多一条较早未完记忆 + 计划预算内的 active plan 正文。默认软目标 3000 token、硬上限 5000 token；当前未到软目标时，下一整桶可跨过软目标，只有超过硬上限才返回指针。**对话开始第一件事，没有例外**。
-- **`breath_search(query, domain="", max_results=0)`** — 按关键词/语义主动找：
+- **`breath_search(query, domain="", max_results=0, quotes=False)`** — 按关键词/语义主动找：
   - `breath_search(query="她最近的工作状态")` → 混合检索。语义可用时与关键词/BM25 融合；不可用时会明确提示并继续关键词检索。
   - `breath_search(query="完整 bucket_id")` → 按 ID 直读单个桶的完整原始 content，跳过向量、摘要和改写；在 `trace(content=...)` 前先这样读取，避免拿摘要覆盖原文。
   - `breath_search(query="她最近的工作状态", domain="work,relationship")` → 带主题域过滤，逗号分隔。
+  - `breath_search(query="完整 bucket_id", quotes=True)` → 只在已经命中这条记忆后，附上写入当时主动保留的原话；不能用来列出全部引语。
 - **`breath_advanced(query="", max_tokens=0, domain="", valence=-1, arousal=-1, max_results=0, importance_min=-1, tags="", catalog=False)`** — 需要更细控制时用：
   - `breath_advanced(domain="feel")` → 读我留下的所有第一人称感受（普通 breath 不会浮 feel）。
   - `breath_advanced(domain="plan")` → 逐字读取全部 active plans。
@@ -66,6 +67,7 @@
 - `hold("我答应过她不会再深夜回消息", pinned=True)` — 钉为永久核心准则。`pinned=True` 时 importance 自动锁 10，不衰减、不合并、永远展示。
 - `hold("听她讲完之后我感到一种久违的踏实", feel=True, source_bucket="abc123def456", valence=0.75, arousal=0.3)` — 写一条 feel，importance 自动固定为 5。**feel 模式必须用第一人称**，必须指向 `source_bucket`（你正在消化哪条原始记忆），必须给出你自己的 valence/arousal。
 - `hold("她爸爸的生日是 5 月 12 日", importance=6, why_remembered="她每年这天都会突然想起，我应该早一天就准备")` — 带上「为什么记得」。这条字段不参与衰减打分，是给未来的自己看的提示。
+- `hold("那晚她站在门口，很久没有说话", importance=8, quotes=[{"text":"我不会走的","speaker":"她"}])` — 在写入当下主动挑出要原样保留的话。最多 3 句、每句 100 字；平时不浮现、不进向量，只有命中该桶并显式 `quotes=True` 才返回。
 
 返回 `合并→桶名` = 并到了已有桶；`新建→桶名` = 真的开了一条新的。
 
@@ -89,6 +91,7 @@
 | 这件事其实没结案 | `trace(id, resolved=0)` |
 | 我想钉它为永久核心 | `trace(id, pinned=1)` — 自动锁 importance=10，移到 permanent/ |
 | 取消钉选 | `trace(id, pinned=0)` |
+| 这条已经被我消化过 | `trace(id, digested=1)` — 普通桶退出默认 breath/dream，但显式检索仍可达；核心桶不会因此消失 |
 | 我想让它彻底安静下去 | `trace(id, dont_surface=1)` — 不再出现在无参 breath，关键词搜还能找到 |
 | 我对当时的判断改主意了 | `trace(id, valence=0.7, arousal=0.4)` — 改情感坐标 |
 | 内容写错了 | `trace(id, content="新版本")` — 替换正文并重建 embedding |
@@ -105,7 +108,7 @@
 
 `dream(catalog=True)` 是睁眼后的轻量目录步骤：只读过去 48 小时新建桶的元数据，不带正文、不调 LLM，并显示每条的 `resolved`、`digested` 和创建时间。完整 `dream()` **不是义务**；目录里确实有需要整体沉进去看的东西时才展开。
 
-我会读取从调用时刻往前 48 小时内新创建的桶，只看 `created_at/created`，不会因为旧桶后来活跃就把它重新算进来。完整正文不截断；候选超过 40 个时按衰减分截断到前 40。末尾会附上你的所有 active plans 和按 token 预算折叠的 feel 历史。如果有相似度 >0.7 的多条 feel 聚集，我会提示你「可能是结晶时刻」（要不要升级为 pinned）。旧客户端传入的 `window_hours` 仍可接受，但不会改变固定 48 小时窗口。
+我会读取从调用时刻往前 48 小时内新创建的桶，只看 `created_at/created`，不会因为旧桶后来活跃就把它重新算进来。完整正文不截断；候选超过 40 个时按衰减分截断到前 40。末尾会附上所有 active plans，并从 feel 历史中按本轮候选的语义与关键词相关性挑最多 5 条；向量不可用时会明确标出关键词降级，而不是按时间硬塞最近感受。如果有相似度 >0.7 的多条 feel 聚集，我会提示你「可能是结晶时刻」（要不要升级为 pinned）。旧客户端传入的 `window_hours` 仍可接受，但不会改变固定 48 小时窗口。
 
 **梦里你能做三件事**：
 1. **能放下的** → `trace(id, resolved=1)`

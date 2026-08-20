@@ -134,6 +134,13 @@ async def test_startup_is_deterministic_and_reconnects_recent_unfinished_and_pla
             importance=10,
             provenance={"kind": "test", "erasable": True},
         ),
+        make_bucket(
+            "digested-old",
+            "已经消化过的普通记忆不能再次进入启动浮现。",
+            created="2026-08-12T09:00:00",
+            importance=10,
+            digested=True,
+        ),
     ]
 
     first = await surface_startup(
@@ -161,6 +168,7 @@ async def test_startup_is_deterministic_and_reconnects_recent_unfinished_and_pla
     assert "较早但仍未解决的正文。" in first
     assert "[活动计划] [bucket_id:active-plan]" in first
     assert "测试数据不能进入睁眼" not in first
+    assert "已经消化过的普通记忆" not in first
     assert "久未浮现" not in first
     assert "偶然想起" not in first
     assert count_tokens_approx(first) <= 5000

@@ -7,7 +7,8 @@ dream 是「我做一次梦——默认读滚动 48 小时内新创建的桶全�
 catalog=True 是显式可选的目录模式，不改变默认全文链路。这里把整个流程拆成三步：
 1. candidates.py：筛选滚动 48 小时内新建的桶 + 软上限
 2. hints.py：连接提示 + 结晶提示
-3. output.py：拼最终文本（包含 active plan 段、feel 历史段）
+3. feel_rank.py：挑与本轮候选相关的 feel，向量不可用时退回关键词
+4. output.py：拼最终文本（包含 active plan 段、相关 feel 段）
 
 dispatch() 只负责把这三步串起来。
 
@@ -20,6 +21,7 @@ from typing import Optional
 from .. import _runtime as rt
 from .candidates import DREAM_WINDOW_HOURS, collect_candidates, collect_core_context
 from .hints import build_connection_hint, build_crystal_hint
+from .feel_rank import rank_feels
 from .output import format_dream_catalog, format_dream_output
 
 
@@ -54,6 +56,15 @@ async def dispatch(
 
     connection_hint = await build_connection_hint(recent)
     crystal_hint = await build_crystal_hint(all_buckets)
+    feels = [
+        bucket
+        for bucket in all_buckets
+        if (bucket.get("metadata") or {}).get("type") == "feel"
+    ]
+    reference_text = "\n".join(
+        str(bucket.get("content") or "") for bucket in recent
+    )[:20_000]
+    ranked_feels, feel_vector_ok = await rank_feels(feels, reference_text)
 
     final_text = format_dream_output(
         recent=recent,
@@ -63,6 +74,8 @@ async def dispatch(
         connection_hint=connection_hint,
         crystal_hint=crystal_hint,
         core_context=core_context,
+        related_feels=[feel for feel, _score in ranked_feels],
+        feel_vector_ok=feel_vector_ok,
     )
 
     if rt.fire_webhook:

@@ -29,8 +29,10 @@ import asyncio
 import random
 
 from ombrebrain.policy.surfacing import SurfacePolicyVM
+from ombrebrain.storage.quote_store import quotes_from_metadata, render_quotes
 from .. import _runtime as rt
 from ._verbatim import render_stored_bucket
+from utils import count_tokens_approx
 
 _SURFACE_POLICY = SurfacePolicyVM.default()
 
@@ -81,6 +83,7 @@ async def surface_search(
     valence: float,
     arousal: float,
     tag_filter: list,
+    with_quotes: bool = False,
 ) -> str:
     domain_filter = [d.strip() for d in domain.split(",") if d.strip()] or None
     q_valence = valence if 0 <= valence <= 1 else None
@@ -113,6 +116,11 @@ async def surface_search(
                 exact_bucket,
                 f"[exact_bucket_id:true] [bucket_id:{exact_bucket['id']}]",
             )
+            if with_quotes:
+                quote_block = render_quotes(quotes_from_metadata(meta))
+                if quote_block:
+                    rendered = f"{rendered}\n{quote_block}"
+                    entry_tokens = count_tokens_approx(rendered)
             if entry_tokens > max_tokens:
                 return _BUDGET_NOTICE
             asyncio.create_task(
@@ -165,6 +173,11 @@ async def surface_search(
         else:
             header = f"[bucket_id:{bucket_id}]"
         rendered, entry_tokens = render_stored_bucket(bucket, header)
+        if with_quotes:
+            quote_block = render_quotes(quotes_from_metadata(meta))
+            if quote_block:
+                rendered = f"{rendered}\n{quote_block}"
+                entry_tokens = count_tokens_approx(rendered)
         if token_used + entry_tokens > max_tokens:
             budget_blocked = True
             break

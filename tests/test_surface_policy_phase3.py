@@ -16,6 +16,7 @@ def _bucket(**metadata):
     ("metadata", "reason"),
     [
         ({"dont_surface": True}, "dont_surface"),
+        ({"digested": True}, "digested"),
         ({"anchor": True}, "anchor"),
         ({"type": "feel"}, "private_type"),
         ({"type": "plan"}, "private_type"),
@@ -41,6 +42,32 @@ def test_search_policy_keeps_dont_surface_reachable_by_explicit_query():
     vm = SurfacePolicyVM.default()
 
     decision = vm.evaluate_bucket(_bucket(dont_surface=True), mode="search")
+
+    assert decision.allowed
+    assert decision.reasons == ()
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"digested": True, "pinned": True},
+        {"digested": True, "protected": True},
+        {"digested": True, "type": "permanent"},
+    ],
+)
+def test_core_memory_is_not_hidden_by_digested(metadata):
+    vm = SurfacePolicyVM.default()
+
+    decision = vm.evaluate_bucket(_bucket(**metadata), mode="spontaneous")
+
+    assert decision.allowed
+    assert "digested" not in decision.reasons
+
+
+def test_explicit_search_can_still_retrieve_digested_memory():
+    vm = SurfacePolicyVM.default()
+
+    decision = vm.evaluate_bucket(_bucket(digested=True), mode="search")
 
     assert decision.allowed
     assert decision.reasons == ()

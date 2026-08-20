@@ -34,6 +34,7 @@ async def store_pinned(
     why_remembered: str,
     meaning: str = "",
     media: list | None = None,
+    quotes: list[dict] | None = None,
 ) -> str:
     try:
         analysis = await rt.dehydrator.analyze(content)
@@ -77,5 +78,6 @@ async def store_pinned(
             allow_embedding_fallback=True,
             meaning=meaning,
             media=media,
+            quotes=quotes,
         )
     return f"📌钉选→{bucket_id} {','.join(str(d) for d in domain if d is not None)}"

@@ -24,6 +24,7 @@ from typing import Optional
 
 from .. import _runtime as rt
 from .._common import check_content_size, check_metadata_size
+from errors import safe_error_detail
 
 _VALID_ASPECTS = {"nature", "values", "patterns", "limits", "becoming", "uncertainty", "stance"}
 
@@ -84,7 +85,7 @@ async def _write_i(content: str, aspect: str) -> str:
             source_tool="I",
         )
     except Exception as e:
-        return f"写入失败: {e}"
+        return f"写入失败: {safe_error_detail(e)}"
 
     try:
         await rt.bucket_mgr.update(bucket_id, dont_surface=True)
@@ -99,7 +100,7 @@ async def _read_i(limit: int) -> str:
     try:
         all_buckets = await rt.bucket_mgr.list_all(include_archive=False)
     except Exception as e:
-        return f"读取失败: {e}"
+        return f"读取失败: {safe_error_detail(e)}"
 
     i_buckets = [
         b for b in all_buckets

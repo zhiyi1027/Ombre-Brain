@@ -681,6 +681,7 @@ async def merge_or_create(
     meaning: str = "",
     media: list | str | None = None,
     test_data: bool = False,
+    quotes: list[dict] | None = None,
 ) -> Tuple[str, WriteDisposition, str]:
     """
     完全相同正文做幂等去重，否则默认新建。返回
@@ -710,7 +711,7 @@ async def merge_or_create(
             valence=valence, arousal=arousal, name=name, raw_merge=raw_merge,
             why_remembered=why_remembered, source_tool=source_tool,
             grow_batch_id=grow_batch_id, meaning=meaning, media=media,
-            test_data=test_data,
+            test_data=test_data, quotes=quotes,
         )
 
 
@@ -729,6 +730,7 @@ async def _merge_or_create_inner(
     meaning: str = "",
     media: list | str | None = None,
     test_data: bool = False,
+    quotes: list[dict] | None = None,
 ) -> Tuple[str, WriteDisposition, str]:
     """实际的 exact-deduplicate→optional-merge/create 逻辑。"""
     # Cache invalidation and a concurrent list_all() refresh can cross: an old
@@ -748,11 +750,28 @@ async def _merge_or_create_inner(
             if exact:
                 exact_id = str(exact.get("id") or "").strip()
                 if exact_id:
+                    quote_warning = ""
+                    if quotes:
+                        try:
+                            appended = await rt.bucket_mgr.update(
+                                exact_id,
+                                quotes_append=quotes,
+                                allow_embedding_fallback=True,
+                            )
+                        except Exception as exc:
+                            appended = False
+                            rt.logger.warning(
+                                "Exact duplicate quote append failed for %s: %s",
+                                exact_id,
+                                type(exc).__name__,
+                            )
+                        if not appended:
+                            quote_warning = "原记忆已找到，但本次原话未能追加，请稍后重试。"
                     rt.logger.info(
                         "op=merge_or_create phase=branch branch=deduplicate "
                         f"bucket_id={exact_id} source_tool={source_tool or '_'}"
                     )
-                    return exact_id, WriteDisposition.DEDUPLICATED, ""
+                    return exact_id, WriteDisposition.DEDUPLICATED, quote_warning
 
     auto_merge_enabled = parse_bool(
         rt.config.get("auto_merge_enabled"), default=False
@@ -858,6 +877,8 @@ async def _merge_or_create_inner(
                         update_kwargs["meaning_append"] = meaning
                     if media:
                         update_kwargs["media_append"] = media
+                    if quotes:
+                        update_kwargs["quotes_append"] = quotes
 
                     async with AsyncExitStack() as commit_stack:
                         if importance >= _HIGH_IMP_THRESHOLD:
@@ -955,6 +976,7 @@ async def _merge_or_create_inner(
             meaning=meaning,
             media=media,
             test_data=test_data,
+            quotes=quotes,
             # hold 的铁律：正文优先落盘。打标/embedding 可降级，但绝不压缩或撤销记忆。
             allow_embedding_fallback=(raw_merge and source_tool == "hold"),
         )

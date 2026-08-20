@@ -10,7 +10,7 @@ web._shared，然后以 @mcp.tool() 注册薄封装（真正的实现在 src/too
 关键行为：
 - 启动后暴露 14 个 MCP 工具：breath/breath_search/breath_advanced/hold/grow/
   trace/anchor/release/pulse/plan/letter_write/letter_read/dream/I；每个入口
-  ≤ 10 行，只负责转发。breath 拆成 breath()(0 参数)+breath_search(3 参数)+
+      ≤ 10 行，只负责转发。breath 拆成 breath()(0 参数)+breath_search(4 参数)+
   breath_advanced(9 参数) 三级，是因为 claude.ai 按需加载工具时会跳过参数
   复杂的工具，全塞一个 breath() 会导致它常年加载不上（见 issue #17）。
 - Dashboard / HTTP 路由全部已拆分到 src/web/<域>.py（每个模块 register(mcp)），
@@ -597,12 +597,20 @@ async def breath_search(
     query: str,
     domain: Optional[str] = "",
     max_results: Optional[int] = 0,
+    quotes: Optional[bool] = False,
 ) -> str:
-    """按关键词/语义检索记忆桶,融合关键词/BM25+语义检索,向量不可用时明确提示并退回关键词检索。命中后逐字返回桶内当前 content，不调用 LLM 摘要/改写。domain 逗号分隔,按主题域预筛。max_results=返回条数上限(默认 config.surfacing.breath_max_results,fallback 20,最大 50)。需要 tags/importance_min/valence/arousal/max_tokens/catalog 等更多过滤维度用 breath_advanced(...)。"""
+    """按关键词/语义检索记忆桶,融合关键词/BM25+语义检索,向量不可用时明确提示并退回关键词检索。命中后逐字返回桶内当前 content，不调用 LLM 摘要/改写。domain 逗号分隔,按主题域预筛。max_results=返回条数上限(默认 config.surfacing.breath_max_results,fallback 20,最大 50)。需要 tags/importance_min/valence/arousal/max_tokens/catalog 等更多过滤维度用 breath_advanced(...)。quotes=True 只在已经命中一条记忆后附上当初主动保留的原话；默认不返回，也不能用于列出全部引语。"""
     return await _with_notice(
-        _t_breath.dispatch(query=query, domain=domain, max_results=max_results),
+        _t_breath.dispatch(
+            query=query, domain=domain, max_results=max_results, quotes=quotes
+        ),
         op="breath_search",
-        args={"query": query, "domain": domain, "max_results": max_results},
+        args={
+            "query": query,
+            "domain": domain,
+            "max_results": max_results,
+            "quotes": bool(quotes),
+        },
     )
 
 
@@ -648,14 +656,16 @@ async def hold(
     meaning: Optional[str] = "",
     media: Optional[list | str] = None,
     test_data: Optional[bool] = False,
+    quotes: Optional[list] = None,
 ) -> str:
-    """仅在对话中已明确决定“这段内容值得成为长期记忆”时调用；不要因普通聊天、猜测或工具名称联想而自行调用。存入一条一句话级记忆，content 必须保留原意和事实，不得先改写成摘要；OB 的 hold 路径也绝不会压缩正文。系统优先自动打标，API 不可用时使用本地中性元数据继续逐字保存。tags 逗号分隔。普通 hold 必须显式选择 importance 1-10，不传则拒绝写入；feel 固定为 5、pinned 固定为 10，这两个分支无需传 importance。pinned=True=标记为永久核心,不衰减不合并。feel=True=存为感受类记忆(不参与普通浮现,仅通过 feel 检索读取)。source_bucket=正在消化的原始记忆桶 ID,会被标为已消化以加速淡化。why_remembered=记录原因(可选,自由文本,仅用于展示不计分)。meaning=可选,这条记忆为什么值得被想起——不是摘要,是我自己的话,只在真正觉得有重量时才写,不必每次都写。每次传入的是新增的一条,系统自动追加到该桶的 meaning 列表,不会覆盖已有的。media=可选,可传服务器可读的单个临时路径，或列表；列表项使用 path，或使用 data_base64+filename，如 [{"data_base64":"...","filename":"photo.png","type":"image/png"}]。媒体会先复制到 OB 持久媒体目录，Markdown 只记录稳定路径；无法读取的临时路径会明确报错，绝不保存失效引用。"""
+    """仅在对话中已明确决定“这段内容值得成为长期记忆”时调用；不要因普通聊天、猜测或工具名称联想而自行调用。存入一条一句话级记忆，content 必须保留原意和事实，不得先改写成摘要；OB 的 hold 路径也绝不会压缩正文。系统优先自动打标，API 不可用时使用本地中性元数据继续逐字保存。tags 逗号分隔。普通 hold 必须显式选择 importance 1-10，不传则拒绝写入；feel 固定为 5、pinned 固定为 10，这两个分支无需传 importance。pinned=True=标记为永久核心,不衰减不合并。feel=True=存为感受类记忆(不参与普通浮现,仅通过 feel 检索读取)。source_bucket=正在消化的原始记忆桶 ID,会被标为已消化以加速淡化。why_remembered=记录原因(可选,自由文本,仅用于展示不计分)。meaning=可选,这条记忆为什么值得被想起——不是摘要,是我自己的话,只在真正觉得有重量时才写,不必每次都写。每次传入的是新增的一条,系统自动追加到该桶的 meaning 列表,不会覆盖已有的。media=可选,可传服务器可读的单个临时路径，或列表；列表项使用 path，或使用 data_base64+filename。quotes 是我在写入这一刻主动决定原样记住的话，可传字符串列表或含 text/speaker/at 的对象列表；最多 3 句、每句 100 字，超限拒绝且绝不截断。quotes 平时不浮现、不参与向量化，只有 breath_search(..., quotes=True) 命中该桶时才出现。"""
     return await _with_notice(
         _t_hold.dispatch(
             content=content, tags=tags, importance=importance,
             pinned=pinned, feel=feel, source_bucket=source_bucket,
             valence=valence, arousal=arousal, why_remembered=why_remembered,
             meaning=meaning, media=media, test_data=test_data,
+            quotes=quotes,
         ),
         op="hold",
         args={
@@ -665,6 +675,7 @@ async def hold(
             "why_len": len(why_remembered or ""), "meaning_len": len(meaning or ""),
             "media_count": len(media or []),
             "test_data": bool(test_data),
+            "quotes_count": len(quotes or []),
         },
     )
 
@@ -711,7 +722,8 @@ async def trace(
     """仅在明确需要修改某条已存在记忆时调用，不要猜测 bucket_id 或自行改写记忆。
 
     resolved=1 标记已放下；resolved=0 重新激活。pinned=1 标记永久核心并锁定
-    importance=10；pinned=0 取消。digested=1 标记已消化。content 会完整替换正文；
+    importance=10；pinned=0 取消。digested=1 会让普通桶退出默认 breath/dream，
+    但仍能被显式检索；pinned/permanent/protected 核心桶不会因此消失。content 会完整替换正文；
     old_str/new_str 会在完整原文中做唯一、逐字的局部替换（new_str 可为空以删除），
     两种方式都会重建 embedding，且不能同时使用。status/weight 用于 plan；dont_surface 控制日常浮现；
     why_remembered、meaning_append/replace、media_append/replace 更新相应元数据。

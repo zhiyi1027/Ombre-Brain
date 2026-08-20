@@ -28,6 +28,7 @@ import math
 from typing import Optional
 
 from .. import _runtime as rt
+from errors import safe_error_detail
 from .._common import check_content_size, check_metadata_size, check_query_size
 from utils import strip_wikilinks, get_ai_name
 
@@ -221,7 +222,7 @@ async def letter_read(
     try:
         all_b = await rt.bucket_mgr.list_all(include_archive=False)
     except Exception as e:
-        return f"读取信件失败: {e}"
+        return f"读取信件失败: {safe_error_detail(e)}"
     letters = [b for b in all_b if b["metadata"].get("type") == "letter"]
     af = author.strip()
     if af:

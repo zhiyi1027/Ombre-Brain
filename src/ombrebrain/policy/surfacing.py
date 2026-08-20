@@ -66,9 +66,24 @@ class SurfacePolicyVM:
         if metadata.get("deleted_at"):
             reasons.append("deleted")
 
+        # ``digested`` means an ordinary memory has already been reflected on
+        # and should stop re-entering passive recall.  Core material has the
+        # opposite contract: pinned/permanent memories (and this fork's
+        # protected core) must remain present until their core flag is removed.
+        # Anchors do not spontaneously surface below, but they must likewise
+        # remain eligible in the read modes where anchors are explicitly used.
+        never_digested = (
+            _truthy(metadata.get("pinned"))
+            or _truthy(metadata.get("protected"))
+            or bucket_type == "permanent"
+            or _truthy(metadata.get("anchor"))
+        )
+
         if normalized_mode in (SurfaceMode.SPONTANEOUS, SurfaceMode.DREAM):
             if _truthy(metadata.get("dont_surface")):
                 reasons.append("dont_surface")
+            if _truthy(metadata.get("digested")) and not never_digested:
+                reasons.append("digested")
             if _truthy(metadata.get("anchor")):
                 reasons.append("anchor")
             if bucket_type in self.private_types:

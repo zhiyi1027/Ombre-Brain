@@ -89,6 +89,47 @@ async def test_vectorized_search_preserves_content_meaning_and_tie_behavior(
 
 
 @pytest.mark.asyncio
+async def test_vector_search_filters_allowed_ids_before_ranking(tmp_path, monkeypatch):
+    buckets_dir = tmp_path / "buckets"
+    buckets_dir.mkdir()
+    engine = EmbeddingEngine({
+        "buckets_dir": str(buckets_dir),
+        "embedding": {
+            "enabled": True,
+            "api_key": "test-key",
+            "api_format": "openai_compat",
+            "base_url": "https://example.invalid/v1",
+            "model": "test-model",
+            "dim": 3,
+        },
+    })
+
+    async def generate(_text):
+        return [1.0, 0.0, 0.0]
+
+    monkeypatch.setattr(engine, "_generate_async", generate)
+    now = "2026-01-01T00:00:00Z"
+    with sqlite3.connect(engine.db_path) as conn:
+        for bucket_id, vector in (
+            ("hidden-best", [1.0, 0.0, 0.0]),
+            ("allowed", [0.8, 0.2, 0.0]),
+            ("hidden-low", [0.0, 1.0, 0.0]),
+        ):
+            conn.execute(
+                "INSERT OR REPLACE INTO embeddings "
+                "(bucket_id, embedding, meaning_embedding, updated_at, content_hash) "
+                "VALUES (?, ?, NULL, ?, '')",
+                (bucket_id, json.dumps(vector), now),
+            )
+
+    results = await engine.search_similar_strict(
+        "query", top_k=1, allowed_bucket_ids={"allowed"}
+    )
+
+    assert [bucket_id for bucket_id, _score in results] == ["allowed"]
+
+
+@pytest.mark.asyncio
 async def test_vector_search_bounds_matrix_to_sqlite_batch(tmp_path, monkeypatch):
     """A large vault must not become one giant Python-list + NumPy matrix."""
     buckets_dir = tmp_path / "buckets"

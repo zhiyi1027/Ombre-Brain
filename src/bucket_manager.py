@@ -1059,6 +1059,7 @@ class BucketManager:
         meaning: str = "",
         media: Any = None,
         test_data: bool = False,
+        quotes: Any = None,
     ) -> str:
         """
         Create a new memory bucket, return bucket ID.
@@ -1166,6 +1167,10 @@ class BucketManager:
         # Empty string = 没说原因，dashboard 直接不渲染该行。
         if why_remembered:
             metadata["why_remembered"] = str(why_remembered).strip()[:_WHY_REMEMBERED_MAX]
+        if quotes:
+            # Keep exact words outside the body so ordinary renderers and the
+            # embedding outbox cannot expose or index them by accident.
+            metadata["quotes"] = self._sanitize_quotes(quotes)
         # --- iter 1.8: feel 桶的因果链出口（暂不强校验存在性，只透传） ---
         # triggered_by = 触发这条 feel 的源 bucket_id。1.9 会做 UI 联动。
         if triggered_by:
@@ -1794,6 +1799,8 @@ class BucketManager:
         if "meaning_append" in kwargs:
             # Miss: meaning_append 是追加一条新 meaning（trace 的 meaning_append / hold 每次调用）。
             kwargs["meaning_append"] = self._normalize_meaning_item(kwargs["meaning_append"])
+        if "quotes_append" in kwargs:
+            kwargs["quotes_append"] = self._sanitize_quotes(kwargs["quotes_append"])
 
         try:
             post = frontmatter.load(file_path)
@@ -1933,6 +1940,26 @@ class BucketManager:
             if isinstance(existing_meaning, str):
                 existing_meaning = [existing_meaning]
             post["meaning"] = (list(existing_meaning) + [kwargs["meaning_append"]])[:_MEANING_LIST_MAX_ITEMS]
+        if "quotes_append" in kwargs and kwargs["quotes_append"]:
+            merged_quotes, dropped = self._merge_quotes(
+                post.metadata.get("quotes"), kwargs["quotes_append"]
+            )
+            if merged_quotes:
+                post["quotes"] = merged_quotes
+            if dropped:
+                try:
+                    from errors import push_warning
+
+                    push_warning(
+                        "OB-W006",
+                        f"合并后引语超过上限，保留先写入的引语，另有 {dropped} 条未写入",
+                    )
+                except Exception:
+                    logger.warning(
+                        "quotes overflow while updating bucket=%s dropped=%s",
+                        bucket_id,
+                        dropped,
+                    )
         # --- Pass-through fields for plan/letter lifecycle ---
         # --- plan/letter/iter1.7 生命周期相关字段直接透传到 frontmatter ---
         # 这一组字段没有「校验/转换」逻辑，给什么写什么。新增字段往这个元组里加即可。
@@ -3079,6 +3106,41 @@ class BucketManager:
             + list(range(0x2066, 0x206A))        # bidi isolates 0x2066..0x2069
         }
         return str(text).translate(_ctrl_table)
+
+    @staticmethod
+    def _sanitize_quotes(value: Any) -> list[dict[str, str]]:
+        from ombrebrain.storage.quote_store import normalize_quotes
+
+        cleaned: list[dict[str, str]] = []
+        for quote in normalize_quotes(value):
+            entry = {
+                key: BucketManager._sanitize_text(text).strip()
+                for key, text in quote.items()
+            }
+            if entry.get("text"):
+                cleaned.append({key: text for key, text in entry.items() if text})
+        return cleaned
+
+    @staticmethod
+    def _merge_quotes(
+        existing: Any, incoming: Any
+    ) -> tuple[list[dict[str, str]], int]:
+        from ombrebrain.storage.quote_store import MAX_QUOTES, quotes_from_metadata
+
+        groups = (
+            quotes_from_metadata({"quotes": existing}),
+            BucketManager._sanitize_quotes(incoming),
+        )
+        merged: list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        for group in groups:
+            for quote in group:
+                key = (quote["text"], quote.get("speaker", ""))
+                if key in seen:
+                    continue
+                seen.add(key)
+                merged.append(quote)
+        return merged[:MAX_QUOTES], max(0, len(merged) - MAX_QUOTES)
 
     @staticmethod
     def _sanitize_float_field(value, default: float) -> float:

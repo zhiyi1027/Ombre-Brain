@@ -24,6 +24,7 @@ tools/breath/importance.py — importance_min 模式
 from .. import _runtime as rt
 from .._common import is_importance_audit_candidate
 from ._verbatim import render_stored_bucket
+from errors import safe_error_detail
 
 _BUDGET_NOTICE = "token 预算不足：下一条重要记忆未被截断或摘要，请提高 max_tokens 后重试。"
 
@@ -114,7 +115,7 @@ async def surface_by_importance(importance_min: int, max_tokens: int, tag_filter
     try:
         all_buckets = await rt.bucket_mgr.list_all(include_archive=False)
     except Exception as e:
-        return f"记忆系统暂时无法访问: {e}"
+        return f"记忆系统暂时无法访问: {safe_error_detail(e)}"
     canonical_buckets = _deduplicate_buckets(all_buckets)
     filtered = [
         b for b in canonical_buckets

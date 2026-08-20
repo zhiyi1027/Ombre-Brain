@@ -3,7 +3,7 @@
 tools/dream/output.py — dream 最终输出格式化
 ========================================
 
-把 candidates / hints / active plan / 全量 feel 历史拼成一段长文本
+把 candidates / hints / active plan / 相关 feel 拼成一段长文本
 返回给模型自我反省。
 
 关键行为：
@@ -14,8 +14,8 @@ tools/dream/output.py — dream 最终输出格式化
 - active plan 段：列所有 status=active 的 plan（按 created 倒序）
 - 整体输出受 surfacing.dream_max_tokens（默认 20000）硬预算约束；只省略完整块，
   绝不截断数据边界或伪造 payload 哈希
-- feel 历史段：按 surfacing.feel_max_tokens（默认 6000）对最终渲染块计费；
-  新 feel 优先全文、老 feel 优先短摘录，放不下的仅报告省略数量
+- feel 段：生产入口按本轮候选相关性最多挑 5 条，再按
+  surfacing.feel_max_tokens（默认 6000）对最终渲染块计费
 
 不做什么（边界）：
 - 不做任何持久化写入
@@ -250,6 +250,8 @@ def format_dream_output(
     crystal_hint: str,
     core_context: list | None = None,
     target_date: str = "",
+    related_feels: list | None = None,
+    feel_vector_ok: bool | None = None,
 ) -> str:
     runtime_config = rt.config if isinstance(rt.config, dict) else {}
     surfacing_cfg = runtime_config.get("surfacing", {}) or {}
@@ -428,10 +430,19 @@ def format_dream_output(
     except Exception as e:
         rt.logger.warning(f"Dream active plans block failed: {e}")
 
-    # --- 全量 feel 段（按 token 预算折叠老 feel）---
+    # --- 与本轮 dream 候选相关的 feel 段 ---
     try:
-        feels_all = [b for b in all_buckets if b["metadata"].get("type") == "feel"]
-        feels_all.sort(key=lambda b: b["metadata"].get("created", ""), reverse=True)
+        # ``None`` keeps direct formatter callers backwards-compatible; the
+        # production dispatch always supplies the relevance-ranked list.
+        if related_feels is None:
+            feels_all = [
+                b for b in all_buckets if b["metadata"].get("type") == "feel"
+            ]
+            feels_all.sort(
+                key=lambda b: b["metadata"].get("created", ""), reverse=True
+            )
+        else:
+            feels_all = list(related_feels)
         if feels_all:
             try:
                 feel_budget = int(surfacing_cfg.get("feel_max_tokens") or 6000)
@@ -443,13 +454,28 @@ def format_dream_output(
                 dream_budget - count_tokens_approx(final_text),
             )
             feel_budget = min(feel_budget, remaining_budget)
-            feel_header = (
-                "\n\n=== 你的 feel 历史（按最终渲染 token 预算）===\n"
-                "越新的 feel 优先保留全文；放不下时改为短摘录。"
-                "每个数据边界、来源和哈希也计入预算。\n"
-                "需要看未返回的 feel 可用 breath_advanced(query=..., domain=\"feel\") "
-                "或 trace 访问。\n\n"
-            )
+            if related_feels is None:
+                feel_header = (
+                    "\n\n=== 你的 feel 历史（按最终渲染 token 预算）===\n"
+                    "越新的 feel 优先保留全文；放不下时改为短摘录。"
+                    "每个数据边界、来源和哈希也计入预算。\n"
+                    "需要看未返回的 feel 可用 breath_advanced(query=..., domain=\"feel\") "
+                    "或 trace 访问。\n\n"
+                )
+            else:
+                degraded_note = (
+                    "[检索降级：语义索引暂不可用，本段仅按关键词重合度挑选。]\n"
+                    if not feel_vector_ok
+                    else ""
+                )
+                feel_header = (
+                    "\n\n=== 和这次回顾相关的 feel（最多 5 条）===\n"
+                    f"{degraded_note}"
+                    "按与上面这些记忆的相关性挑选，不按时间；这里没有出现的 feel "
+                    "不代表不重要，只代表与本轮回顾无关。\n"
+                    "放不下时改为短摘录，每个数据边界、来源和哈希也计入预算。\n"
+                    "需要完整读取感受可用 breath_advanced(domain=\"feel\")。\n\n"
+                )
             feel_lines: list[str] = []
             omitted = 0
 

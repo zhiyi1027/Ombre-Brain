@@ -31,12 +31,30 @@ import contextvars
 import json
 import logging
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass
 from typing import Iterable
 
 logger = logging.getLogger(__name__)
+
+
+_SAFE_DETAIL_MAX = 200
+
+
+def safe_error_detail(exc: BaseException) -> str:
+    """Return a bounded one-line exception detail with credentials redacted."""
+
+    detail = str(exc).strip() or type(exc).__name__
+    detail = re.sub(r"(?i)(bearer\s+)[^\s,;]+", r"\1[REDACTED]", detail)
+    detail = re.sub(r"\bsk-[A-Za-z0-9_-]{8,}\b", "[REDACTED]", detail)
+    detail = re.sub(
+        r"(?i)((?:api[_-]?key|token)\s*[=:]\s*)[^\s,;]+",
+        r"\1[REDACTED]",
+        detail,
+    )
+    return " ".join(detail.splitlines())[:_SAFE_DETAIL_MAX]
 
 
 # ============================================================
@@ -182,6 +200,16 @@ ERROR_CODES: dict[str, ErrorSpec] = {
             "过往写入的向量与当前模型不同维，搜索会退化为 0 分。"
             "请在 Dashboard 设置页点击「切换模型」，或调用 POST /api/embedding/migrate 重建索引。"
             "迁移期间搜索降级为关键词模式，不会丢文件。"
+        ),
+    ),
+    "OB-W006": ErrorSpec(
+        code="OB-W006",
+        level="W",
+        title_zh="引语超过每桶上限，超出的部分未写入",
+        title_en="quotes exceed per-bucket cap; overflow was not written",
+        suggestion_zh=(
+            "每桶最多保留 3 句原话；合并时优先保留先写入的引语。"
+            "如果新的一句更重要，请先人工检查现有引语再决定替换。"
         ),
     ),
 
@@ -551,4 +579,5 @@ __all__ = [
     "format_warnings_suffix",
     "OBStartupError",
     "write_fatal_log",
+    "safe_error_detail",
 ]

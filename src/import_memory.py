@@ -33,6 +33,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from errors import safe_error_detail
 from tools._common import (
     WriteDisposition,
     _HIGH_IMP_THRESHOLD,
@@ -875,7 +876,7 @@ class ImportEngine:
             try:
                 await self._process_single_chunk(chunk, preserve_raw)
             except Exception as e:
-                err_msg = f"Chunk {i}: {str(e)[:_CHUNK_ERR_PREVIEW]}"
+                err_msg = f"Chunk {i}: {safe_error_detail(e)}"
                 logger.warning(f"Import chunk error: {err_msg}")
                 if len(self.state.data["errors"]) < _STATE_ERR_LOG_MAX:
                     self.state.data["errors"].append(err_msg)
