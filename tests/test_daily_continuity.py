@@ -20,8 +20,10 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from daily_continuity import (  # noqa: E402
+    DAILY_IMPRESSION_PROMPT,
     DailyContinuityError,
     DailyContinuityService,
+    PROMPT_VERSION,
     logical_day,
 )
 from tools.breath.startup import surface_startup  # noqa: E402
@@ -125,6 +127,14 @@ def test_logical_day_changes_at_four_in_shanghai():
     assert logical_day(datetime(2026, 8, 21, 0, 30, tzinfo=tz), tz, 4) == date(2026, 8, 20)
     assert logical_day(datetime(2026, 8, 21, 3, 59, tzinfo=tz), tz, 4) == date(2026, 8, 20)
     assert logical_day(datetime(2026, 8, 21, 4, 0, tzinfo=tz), tz, 4) == date(2026, 8, 21)
+
+
+def test_daily_prompt_requires_first_person_without_inventing_feelings():
+    assert PROMPT_VERSION == "daily-impression-v2"
+    assert "所有 text 都从当事人“我”的第一人称视角书写" in DAILY_IMPRESSION_PROMPT
+    assert "知知" in DAILY_IMPRESSION_PROMPT
+    assert "用户”“助手”“AI”“顾凛认为/表示/说" in DAILY_IMPRESSION_PROMPT
+    assert "第一人称只规定叙述视角，不授权补写心理活动" in DAILY_IMPRESSION_PROMPT
 
 
 def test_ingest_upserts_one_revision_per_client_day(tmp_path):
