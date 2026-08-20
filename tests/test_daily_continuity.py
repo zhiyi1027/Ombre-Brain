@@ -183,6 +183,27 @@ def test_ingest_upserts_one_revision_per_client_day(tmp_path):
     assert "第二版" in paths[0].read_text(encoding="utf-8")
 
 
+def test_manual_note_uses_title_day_and_upserts_selected_client(tmp_path):
+    service = make_service(tmp_path)
+    first = "# 2026-08-20 便签（周四）\n\n## 换窗交接\n第一版"
+    second = "# 2026-08-20 便签（周四）\n\n## 换窗交接\n第二版"
+
+    created = service.ingest_manual_note(content=first, source_client="CC")
+    updated = service.ingest_manual_note(content=second, source_client="cc")
+
+    assert created["status"] == "created"
+    assert created["note_id"] == "cc-daily-note:2026-08-20"
+    assert updated["status"] == "updated"
+    assert len(list(service.notes_dir.glob("*.md"))) == 1
+    assert "第二版" in next(service.notes_dir.glob("*.md")).read_text(encoding="utf-8")
+
+
+def test_manual_note_rejects_missing_title_day(tmp_path):
+    service = make_service(tmp_path)
+    with pytest.raises(DailyContinuityError, match="must start"):
+        service.ingest_manual_note(content="## 没有日期\n正文", source_client="cc")
+
+
 def test_ingest_rejects_title_day_or_hash_mismatch(tmp_path):
     service = make_service(tmp_path)
     with pytest.raises(DailyContinuityError, match="title date"):
@@ -787,6 +808,29 @@ async def test_dashboard_daily_continuity_routes_list_edit_and_restore(
 
 
 @pytest.mark.asyncio
+async def test_dashboard_manual_note_route_upserts_without_echoing_content(
+    tmp_path, monkeypatch
+):
+    service = make_service(tmp_path)
+    monkeypatch.setattr(web_shared, "daily_continuity", service, raising=False)
+    monkeypatch.setattr(web_shared, "_require_auth", lambda _request: None)
+    mcp = FakeMCP()
+    daily_web.register(mcp)
+    content = "# 2026-08-20 便签（周四）\n不能出现在响应里的正文"
+
+    response = await mcp.routes[("POST", "/api/daily-continuity/notes")](
+        JsonRequest({"content": content, "source_client": "cc"})
+    )
+
+    assert response.status_code == 200
+    result = json.loads(response.body)
+    assert result["note_id"] == "cc-daily-note:2026-08-20"
+    assert result["memory_day"] == "2026-08-20"
+    assert "不能出现在" not in response.body.decode("utf-8")
+    assert service.get_day("2026-08-20")["note_sources"][0]["content"] == content
+
+
+@pytest.mark.asyncio
 async def test_dashboard_daily_continuity_routes_require_login(tmp_path, monkeypatch):
     service = make_service(tmp_path)
     monkeypatch.setattr(web_shared, "daily_continuity", service, raising=False)
@@ -799,6 +843,14 @@ async def test_dashboard_daily_continuity_routes_require_login(tmp_path, monkeyp
     daily_web.register(mcp)
 
     listing = await mcp.routes[("GET", "/api/daily-continuity")](JsonRequest())
+    submitting = await mcp.routes[("POST", "/api/daily-continuity/notes")](
+        JsonRequest(
+            {
+                "content": "# 2026-08-20 便签（周四）\n不能写入",
+                "source_client": "cc",
+            }
+        )
+    )
     editing = await mcp.routes[
         ("PATCH", "/api/daily-continuity/{memory_day}/impression")
     ](
@@ -809,7 +861,9 @@ async def test_dashboard_daily_continuity_routes_require_login(tmp_path, monkeyp
     )
 
     assert listing.status_code == 401
+    assert submitting.status_code == 401
     assert editing.status_code == 401
+    assert not list(service.notes_dir.glob("*.md"))
     assert not list(service.overrides_dir.glob("*.md"))
 
 
@@ -822,3 +876,6 @@ def test_dashboard_contains_daily_continuity_read_and_edit_surface():
     assert "恢复 DS 版本" in dashboard
     assert "generated_entries" in dashboard
     assert "openDailyEvidenceBucket" in dashboard
+    assert 'id="daily-manual-note-content"' in dashboard
+    assert "submitManualDailyNote" in dashboard
+    assert "/api/daily-continuity/notes" in dashboard

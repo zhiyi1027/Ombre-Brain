@@ -38,6 +38,45 @@ def _authorized(request) -> bool:
 
 
 def register(mcp) -> None:
+    @mcp.custom_route("/api/daily-continuity/notes", methods=["POST"])
+    async def submit_daily_continuity_note(request):
+        error = sh._require_auth(request)
+        if error:
+            return error
+        service = getattr(sh, "daily_continuity", None)
+        if service is None:
+            return JSONResponse(
+                {"error": "Daily continuity is unavailable"},
+                status_code=503,
+                headers={"Cache-Control": "no-store"},
+            )
+        try:
+            body = await sh._read_json_object(request)
+            content = body.get("content")
+            source_client = body.get("source_client", "cc")
+            if not isinstance(content, str):
+                raise DailyContinuityError("note content must be a string")
+            if not isinstance(source_client, str):
+                raise DailyContinuityError("source_client must be a string")
+            result = service.ingest_manual_note(
+                content=content,
+                source_client=source_client,
+            )
+        except (ValueError, DailyContinuityError) as exc:
+            return JSONResponse(
+                {"error": str(exc)},
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
+            )
+        except Exception:
+            sh.logger.exception("manual daily note ingestion failed")
+            return JSONResponse(
+                {"error": "Daily note could not be stored"},
+                status_code=500,
+                headers={"Cache-Control": "no-store"},
+            )
+        return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
     @mcp.custom_route("/api/daily-continuity", methods=["GET"])
     async def list_daily_continuity(request):
         error = sh._require_auth(request)

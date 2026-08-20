@@ -86,6 +86,8 @@ breath_advanced(domain="daily_impression")
 
 登录 Dashboard 后打开「日印象 / Daily」：
 
+- “手动提交便签”可以直接粘贴完整 Markdown，适合换机器或未触发 nightswap 时补传；页面从首行 `# YYYY-MM-DD 便签` 确定日期，并在写入前预览最终 `note_id`、要求二次确认。
+- 默认来源为 CC，因此同一天会更新 `cc-daily-note:YYYY-MM-DD` 的最新 revision；也可以选择 Codex，作为当天独立来源保存。手动提交使用 Dashboard 登录态，不需要把上传密钥交给浏览器。
 - 日期列表只读取摘要，选择某天后才加载原始便签正文。
 - 原始 CC/Codex 便签只读，并显示接收时间与内容哈希。
 - DS 原稿下方保留每一条生成内容对应的 `source_ids`；便签来源显示标签，普通记忆、计划和 feel 来源可以直接打开原桶核对。
@@ -97,6 +99,7 @@ breath_advanced(domain="daily_impression")
 Dashboard API 均要求登录态：
 
 ```text
+POST   /api/daily-continuity/notes
 GET    /api/daily-continuity
 GET    /api/daily-continuity/{memory_day}
 PATCH  /api/daily-continuity/{memory_day}/impression

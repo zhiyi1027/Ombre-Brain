@@ -2232,6 +2232,24 @@
 
 <!-- Daily continuity: private handoff notes + editable generated impressions -->
 <div class="content" id="daily-view" style="display:none">
+  <div class="config-section" style="margin:0 0 16px;">
+    <details id="daily-manual-submit">
+      <summary style="cursor:pointer;font-size:13px;font-weight:600;">手动提交便签 <span class="en">Paste Markdown</span></summary>
+      <p style="font-size:11px;line-height:1.6;color:var(--text-dim);margin:10px 0;">适合换机器或没有触发 nightswap 时补传。粘贴完整 Markdown，第一行必须是 <code># YYYY-MM-DD 便签</code>；提交前会显示日期和最终 note_id。</p>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:9px;">
+        <select id="daily-manual-source-client" onchange="previewManualDailyNote()" style="flex:0 0 230px;">
+          <option value="cc" selected>CC（更新当天 CC 便签）</option>
+          <option value="codex">Codex（单独来源）</option>
+        </select>
+        <span id="daily-manual-note-preview" style="font-size:11px;color:var(--text-dim);">等待粘贴…</span>
+      </div>
+      <textarea id="daily-manual-note-content" oninput="previewManualDailyNote()" placeholder="# 2026-08-20 便签（周四）&#10;&#10;## 今天的她&#10;…" style="width:100%;box-sizing:border-box;min-height:210px;resize:vertical;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:13px 14px;border-radius:8px;font-family:inherit;font-size:13px;line-height:1.7;"></textarea>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;">
+        <button id="daily-manual-note-submit" class="btn-primary" onclick="submitManualDailyNote()" disabled style="height:34px;padding:0 14px;"><i data-lucide="upload"></i> 提交便签</button>
+        <span id="daily-manual-note-status" style="font-size:11px;color:var(--text-dim);"></span>
+      </div>
+    </details>
+  </div>
   <div class="daily-layout">
     <div class="config-section" style="margin:0;">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">
@@ -7721,6 +7739,65 @@ function _dailyStatusLabel(day) {
 function _dailyTime(value) {
   if (!value) return '';
   try { return new Date(value).toLocaleString(); } catch (_) { return value; }
+}
+
+function _manualDailyNoteDay(content) {
+  const firstLine = String(content || '').split(/\r?\n/, 1)[0].trim();
+  const match = firstLine.match(/^#\s*(\d{4}-\d{2}-\d{2})\s+便签(?:\s|（|\(|$)/);
+  if (!match) return '';
+  const parsed = new Date(match[1] + 'T00:00:00Z');
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== match[1]) return '';
+  return match[1];
+}
+
+function previewManualDailyNote() {
+  const editor = document.getElementById('daily-manual-note-content');
+  const source = document.getElementById('daily-manual-source-client');
+  const preview = document.getElementById('daily-manual-note-preview');
+  const submit = document.getElementById('daily-manual-note-submit');
+  if (!editor || !source || !preview || !submit) return;
+  const content = editor.value;
+  const day = _manualDailyNoteDay(content);
+  submit.disabled = !day;
+  preview.style.color = day ? 'var(--text-dim)' : (content.trim() ? 'var(--negative)' : 'var(--text-dim)');
+  preview.textContent = day
+    ? '将提交为 ' + source.value + '-daily-note:' + day + ' · ' + content.length + ' 字符'
+    : (content.trim() ? '第一行格式不对，无法识别日期。' : '等待粘贴…');
+}
+
+async function submitManualDailyNote() {
+  const editor = document.getElementById('daily-manual-note-content');
+  const source = document.getElementById('daily-manual-source-client');
+  const submit = document.getElementById('daily-manual-note-submit');
+  const status = document.getElementById('daily-manual-note-status');
+  const content = editor ? editor.value : '';
+  const client = source ? source.value : 'cc';
+  const day = _manualDailyNoteDay(content);
+  if (!day) return alert('第一行必须是 # YYYY-MM-DD 便签。');
+  const noteId = client + '-daily-note:' + day;
+  if (!confirm('确认提交为 ' + noteId + '？同一天同来源会更新为这份最新版。')) return;
+  submit.disabled = true;
+  status.style.color = 'var(--text-dim)';
+  status.textContent = '提交中…';
+  try {
+    const response = await authFetch('/api/daily-continuity/notes', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({content:content, source_client:client}),
+    });
+    if (!response) return;
+    const data = await readJsonSafe(response);
+    if (!response.ok) throw new Error(data.error || '提交失败');
+    const labels = {created:'已创建', updated:'已更新', unchanged:'内容未变化'};
+    status.style.color = 'var(--positive)';
+    status.textContent = (labels[data.status] || '已提交') + ' · ' + data.note_id;
+    await loadDailyContinuity(day);
+  } catch (error) {
+    status.style.color = 'var(--negative)';
+    status.textContent = '提交失败：' + error.message;
+  } finally {
+    previewManualDailyNote();
+  }
 }
 
 function renderDailyDayList() {

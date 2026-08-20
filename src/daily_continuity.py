@@ -316,6 +316,26 @@ class DailyContinuityService:
             "dirty": True,
         }
 
+    def ingest_manual_note(
+        self,
+        *,
+        content: str,
+        source_client: str,
+    ) -> dict[str, Any]:
+        """Ingest authenticated Dashboard paste without exposing upload tokens."""
+
+        memory_day = _note_title_day(content)
+        client = str(source_client or "").strip().lower()
+        return self.ingest_note(
+            {
+                "note_id": f"{client}-daily-note:{memory_day}",
+                "source_client": client,
+                "memory_day": memory_day,
+                "source_updated_at": datetime.now(timezone.utc).isoformat(),
+                "content": content,
+            }
+        )
+
     def _notes_for_day(self, memory_day: date) -> list[tuple[dict[str, Any], str]]:
         docs: list[tuple[dict[str, Any], str]] = []
         prefix = f"{memory_day.isoformat()}--"
