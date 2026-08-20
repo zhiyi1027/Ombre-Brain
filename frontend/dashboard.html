@@ -916,6 +916,14 @@
   .tab:active { transform: translateY(1px); box-shadow: inset 3px 3px 7px var(--shadow-dark-subtle), inset -2px -2px 6px var(--shadow-light); }
   .tab-spacer { box-shadow: none; background: transparent; }
 
+  .daily-layout { display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr);gap:16px;align-items:start; }
+  .daily-day-list { display:flex;flex-direction:column;gap:8px;max-height:68vh;overflow:auto;padding:2px; }
+  .daily-day-card { width:100%;text-align:left;padding:11px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-solid);color:var(--text);cursor:pointer; }
+  .daily-day-card.active { border-color:var(--accent);box-shadow:inset 3px 3px 7px var(--shadow-dark-subtle),inset -2px -2px 6px var(--shadow-light); }
+  .daily-status { display:inline-flex;align-items:center;padding:2px 7px;border:1px solid var(--border);border-radius:999px;font-size:10px;color:var(--text-dim);white-space:nowrap; }
+  .daily-document { margin:0;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;white-space:pre-wrap;word-break:break-word;font:12px/1.75 'Share Tech Mono','SF Mono',Consolas,monospace;max-height:360px;overflow:auto; }
+  @media (max-width: 760px) { .daily-layout { grid-template-columns:1fr; } .daily-day-list { max-height:260px; } }
+
   /* ============ 模块块：Bento 注塑外壳（无边框，靠留白+柔影聚合） ============ */
   .config-section, .breath-info, .breath-flow {
     border: none !important;
@@ -1931,6 +1939,7 @@
   <div class="tab" data-tab="network"><span>记忆网络</span><span class="tab-en">Network</span></div>
   <div class="tab" data-tab="plan"><span>计划</span><span class="tab-en">Plans</span></div>
   <div class="tab" data-tab="letters"><span>信</span><span class="tab-en">Letters</span></div>
+  <div class="tab" data-tab="daily"><span>日印象</span><span class="tab-en">Daily</span></div>
   <div class="tab" data-tab="anchors"><span>锚点</span><span class="tab-en">Anchors</span></div>
   <div class="tab" data-tab="import"><span>导入</span><span class="tab-en">Import</span></div>
   <div class="tab" data-tab="logs"><span>日志</span><span class="tab-en">Logs</span></div>
@@ -2216,6 +2225,27 @@
       </div>
       <div id="plan-board" style="display:flex;flex-direction:column;gap:24px;">
         <div style="text-align:center;color:var(--text-dim);padding:36px 0;font-size:13px;">点击「刷新」加载… / Click Refresh to load…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Daily continuity: private handoff notes + editable generated impressions -->
+<div class="content" id="daily-view" style="display:none">
+  <div class="daily-layout">
+    <div class="config-section" style="margin:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">
+        <h3 style="margin:0;">每日连续性 <span class="en">Daily Continuity</span></h3>
+        <button class="btn-secondary" onclick="loadDailyContinuity()" title="刷新" style="padding:6px 10px;font-size:12px;"><i data-lucide="refresh-cw"></i></button>
+      </div>
+      <p style="font-size:11px;line-height:1.6;color:var(--text-dim);margin:0 0 12px;">原始便签只读；人工修改与 DS 原稿分开保存，Breath 优先读取人工版本。</p>
+      <div id="daily-day-list" class="daily-day-list">
+        <div class="loading">点击刷新加载…</div>
+      </div>
+    </div>
+    <div class="config-section" style="margin:0;min-height:420px;">
+      <div id="daily-detail">
+        <div class="loading" style="padding:42px 0;">从左侧选择一天，查看便签与日印象。</div>
       </div>
     </div>
   </div>
@@ -4370,6 +4400,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.getElementById('v3-debug-view').style.display = target === 'v3-debug' ? '' : 'none';
     document.getElementById('settings-view').style.display = target === 'settings' ? '' : 'none';
     document.getElementById('letters-view').style.display = target === 'letters' ? '' : 'none';
+    document.getElementById('daily-view').style.display = target === 'daily' ? '' : 'none';
     document.getElementById('anchors-view').style.display = target === 'anchors' ? '' : 'none';
     document.getElementById('about-view').style.display = target === 'about' ? '' : 'none';
     if (target !== 'network' && _netRAF) { cancelAnimationFrame(_netRAF); _netRAF = null; }
@@ -4396,6 +4427,7 @@ document.querySelectorAll('.tab').forEach(tab => {
       renderMcpUrls();
     }
     if (target === 'letters') loadLetters();
+    if (target === 'daily') loadDailyContinuity();
     if (target === 'anchors') loadAnchorsView();
     if (target === 'about') loadAbout();
   });
@@ -7673,6 +7705,164 @@ async function planEdit(id) {
     if (d.error) { alert(d.error); return; }
     loadPlans();
   } catch(e) { alert('编辑失败: ' + e.message); }
+}
+
+let _dailyDays = [];
+let _dailySelectedDay = '';
+let _dailyDetailCache = null;
+
+function _dailyStatusLabel(day) {
+  if (day.manual_active) return day.manual_stale ? '人工版 · DS已更新' : '人工版';
+  if (day.generation_status === 'ready') return 'DS 已整理';
+  if (day.generation_status === 'skipped') return '材料不足';
+  return day.note_sources && day.note_sources.length ? '等待整理' : '无便签';
+}
+
+function _dailyTime(value) {
+  if (!value) return '';
+  try { return new Date(value).toLocaleString(); } catch (_) { return value; }
+}
+
+function renderDailyDayList() {
+  const list = document.getElementById('daily-day-list');
+  if (!list) return;
+  if (!_dailyDays.length) {
+    list.innerHTML = '<div class="loading" style="padding:28px 0;">还没有收到便签。</div>';
+    return;
+  }
+  list.innerHTML = _dailyDays.map(function(day) {
+    const sources = day.note_sources || [];
+    const clients = sources.map(function(source) { return source.source_client || '?'; }).join(' · ');
+    const active = day.memory_day === _dailySelectedDay ? ' active' : '';
+    return '<button type="button" class="daily-day-card' + active + '" data-day="' + escAttr(day.memory_day) + '" onclick="selectDailyDay(this.dataset.day)">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">' +
+        '<strong style="font-family:\'Share Tech Mono\',monospace;font-size:13px;">' + esc(day.memory_day) + '</strong>' +
+        '<span class="daily-status">' + esc(_dailyStatusLabel(day)) + '</span>' +
+      '</div>' +
+      '<div style="font-size:10px;color:var(--text-light);margin-top:6px;">' + esc(clients || '尚无来源') + (sources.length ? ' · ' + sources.length + ' 份便签' : '') + '</div>' +
+      (day.preview ? '<div style="font-size:11px;color:var(--text-dim);margin-top:7px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(day.preview.replace(/\s+/g, ' ')) + '</div>' : '') +
+    '</button>';
+  }).join('');
+}
+
+async function loadDailyContinuity(preferredDay) {
+  const list = document.getElementById('daily-day-list');
+  if (list) list.innerHTML = '<div class="loading" style="padding:28px 0;">加载中… / Loading…</div>';
+  try {
+    const response = await authFetch('/api/daily-continuity?limit=31');
+    if (!response) return;
+    const data = await readJsonSafe(response);
+    if (!response.ok) throw new Error(data.error || '加载失败');
+    _dailyDays = data.days || [];
+    const wanted = preferredDay || _dailySelectedDay;
+    _dailySelectedDay = _dailyDays.some(function(day) { return day.memory_day === wanted; })
+      ? wanted
+      : (_dailyDays[0] ? _dailyDays[0].memory_day : '');
+    renderDailyDayList();
+    if (_dailySelectedDay) await selectDailyDay(_dailySelectedDay);
+    else document.getElementById('daily-detail').innerHTML = '<div class="loading" style="padding:42px 0;">还没有每日连续性记录。</div>';
+    if (window.lucide) lucide.createIcons();
+  } catch (error) {
+    if (list) list.innerHTML = '<div style="color:var(--negative);padding:18px;">加载失败：' + esc(error.message) + '</div>';
+  }
+}
+
+async function selectDailyDay(memoryDay) {
+  _dailySelectedDay = memoryDay;
+  renderDailyDayList();
+  const detail = document.getElementById('daily-detail');
+  detail.innerHTML = '<div class="loading" style="padding:42px 0;">正在读取 ' + esc(memoryDay) + '…</div>';
+  try {
+    const response = await authFetch('/api/daily-continuity/' + encodeURIComponent(memoryDay));
+    if (!response) return;
+    const day = await readJsonSafe(response);
+    if (!response.ok) throw new Error(day.error || '读取失败');
+    _dailyDetailCache = day;
+    renderDailyDetail(day);
+  } catch (error) {
+    detail.innerHTML = '<div style="color:var(--negative);padding:18px;">读取失败：' + esc(error.message) + '</div>';
+  }
+}
+
+function renderDailyDetail(day) {
+  const detail = document.getElementById('daily-detail');
+  const sources = day.note_sources || [];
+  const sourceHtml = sources.length ? sources.map(function(source) {
+    return '<details open style="margin-top:10px;">' +
+      '<summary style="cursor:pointer;font-size:12px;color:var(--text-dim);">' +
+        esc((source.source_client || '?').toUpperCase()) + ' 原始便签 · 收到于 ' + esc(_dailyTime(source.received_at)) +
+      '</summary>' +
+      '<pre class="daily-document" style="margin-top:8px;">' + esc(source.content || '') + '</pre>' +
+      '<div style="font-size:10px;color:var(--text-light);margin-top:5px;word-break:break-all;">SHA-256 ' + esc(source.content_sha256 || '') + '</div>' +
+    '</details>';
+  }).join('') : '<div class="loading" style="padding:18px 0;">这一天没有便签正文。</div>';
+  const generated = day.generated_content || '';
+  const editable = day.generation_status !== 'pending';
+  const current = day.manual_active ? (day.manual_content || '') : generated;
+  const stale = day.manual_stale
+    ? '<div style="margin:10px 0;padding:9px 11px;border-left:3px solid var(--warning);background:var(--surface);font-size:11px;color:var(--text-dim);">DS 已根据新来源重新整理；你的人工版本仍在使用，没有被覆盖。可以对照后再次保存。</div>'
+    : '';
+  detail.innerHTML =
+    '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">' +
+      '<div><h3 style="margin:0;">' + esc(day.memory_day) + ' <span class="en">Daily Continuity</span></h3>' +
+      '<div style="font-size:11px;color:var(--text-dim);margin-top:5px;">' + esc(_dailyStatusLabel(day)) +
+        (day.generated_at ? ' · DS ' + esc(_dailyTime(day.generated_at)) : '') +
+        (day.model ? ' · ' + esc(day.model) : '') + '</div></div>' +
+      '<button class="btn-secondary" onclick="selectDailyDay(\'' + escAttr(day.memory_day) + '\')" style="padding:6px 10px;font-size:12px;"><i data-lucide="refresh-cw"></i> 刷新</button>' +
+    '</div>' +
+    '<div style="margin-top:20px;"><strong style="font-size:13px;">CC/Codex 实际上传的内容 <span class="en">Source Notes · Read Only</span></strong>' + sourceHtml + '</div>' +
+    '<div style="height:1px;background:var(--border);margin:22px 0;"></div>' +
+    '<div><strong style="font-size:13px;">DS 原稿 <span class="en">Generated · Preserved</span></strong>' +
+      (generated ? '<pre class="daily-document" style="margin-top:9px;">' + esc(generated) + '</pre>' : '<div class="loading" style="padding:18px 0;">' + (day.generation_status === 'skipped' ? '资料不足，DS 没有生成正文。' : '尚未生成，通常会在凌晨 4 点后整理。') + '</div>') +
+    '</div>' + stale +
+    '<div style="margin-top:20px;"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">' +
+      '<strong style="font-size:13px;">当前用于 Breath 的版本 <span class="en">Effective · Editable</span></strong>' +
+      '<span class="daily-status">' + (day.manual_active ? '人工版本' : 'DS 版本') + '</span></div>' +
+      '<textarea id="daily-impression-editor" ' + (editable ? '' : 'disabled ') + 'style="width:100%;box-sizing:border-box;margin-top:9px;min-height:220px;resize:vertical;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:13px 14px;border-radius:8px;font-family:inherit;font-size:13px;line-height:1.75;">' + esc(current) + '</textarea>' +
+      '<div style="display:flex;align-items:center;gap:9px;margin-top:10px;flex-wrap:wrap;">' +
+        '<button class="btn-primary" onclick="saveDailyImpression()" ' + (editable ? '' : 'disabled ') + 'style="height:34px;padding:0 14px;"><i data-lucide="save"></i> 保存人工版本</button>' +
+        (day.manual_active ? '<button class="btn-secondary" onclick="restoreGeneratedDailyImpression()" style="height:34px;padding:0 14px;"><i data-lucide="rotate-ccw"></i> 恢复 DS 版本</button>' : '') +
+        '<span id="daily-edit-status" style="font-size:11px;color:var(--text-dim);"></span>' +
+      '</div>' +
+      '<div style="font-size:10px;color:var(--text-light);margin-top:7px;">保存后原始便签和 DS 原稿都不会改变；Breath 会优先读取你的人工版本。</div>' +
+    '</div>';
+  if (window.lucide) lucide.createIcons();
+}
+
+async function saveDailyImpression() {
+  if (!_dailyDetailCache) return;
+  const editor = document.getElementById('daily-impression-editor');
+  const status = document.getElementById('daily-edit-status');
+  const content = editor ? editor.value.trim() : '';
+  if (!content) return alert('日印象不能为空。');
+  status.textContent = '保存中…';
+  try {
+    const response = await authFetch('/api/daily-continuity/' + encodeURIComponent(_dailyDetailCache.memory_day) + '/impression', {
+      method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({content:content}),
+    });
+    if (!response) return;
+    const data = await readJsonSafe(response);
+    if (!response.ok) throw new Error(data.error || '保存失败');
+    _dailyDetailCache = data.day;
+    await loadDailyContinuity(data.day.memory_day);
+  } catch (error) {
+    status.textContent = '保存失败：' + error.message;
+    status.style.color = 'var(--negative)';
+  }
+}
+
+async function restoreGeneratedDailyImpression() {
+  if (!_dailyDetailCache || !_dailyDetailCache.manual_active) return;
+  if (!confirm('恢复 DS 原稿作为 Breath 使用版本？你的人工版本会进入历史存档，不会物理抹除。')) return;
+  try {
+    const day = _dailyDetailCache.memory_day;
+    const response = await authFetch('/api/daily-continuity/' + encodeURIComponent(day) + '/impression?confirm=true', {method:'DELETE'});
+    if (!response) return;
+    const data = await readJsonSafe(response);
+    if (!response.ok) throw new Error(data.error || '恢复失败');
+    _dailyDetailCache = data.day;
+    await loadDailyContinuity(day);
+  } catch (error) { alert('恢复失败：' + error.message); }
 }
 
 async function loadAbout() {

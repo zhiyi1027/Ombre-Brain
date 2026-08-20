@@ -35,6 +35,7 @@ DEFAULT_CATCHUP_DAYS = 7
 DEFAULT_MAX_NOTE_CHARS = 50_000
 DEFAULT_MAX_INPUT_CHARS = 60_000
 DEFAULT_MAX_OUTPUT_TOKENS = 900
+DEFAULT_MAX_IMPRESSION_EDIT_CHARS = 20_000
 MAX_SOURCE_CLIENT_CHARS = 32
 MAX_SOURCE_ID_CHARS = 160
 MAX_ENTRY_CHARS = 280
@@ -209,12 +210,22 @@ class DailyContinuityService:
         self.max_output_tokens = _positive_int(
             cfg.get("max_output_tokens"), DEFAULT_MAX_OUTPUT_TOKENS, 256, 2_048
         )
+        self.max_impression_edit_chars = _positive_int(
+            cfg.get("max_impression_edit_chars"),
+            DEFAULT_MAX_IMPRESSION_EDIT_CHARS,
+            1_000,
+            100_000,
+        )
         root = Path(str(config.get("buckets_dir") or "buckets")) / "daily_continuity"
         self.root = root
         self.notes_dir = root / "notes"
         self.impressions_dir = root / "impressions"
+        self.overrides_dir = root / "overrides"
+        self.override_history_dir = root / "override_history"
         self.notes_dir.mkdir(parents=True, exist_ok=True)
         self.impressions_dir.mkdir(parents=True, exist_ok=True)
+        self.overrides_dir.mkdir(parents=True, exist_ok=True)
+        self.override_history_dir.mkdir(parents=True, exist_ok=True)
         self._file_lock = threading.RLock()
         self._generate_lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
@@ -224,6 +235,9 @@ class DailyContinuityService:
 
     def _impression_path(self, memory_day: date) -> Path:
         return self.impressions_dir / f"{memory_day.isoformat()}.md"
+
+    def _override_path(self, memory_day: date) -> Path:
+        return self.overrides_dir / f"{memory_day.isoformat()}.md"
 
     def ingest_note(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not self.enabled:
@@ -326,6 +340,170 @@ class DailyContinuityService:
             and meta.get("prompt_version") == PROMPT_VERSION
             and (meta.get("source_revisions") or {}) == source_revisions
         )
+
+    @staticmethod
+    def _generation_revision(metadata: dict[str, Any], body: str) -> str:
+        value = {
+            "body_sha256": _content_hash(body),
+            "prompt_version": metadata.get("prompt_version"),
+            "source_revisions": metadata.get("source_revisions") or {},
+            "status": metadata.get("status"),
+        }
+        canonical = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return _content_hash(canonical)
+
+    def _override_for_day(
+        self,
+        memory_day: date,
+    ) -> tuple[dict[str, Any], str] | None:
+        parsed = _read_document(self._override_path(memory_day))
+        if not parsed or parsed[0].get("kind") != "daily_impression_override":
+            return None
+        return parsed
+
+    def _archive_override(self, memory_day: date, *, reason: str) -> None:
+        path = self._override_path(memory_day)
+        try:
+            original = path.read_text(encoding="utf-8")
+        except OSError:
+            return
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        archive_path = self.override_history_dir / (
+            f"{memory_day.isoformat()}--{timestamp}--{reason}.md"
+        )
+        atomic_write_text(archive_path, original)
+
+    def _day_state(self, memory_day: date, *, include_content: bool) -> dict[str, Any]:
+        notes = self._notes_for_day(memory_day)
+        impression = _read_document(self._impression_path(memory_day))
+        override = self._override_for_day(memory_day)
+        impression_meta, generated_body = impression or ({}, "")
+        override_meta, override_body = override or ({}, "")
+        generated_revision = (
+            self._generation_revision(impression_meta, generated_body)
+            if impression
+            else ""
+        )
+        manual_active = bool(override and override_body.strip())
+        effective_body = override_body if manual_active else (
+            generated_body if impression_meta.get("status") == "ready" else ""
+        )
+        note_sources = []
+        for metadata, body in notes:
+            item = {
+                "source_client": str(metadata.get("source_client") or ""),
+                "note_id": str(metadata.get("note_id") or ""),
+                "source_updated_at": str(metadata.get("source_updated_at") or ""),
+                "received_at": str(metadata.get("received_at") or ""),
+                "content_sha256": str(metadata.get("content_sha256") or ""),
+                "content_chars": len(body),
+            }
+            if include_content:
+                item["content"] = body
+            note_sources.append(item)
+        state = {
+            "memory_day": memory_day.isoformat(),
+            "note_sources": note_sources,
+            "generation_status": str(impression_meta.get("status") or "pending"),
+            "generated_at": str(impression_meta.get("generated_at") or ""),
+            "model": str(impression_meta.get("model") or ""),
+            "prompt_version": str(impression_meta.get("prompt_version") or ""),
+            "source_count": len(impression_meta.get("source_ids") or []),
+            "manual_active": manual_active,
+            "manual_edited_at": str(override_meta.get("edited_at") or ""),
+            "manual_stale": bool(
+                manual_active
+                and str(override_meta.get("base_generation_revision") or "")
+                != generated_revision
+            ),
+            "preview": effective_body[:240],
+        }
+        if include_content:
+            state.update(
+                {
+                    "generated_content": generated_body,
+                    "manual_content": override_body if manual_active else "",
+                    "effective_content": effective_body,
+                    "generated_revision": generated_revision,
+                }
+            )
+        return state
+
+    def list_days(self, *, limit: int = 31) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(90, int(limit or 31)))
+        names: set[str] = set()
+        with self._file_lock:
+            paths = [
+                *self.notes_dir.glob("*.md"),
+                *self.impressions_dir.glob("*.md"),
+                *self.overrides_dir.glob("*.md"),
+            ]
+        for path in paths:
+            candidate = path.name[:10]
+            try:
+                names.add(_parse_day(candidate).isoformat())
+            except DailyContinuityError:
+                continue
+        return [
+            self._day_state(date.fromisoformat(day), include_content=False)
+            for day in sorted(names, reverse=True)[:safe_limit]
+        ]
+
+    def get_day(self, memory_day: date | str) -> dict[str, Any]:
+        target = _parse_day(memory_day) if not isinstance(memory_day, date) else memory_day
+        state = self._day_state(target, include_content=True)
+        if (
+            not state["note_sources"]
+            and not self._impression_path(target).exists()
+            and not self._override_path(target).exists()
+        ):
+            raise DailyContinuityError("daily continuity day not found")
+        return state
+
+    def edit_impression(self, memory_day: date | str, content: str) -> dict[str, Any]:
+        target = _parse_day(memory_day) if not isinstance(memory_day, date) else memory_day
+        if not isinstance(content, str) or not content.strip():
+            raise DailyContinuityError("impression content is required")
+        clean_content = content.strip()
+        if len(clean_content) > self.max_impression_edit_chars:
+            raise DailyContinuityError("impression content exceeds edit limit")
+        impression = _read_document(self._impression_path(target))
+        if not impression:
+            raise DailyContinuityError("generated daily impression not found")
+        impression_meta, generated_body = impression
+        metadata = {
+            "schema_version": SCHEMA_VERSION,
+            "kind": "daily_impression_override",
+            "memory_day": target.isoformat(),
+            "edited_at": datetime.now(timezone.utc).isoformat(),
+            "content_sha256": _content_hash(clean_content),
+            "base_generation_revision": self._generation_revision(
+                impression_meta,
+                generated_body,
+            ),
+        }
+        with self._file_lock:
+            if self._override_path(target).exists():
+                self._archive_override(target, reason="edit")
+            atomic_write_text(
+                self._override_path(target),
+                _render_document(metadata, clean_content),
+            )
+        return self.get_day(target)
+
+    def clear_impression_override(self, memory_day: date | str) -> dict[str, Any]:
+        target = _parse_day(memory_day) if not isinstance(memory_day, date) else memory_day
+        path = self._override_path(target)
+        with self._file_lock:
+            if path.exists():
+                self._archive_override(target, reason="restore")
+                path.unlink()
+        return self.get_day(target)
 
     def _day_bounds(self, memory_day: date) -> tuple[datetime, datetime]:
         start = datetime.combine(
@@ -625,6 +803,9 @@ class DailyContinuityService:
 
     def read_day(self, memory_day: date | str) -> str:
         target = _parse_day(memory_day) if not isinstance(memory_day, date) else memory_day
+        override = self._override_for_day(target)
+        if override and override[1].strip():
+            return override[1].strip()
         parsed = _read_document(self._impression_path(target))
         if not parsed or parsed[0].get("status") != "ready":
             return ""

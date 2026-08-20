@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
+from starlette.responses import JSONResponse
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,9 +81,11 @@ class FakeMCP:
 class JsonRequest:
     cookies = {}
 
-    def __init__(self, body, headers=None):
+    def __init__(self, body=None, headers=None, *, path_params=None, query_params=None):
         self._body = body
         self.headers = headers or {}
+        self.path_params = path_params or {}
+        self.query_params = query_params or {}
 
     async def json(self):
         return self._body
@@ -215,6 +218,36 @@ async def test_late_bucket_regenerates_without_note_revision(tmp_path):
         source["source_id"] == "memory_bucket:late-memory"
         for source in dehydrator.calls[1][1]["sources"]
     )
+
+
+@pytest.mark.asyncio
+async def test_manual_impression_survives_regeneration_and_can_restore(tmp_path):
+    dehydrator = FakeDehydrator()
+    service = make_service(tmp_path, dehydrator=dehydrator)
+    first_note = "# 2026-08-20 便签（周四）\n第一版"
+    second_note = "# 2026-08-20 便签（周四）\n第二版"
+    service.ingest_note(note_payload(first_note))
+    await service.generate_day("2026-08-20")
+
+    edited = service.edit_impression("2026-08-20", "这是我确认过的人工版本。")
+
+    assert edited["manual_active"] is True
+    assert service.read_day("2026-08-20") == "这是我确认过的人工版本。"
+    original_generated = edited["generated_content"]
+
+    dehydrator.response["events"][0]["text"] = "DS 根据第二版重新整理。"
+    service.ingest_note(note_payload(second_note))
+    await service.generate_day("2026-08-20")
+    regenerated = service.get_day("2026-08-20")
+
+    assert regenerated["generated_content"] != original_generated
+    assert regenerated["effective_content"] == "这是我确认过的人工版本。"
+    assert regenerated["manual_stale"] is True
+
+    restored = service.clear_impression_override("2026-08-20")
+    assert restored["manual_active"] is False
+    assert restored["effective_content"] == regenerated["generated_content"]
+    assert list(service.override_history_dir.glob("*--restore.md"))
 
 
 @pytest.mark.asyncio
@@ -420,3 +453,86 @@ async def test_private_ingest_route_requires_token_and_never_echoes_content(
     response = json.loads(accepted.body)
     assert response["ok"] is True
     assert "绝不能" not in accepted.body.decode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_dashboard_daily_continuity_routes_list_edit_and_restore(
+    tmp_path, monkeypatch
+):
+    service = make_service(tmp_path)
+    service.ingest_note(note_payload("# 2026-08-20 便签（周四）\n只在详情接口返回"))
+    await service.generate_day("2026-08-20")
+    monkeypatch.setattr(web_shared, "daily_continuity", service, raising=False)
+    monkeypatch.setattr(web_shared, "_require_auth", lambda _request: None)
+    mcp = FakeMCP()
+    daily_web.register(mcp)
+
+    listing = await mcp.routes[("GET", "/api/daily-continuity")](
+        JsonRequest(query_params={"limit": "31"})
+    )
+    list_body = json.loads(listing.body)
+    assert listing.status_code == 200
+    assert list_body["days"][0]["memory_day"] == "2026-08-20"
+    assert "content" not in list_body["days"][0]["note_sources"][0]
+
+    detail_request = JsonRequest(path_params={"memory_day": "2026-08-20"})
+    detail = await mcp.routes[("GET", "/api/daily-continuity/{memory_day}")](
+        detail_request
+    )
+    assert "只在详情接口返回" in json.loads(detail.body)["note_sources"][0]["content"]
+
+    edit = await mcp.routes[
+        ("PATCH", "/api/daily-continuity/{memory_day}/impression")
+    ](
+        JsonRequest(
+            {"content": "前端人工修订"},
+            path_params={"memory_day": "2026-08-20"},
+        )
+    )
+    assert json.loads(edit.body)["day"]["effective_content"] == "前端人工修订"
+
+    restored = await mcp.routes[
+        ("DELETE", "/api/daily-continuity/{memory_day}/impression")
+    ](
+        JsonRequest(
+            path_params={"memory_day": "2026-08-20"},
+            query_params={"confirm": "true"},
+        )
+    )
+    assert json.loads(restored.body)["day"]["manual_active"] is False
+
+
+@pytest.mark.asyncio
+async def test_dashboard_daily_continuity_routes_require_login(tmp_path, monkeypatch):
+    service = make_service(tmp_path)
+    monkeypatch.setattr(web_shared, "daily_continuity", service, raising=False)
+    monkeypatch.setattr(
+        web_shared,
+        "_require_auth",
+        lambda _request: JSONResponse({"error": "Unauthorized"}, status_code=401),
+    )
+    mcp = FakeMCP()
+    daily_web.register(mcp)
+
+    listing = await mcp.routes[("GET", "/api/daily-continuity")](JsonRequest())
+    editing = await mcp.routes[
+        ("PATCH", "/api/daily-continuity/{memory_day}/impression")
+    ](
+        JsonRequest(
+            {"content": "不能写入"},
+            path_params={"memory_day": "2026-08-20"},
+        )
+    )
+
+    assert listing.status_code == 401
+    assert editing.status_code == 401
+    assert not list(service.overrides_dir.glob("*.md"))
+
+
+def test_dashboard_contains_daily_continuity_read_and_edit_surface():
+    dashboard = (ROOT / "frontend" / "dashboard.html").read_text(encoding="utf-8")
+    assert 'data-tab="daily"' in dashboard
+    assert 'id="daily-view"' in dashboard
+    assert "/api/daily-continuity" in dashboard
+    assert "CC/Codex 实际上传的内容" in dashboard
+    assert "恢复 DS 版本" in dashboard

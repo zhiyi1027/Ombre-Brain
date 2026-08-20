@@ -469,6 +469,9 @@ feel 桶自身：
 | `/api/env-vars` | GET | 🔒 | dashboard 设置页「⑤ 环境变量」只读区：当前进程读到的所有 `OMBRE_*`，敏感字段脱敏 |
 | `/api/env-config` | GET | 🔒 | 可写 6 字段的当前值（脱敏） |
 | `/api/env-config` | POST | 🔒 | 热更新 6 字段并写回 `.env`（重启仍有效） |
+| `/api/daily-continuity` | GET | 🔒 | 列出最近日连续性状态与摘要，不批量返回便签正文 |
+| `/api/daily-continuity/{memory_day}` | GET | 🔒 | 查看某日原始便签、DS 原稿与当前有效版本 |
+| `/api/daily-continuity/{memory_day}/impression` | PATCH/DELETE | 🔒 | 保存人工日印象，或归档人工版本并恢复 DS 原稿 |
 | `/internal/daily-notes` | POST | 🔑 | 幂等上传 CC/Codex 当日累计便签；只接受 `OMBRE_DAILY_NOTE_TOKEN`（或回退的 Hook Token）/ Dashboard 登录态，响应不回显正文 |
 | `/mcp/*` | — | 公开 | FastMCP 单连接器（iter 2.2）：全部 14 个工具 —— breath / breath_search / breath_advanced / hold / grow / dream / trace / anchor / release / pulse / plan / letter_write / letter_read / **I** |
 

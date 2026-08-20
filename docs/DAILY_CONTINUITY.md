@@ -80,6 +80,26 @@ Authorization: Bearer <OMBRE_DAILY_NOTE_TOKEN>
 breath_advanced(domain="daily_impression")
 ```
 
+## Dashboard 查看与修订
+
+登录 Dashboard 后打开「日印象 / Daily」：
+
+- 日期列表只读取摘要，选择某天后才加载原始便签正文。
+- 原始 CC/Codex 便签只读，并显示接收时间与内容哈希。
+- 人工编辑不会覆盖当前 DS 原稿；“当前用于 Breath 的版本”可以单独修订。
+- 人工版本保存在独立 `overrides/` 目录，`breath()` 与显式日印象读取优先使用它。
+- DS 因迟到来源重新生成时不会覆盖人工版本；Dashboard 会标出“DS 已更新”。
+- “恢复 DS 版本”会先把人工版本保存进 `override_history/` 再取消覆盖，不做物理抹除。
+
+Dashboard API 均要求登录态：
+
+```text
+GET    /api/daily-continuity
+GET    /api/daily-continuity/{memory_day}
+PATCH  /api/daily-continuity/{memory_day}/impression
+DELETE /api/daily-continuity/{memory_day}/impression?confirm=true
+```
+
 ## 模型边界
 
 日印象使用独立版本化提示词 `daily-impression-v1`。输出中的每一项都必须引用输入 source ID；未知或空来源的项会被程序丢弃。第一人称感受没有明确资料依据时必须省略。模型只负责筛选、合并和压缩，不负责决定日期，也不能替主体创造感受。

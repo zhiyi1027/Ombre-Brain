@@ -454,6 +454,7 @@ def load_config(config_path: Optional[str] = None) -> dict:
             "max_note_chars": 50_000,
             "max_input_chars": 60_000,
             "max_output_tokens": 900,
+            "max_impression_edit_chars": 20_000,
         },
         "embedding": {
             "enabled": True,

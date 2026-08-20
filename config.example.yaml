@@ -130,6 +130,7 @@ daily_continuity:
   max_note_chars: 50000
   max_input_chars: 60000
   max_output_tokens: 900
+  max_impression_edit_chars: 20000
   # token: ""  # Prefer OMBRE_DAILY_NOTE_TOKEN; falls back to OMBRE_HOOK_TOKEN.
 
 # --- Decay parameters / 记忆衰减参数 ---
