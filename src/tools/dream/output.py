@@ -474,7 +474,7 @@ def format_dream_output(
                     "按与上面这些记忆的相关性挑选，不按时间；这里没有出现的 feel "
                     "不代表不重要，只代表与本轮回顾无关。\n"
                     "放不下时改为短摘录，每个数据边界、来源和哈希也计入预算。\n"
-                    "需要完整读取感受可用 breath_advanced(domain=\"feel\")。\n\n"
+                    "需要找回感受可用 breath_advanced(domain=\"feel\", query=\"主题\")。\n\n"
                 )
             feel_lines: list[str] = []
             omitted = 0

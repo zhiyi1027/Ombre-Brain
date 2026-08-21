@@ -239,7 +239,7 @@ hold / grow（Claude 决策）
 ```
 1. breath()                — 必须。短核心全文 + 最近24小时 + 较早未完 + active plans
 2. dream()                 — 可选。你或用户觉得需要消化时再调
-3. breath(domain="feel")   — 可选。想读 feel 时再调
+3. breath_advanced(query="主题", domain="feel") — 可选。按本轮主题读最多 5 条相关 feel
 4. 开始和用户说话
 ```
 
@@ -260,7 +260,7 @@ hold(feel=True, source_bucket="xxx", valence=0.45)
 feel 桶自身：
   - calculate_score() 固定返回 50.0，永不归档
   - 普通 breath 不浮现（被 type 过滤）
-  - 只通过 breath(domain="feel") 或 breath(tags="feel"/"__feel__") 读取
+  - 只通过带 query 的 breath_advanced(domain="feel") 或 tags="feel"/"__feel__" 读取；无 query 不全量返回
   - 仍参与 dream 的结晶化检测（>0.7 相似度且 ≥3 条 → 提示升级为 pinned）
 ```
 
@@ -285,7 +285,7 @@ feel 桶自身：
 
 `dispatch()` 内部四种模式（按判定顺序，仅 `breath_advanced` 能触达全部四种；`breath()`/`breath_search()` 分别固定落在模式 3 / 模式 4）：
 
-1. **Feel 通道**（`domain="feel"` 或 `tags` 含 `"feel"`/`"__feel__"`，仅 `breath_advanced`）：直接拉所有 `type==feel` 桶，按 `created` 倒序展示原文，按 `surfacing.feel_max_tokens`（默认 6000）做 token 预算；**超出预算的旧 feel 折叠为 60 字符单行摘要**，并在末尾追加 `更早的 feel 摘要（N 条，已折叠）` 段。**不排除 anchor 桶**（设计：feel 通道只看 type=feel）。
+1. **Feel 通道**（`domain="feel"` 或 `tags` 含 `"feel"`/`"__feel__"`，仅 `breath_advanced`）：必须带 query，不再按时间全量倾倒。query 中的 `bucket_id:<id>` / `source_bucket:<id>` 会先命中 `triggered_by` 直属 feel，再复用 Dream 的向量 0.7＋关键词 0.3 混合排序补足，阈值 0.5，最多 5 条。向量不可用时明确降级到关键词字面匹配；命中正文逐字返回，放不下整条省略，不截断或摘要。
 2. **重要度批量模式**（`importance_min >= 1`，仅 `breath_advanced`）：跳过语义搜索，按 importance 降序返回 ≤20 条；过滤 `feel/plan/letter` 与 `dont_surface=True`；**不过滤 anchor、不过滤 pinned**（设计：主动按 importance 检索时希望能找到所有重要桶）。
 3. **浮现模式**（无 `query`）：无参 `breath()` 启用 `startup=True`，转入独立的轻量简报算法：钉选短核心逐字返回；若存在已生成的上一记忆日日印象，则在核心之后优先整张返回；最近 24 小时真正最新的一条固定入选，即使它已被标记 `digested`，因为“已消化”不能抹掉启动交接；随后最多 2 条近期正文按 importance、created、score 稳定排序，其中被昨日印象 `cited_source_ids` 引用过的桶降为候补但不删除。最后从 24 小时之外的被动联想候选池随机轮换最多一条未解决正文，并排除上次实际返回的旧桶以避免连续重复；候选必须满足 `activation_count==0 && importance>=8`，或 `importance>=9` 且至少 7 天未活跃。最多三条近期交接先于旧事联想，固定普通记忆槽不受软参考拦截；只有完整输出硬上限能把整桶降为指针。active plan 按 weight/created 稳定排序，在独立计划预算内逐字返回，放不下时给出 `breath_advanced(domain="plan")` 指针。测试数据、anchor、dont_surface 与私有类型不会进入最近/未完池。`startup_breath_max_tokens` 是完整输出硬上限，绝不截断正文。日印象独立存储，不进入 BucketManager；可用 `breath_advanced(domain="daily_impression")` 显式读取。启动模式不追加完整浮现模式的额外久未浮现或 3% 偶遇，也不调用 `touch()`。`breath_advanced(domain="plan")` 逐字返回全部 active plans；其它无 query 调用保留原完整模式：未解决桶按衰减分排序，支持加权采样或 Top-1 + shuffle，并可追加久未浮现与偶遇。
 4. **检索模式**（有 `query`；`breath_search()` 固定走这里）：每个 query 只生成一次查询向量，与 rapidfuzz/BM25 多维评分共同进入 `BucketManager.search()` → 过滤 `feel/plan/letter`，**pinned/permanent 仍可被检索命中（不过滤），命中后加 📌 前缀** → 纯语义候选相似度 `>=0.65` 标 `[语义关联]`，且不能绕过 domain/tags/type 过滤 → 命中时 `touch()` → 结果不足 3 条时 40% 概率随机漂浮 1~3 条低权重旧桶。embedding 不可用时明确提示后继续关键词/BM25；桶一旦命中，返回层直接使用当前存储的完整 `content`，不调用 dehydrate、不剥除 wikilink、不截断或改写。**不过滤 anchor**（设计：主动检索时希望能找到坐标系桶）。
@@ -350,9 +350,9 @@ feel 桶自身：
 - 拼接桶摘要（完整正文，不截断）+ 自省引导 header
 - embedding 启用时附加：连接提示（最相似对，`>0.5`）+ feel 结晶提示（一条 feel 与 ≥2 条其它 feel 相似度 `>0.7` → 建议升级为 pinned）
 - 末尾追加 `=== 你的 active plans ===` 全量列表
-- 末尾追加 `=== 你的 feel 历史（全量，旧 feel 按 token 预算折叠）===`：按 `surfacing.feel_max_tokens`（默认 6000）做预算，超出的老 feel 折叠为 60 字符单行摘要
+- 末尾追加 `=== 和这次回顾相关的 feel（最多 5 条）===`：用本轮 Dream 候选正文做向量＋关键词相关性排序，再按 `surfacing.feel_max_tokens`（默认 6000）做预算；与本轮无关的 feel 不返回
 
-(实现细节：窗口固定为滚动 48 小时；旧客户端传入其它 `window_hours` 值仍可调用，但不会改变筛选范围。`catalog=True` 只返回候选定位元数据。plan 历史不参与 token 预算全量返回；feel 历史走 token 预算折叠。)
+(实现细节：窗口固定为滚动 48 小时；旧客户端传入其它 `window_hours` 值仍可调用，但不会改变筛选范围。`catalog=True` 只返回候选定位元数据。plan 历史不参与 token 预算全量返回；相关 feel 段单独走 token 预算。)
 
 ### 3.7 `plan` — 登记待办
 
@@ -1395,7 +1395,7 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 | `surfacing.startup_breath_soft_tokens` | `3000` | 无参 `breath()` 的体积软参考（500-10000）；固定的最多 3 条近期交接与 1 条合格旧事联想不受其拦截 |
 | `surfacing.startup_breath_max_tokens` | `5000` | 无参 `breath()` 完整输出硬上限（500-10000） |
 | `surfacing.startup_breath_max_results` | `4` | 无参 `breath()` 最多选择 3 条最近正文 + 1 条较早未完正文（1-4；核心与 plan 不计入） |
-| `surfacing.feel_max_tokens` | `6000` | Feel 通道 与 dream feel 历史段的 token 预算，超出折叠为 60 字摘要 |
+| `surfacing.feel_max_tokens` | `6000` | Dream 相关 feel 段的 token 预算；主动 Feel 通道使用调用时的 `max_tokens`，最多返回 5 条相关正文 |
 | `surfacing.sampling.enabled` | `false` | 浮现模式加权采样总开关；false 走原 Top-1 + shuffle |
 | `surfacing.sampling.top_k` | `5` | 候选池大小（按衰减分取前 k） |
 | `surfacing.sampling.sample_k` | `2` | 从池里无放回抽 k 条返回 |
@@ -1620,7 +1620,7 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 
 4. **`grow` 短内容 < 30 字走 hold 路径时已明确提示**。返回串会先说明「短内容已按 hold 路径保存为单条记忆，没有拆分」。
 
-5. **dream feel 历史折叠已实现**。iter 2.0 后 dream 末尾的 feel 历史段按 `surfacing.feel_max_tokens`（默认 6000）做 token 预算，超出的老 feel 折叠为 60 字符单行摘要。原记录「dream 全量返回 feel 历史不限数量」问题已闭合。
+5. **dream feel 已改为相关性读取**。Dream 用本轮候选正文给 feel 做向量＋关键词混合排序，阈值 0.5，最多 5 条；再受 `surfacing.feel_max_tokens`（默认 6000）约束。无关 feel 不因“较新”而进入，原记录「dream 全量返回 feel 历史不限数量」问题已闭合。
 
 6. **`OMBRE_HOST_VAULT_DIR` 的 Docker 挂载改由宿主机 Compose 明确管理**。容器内 Dashboard 只读并给出 `.env` + `--force-recreate` 指令，避免把容器内 `src/.env` 的假保存误认为挂载已改变。
 

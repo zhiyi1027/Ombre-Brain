@@ -62,6 +62,30 @@ async def test_vector_ranking_is_restricted_to_feel_ids(monkeypatch):
     assert [feel["id"] for feel, _score in ranked] == ["feel-high"]
 
 
+@pytest.mark.asyncio
+async def test_unindexed_feel_uses_keyword_score_when_index_is_partially_ready(
+    monkeypatch,
+):
+    class _PartiallyIndexedEmbedding:
+        enabled = True
+
+        async def search_similar(self, _query, top_k, allowed_bucket_ids):
+            assert allowed_bucket_ids == {"indexed", "unindexed"}
+            return [("indexed", 0.6)]
+
+    monkeypatch.setattr(rt, "embedding_engine", _PartiallyIndexedEmbedding())
+    monkeypatch.setattr(rt, "logger", MagicMock())
+    indexed = _feel("indexed", "database migration failure")
+    unindexed = _feel("unindexed", "tennis training progress")
+
+    ranked, vector_ok = await rank_feels(
+        [indexed, unindexed], "tennis training progress"
+    )
+
+    assert vector_ok is True
+    assert [feel["id"] for feel, _score in ranked] == ["unindexed"]
+
+
 def test_dream_renders_only_preselected_related_feelings(monkeypatch):
     monkeypatch.setattr(
         rt,

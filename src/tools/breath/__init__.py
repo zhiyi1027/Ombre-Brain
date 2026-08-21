@@ -7,7 +7,7 @@ breath 是「我睁眼看看自己记得什么」。这个文件根据参数把�
 五个分支文件之一：
 
 - catalog.py：catalog=True → 目录模式（每桶一行元数据，0 LLM，最省 token）
-- feel.py：domain="feel"（或 tags 含 feel/__feel__）→ 拉所有 feel 桶
+- feel.py：domain="feel"（或 tags 含 feel/__feel__）→ 按主题找最多 5 条相关 feel
 - importance.py：importance_min >= 1 → 跳过语义，按 importance 拉前 20
 - surface.py：query 为空 → 浮现模式（无参公开调用走轻量睁眼，其余走完整浮现）
 - search.py：有 query → 检索模式（关键词 + 向量双通道 + 随机漂浮）
@@ -173,9 +173,13 @@ async def dispatch(
         domain = "feel"
         tag_filter = [t for t in tag_filter if t not in ("feel", "__feel__")]
 
-    # --- Feel 通道优先：即使无 query 也直接拉 feel ---
+    # --- Feel 通道优先：必须带主题，不再按时间全量倾倒 ---
     if domain.strip().lower() == "feel":
-        return await surface_feels(max_tokens=max_tokens)
+        return await surface_feels(
+            query=query,
+            max_tokens=max_tokens,
+            max_results=max_results,
+        )
 
     # --- Daily continuity is private state, never an ordinary bucket search. ---
     if domain.strip().lower() == "daily_impression" and not query.strip():
