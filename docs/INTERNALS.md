@@ -279,7 +279,7 @@ feel 桶自身：
 
 三个入口共用同一个内部实现 `tools/breath/dispatch()`，只是 MCP 层暴露的参数面不同（见 issue #17：claude.ai 按需加载工具时会跳过参数复杂的工具，单个 9 参数的 `breath` 会导致它常年加载不上，拆薄之后 `breath()` 能保证每次对话稳定自动加载）：
 
-- **`breath()`** — 0 参数。调用 `dispatch(startup=True)` 的轻量简报：短核心全文、独立的昨日印象、真正最新的 1 条正文、最多 2 条额外近期重要正文、从高权重候选池随机轮换最多 1 条较早未完正文、计划预算内的最多 5 条 active plan；日常每次对话开头调用。
+- **`breath()`** — 0 参数。调用 `dispatch(startup=True)` 的轻量简报：短核心全文、独立的昨日印象、真正最新的 1 条正文、最多 2 条额外近期重要正文、从有门槛的被动联想池随机轮换最多 1 条较早未完正文、计划预算内的最多 5 条 active plan；日常每次对话开头调用。
 - **`breath_search(query, domain="", max_results=0)`** — 3 参数。等价于 `dispatch(query=query, domain=domain, max_results=max_results)`，即下面的「检索模式」。按关键词/语义找记忆时用。
 - **`breath_advanced(query="", max_tokens=0, domain="", valence=-1, arousal=-1, max_results=0, importance_min=-1, tags="", catalog=False)`** — 完整 9 参数，历史上单一 `breath` 工具的全部能力（`catalog` 目录模式 / `tags` 过滤 / `importance_min` 批量模式 / `valence`/`arousal` 情感检索 / `max_tokens` 预算）都保留在这里，供需要精细控制的场景用。
 
@@ -287,7 +287,7 @@ feel 桶自身：
 
 1. **Feel 通道**（`domain="feel"` 或 `tags` 含 `"feel"`/`"__feel__"`，仅 `breath_advanced`）：直接拉所有 `type==feel` 桶，按 `created` 倒序展示原文，按 `surfacing.feel_max_tokens`（默认 6000）做 token 预算；**超出预算的旧 feel 折叠为 60 字符单行摘要**，并在末尾追加 `更早的 feel 摘要（N 条，已折叠）` 段。**不排除 anchor 桶**（设计：feel 通道只看 type=feel）。
 2. **重要度批量模式**（`importance_min >= 1`，仅 `breath_advanced`）：跳过语义搜索，按 importance 降序返回 ≤20 条；过滤 `feel/plan/letter` 与 `dont_surface=True`；**不过滤 anchor、不过滤 pinned**（设计：主动按 importance 检索时希望能找到所有重要桶）。
-3. **浮现模式**（无 `query`）：无参 `breath()` 启用 `startup=True`，转入独立的轻量简报算法：钉选短核心逐字返回；若存在已生成的上一记忆日日印象，则在核心之后优先整张返回；最近 24 小时真正最新的一条固定入选，即使它已被标记 `digested`，因为“已消化”不能抹掉启动交接；再从 24 小时之外的高分候选池随机轮换一条未解决正文，并排除上次实际返回的较早未完桶以避免连续重复。这两个普通记忆槽位是保证项，不受软目标拦截。剩余最多 2 条近期正文按 importance、created、score 稳定排序，其中被昨日印象 `cited_source_ids` 引用过的桶降为候补但不删除；它们是弹性项，可在达到软目标后省略。active plan 按 weight/created 稳定排序，在独立计划预算内逐字返回，放不下时给出 `breath_advanced(domain="plan")` 指针。测试数据、anchor、dont_surface 与私有类型不会进入最近/未完池。`startup_breath_max_tokens` 是完整输出硬上限，只有整桶连硬上限也放不下时才列指针，绝不截断。日印象独立存储，不进入 BucketManager；可用 `breath_advanced(domain="daily_impression")` 显式读取。启动模式不追加久未浮现或 3% 偶遇，也不调用 `touch()`。`breath_advanced(domain="plan")` 逐字返回全部 active plans；其它无 query 调用保留原完整模式：未解决桶按衰减分排序，支持加权采样或 Top-1 + shuffle，并可追加久未浮现与偶遇。
+3. **浮现模式**（无 `query`）：无参 `breath()` 启用 `startup=True`，转入独立的轻量简报算法：钉选短核心逐字返回；若存在已生成的上一记忆日日印象，则在核心之后优先整张返回；最近 24 小时真正最新的一条固定入选，即使它已被标记 `digested`，因为“已消化”不能抹掉启动交接；随后最多 2 条近期正文按 importance、created、score 稳定排序，其中被昨日印象 `cited_source_ids` 引用过的桶降为候补但不删除。最后从 24 小时之外的被动联想候选池随机轮换最多一条未解决正文，并排除上次实际返回的旧桶以避免连续重复；候选必须满足 `activation_count==0 && importance>=8`，或 `importance>=9` 且至少 7 天未活跃。最多三条近期交接先于旧事联想，固定普通记忆槽不受软参考拦截；只有完整输出硬上限能把整桶降为指针。active plan 按 weight/created 稳定排序，在独立计划预算内逐字返回，放不下时给出 `breath_advanced(domain="plan")` 指针。测试数据、anchor、dont_surface 与私有类型不会进入最近/未完池。`startup_breath_max_tokens` 是完整输出硬上限，绝不截断正文。日印象独立存储，不进入 BucketManager；可用 `breath_advanced(domain="daily_impression")` 显式读取。启动模式不追加完整浮现模式的额外久未浮现或 3% 偶遇，也不调用 `touch()`。`breath_advanced(domain="plan")` 逐字返回全部 active plans；其它无 query 调用保留原完整模式：未解决桶按衰减分排序，支持加权采样或 Top-1 + shuffle，并可追加久未浮现与偶遇。
 4. **检索模式**（有 `query`；`breath_search()` 固定走这里）：每个 query 只生成一次查询向量，与 rapidfuzz/BM25 多维评分共同进入 `BucketManager.search()` → 过滤 `feel/plan/letter`，**pinned/permanent 仍可被检索命中（不过滤），命中后加 📌 前缀** → 纯语义候选相似度 `>=0.65` 标 `[语义关联]`，且不能绕过 domain/tags/type 过滤 → 命中时 `touch()` → 结果不足 3 条时 40% 概率随机漂浮 1~3 条低权重旧桶。embedding 不可用时明确提示后继续关键词/BM25；桶一旦命中，返回层直接使用当前存储的完整 `content`，不调用 dehydrate、不剥除 wikilink、不截断或改写。**不过滤 anchor**（设计：主动检索时希望能找到坐标系桶）。
 
 (实现注意：`tags="feel"` 在第一个分支被映射为 `domain="feel"` 后清出 tag_filter；其它 tag 走 AND 过滤；`max_tokens` 上限 20000，`max_results` 上限 50；`importance_min` 模式下硬上限 20 条不可调；浮现模式中钉选桶**不计入** `max_results` 上限。)
@@ -1392,7 +1392,7 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 | `bucket_type_defaults.{type}.{field}` | （空） | iter 1.9：按桶类型覆盖 importance/valence/arousal 默认值。例：`bucket_type_defaults.feel.importance: 5`。`bucket_manager.create()` 在不传入该字段时查此表 |
 | `surfacing.breath_max_tokens` | `10000` | `breath_advanced()` 完整浮现与主动检索的默认 max_tokens |
 | `surfacing.breath_max_results` | `20` | `breath_advanced()` 完整浮现与主动检索的默认 max_results |
-| `surfacing.startup_breath_soft_tokens` | `3000` | 无参 `breath()` 继续取额外近期桶的软目标（500-10000）；不拦截真正最新桶与随机旧桶保证项 |
+| `surfacing.startup_breath_soft_tokens` | `3000` | 无参 `breath()` 的体积软参考（500-10000）；固定的最多 3 条近期交接与 1 条合格旧事联想不受其拦截 |
 | `surfacing.startup_breath_max_tokens` | `5000` | 无参 `breath()` 完整输出硬上限（500-10000） |
 | `surfacing.startup_breath_max_results` | `4` | 无参 `breath()` 最多选择 3 条最近正文 + 1 条较早未完正文（1-4；核心与 plan 不计入） |
 | `surfacing.feel_max_tokens` | `6000` | Feel 通道 与 dream feel 历史段的 token 预算，超出折叠为 60 字摘要 |

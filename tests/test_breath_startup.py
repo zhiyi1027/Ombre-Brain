@@ -217,7 +217,7 @@ async def test_true_latest_returns_even_when_it_is_digested():
 
 
 @pytest.mark.asyncio
-async def test_random_older_memory_is_not_blocked_by_soft_target():
+async def test_three_recent_then_qualified_older_ignore_soft_target():
     reference = datetime.fromisoformat("2026-08-21T12:00:00")
     latest_body = "最新长正文完整返回。" * 180
     buckets = [
@@ -228,16 +228,22 @@ async def test_random_older_memory_is_not_blocked_by_soft_target():
             importance=8,
         ),
         make_bucket(
-            "recent-optional",
-            "弹性近期正文不应挤掉随机旧桶。",
+            "recent-one",
+            "第一条近期交接正文。",
             created="2026-08-21T10:00:00",
             importance=9,
         ),
         make_bucket(
-            "older-guaranteed",
-            "随机旧桶保证正文。",
+            "recent-two",
+            "第二条近期交接正文。",
+            created="2026-08-21T09:00:00",
+            importance=8,
+        ),
+        make_bucket(
+            "older-qualified",
+            "合格的旧事联想正文。",
             created="2026-08-10T09:00:00",
-            importance=7,
+            importance=8,
         ),
     ]
 
@@ -251,9 +257,11 @@ async def test_random_older_memory_is_not_blocked_by_soft_target():
 
     assert latest_body in output
     assert count_tokens_approx(output) > 700
+    assert "第一条近期交接正文。" in output
+    assert "第二条近期交接正文。" in output
     assert "[未完记忆]" in output
-    assert "随机旧桶保证正文。" in output
-    assert "弹性近期正文不应挤掉随机旧桶。" not in output
+    assert "合格的旧事联想正文。" in output
+    assert output.index("第二条近期交接正文。") < output.index("合格的旧事联想正文。")
 
 
 @pytest.mark.asyncio
@@ -287,7 +295,7 @@ async def test_daily_impression_sources_are_deprioritized_not_removed():
             "older",
             "随机旧桶。",
             created="2026-08-10T08:00:00",
-            importance=7,
+            importance=8,
         ),
     ]
 
@@ -299,7 +307,7 @@ async def test_daily_impression_sources_are_deprioritized_not_removed():
     )
 
     selected_ids = [bucket["id"] for bucket, _reason in selected]
-    assert selected_ids == ["latest", "older", "uncited-one", "uncited-two"]
+    assert selected_ids == ["latest", "uncited-one", "uncited-two", "older"]
 
     fallback, _total_recent = startup_module._select_memories(
         [buckets[0], buckets[1], buckets[4]],
@@ -309,8 +317,8 @@ async def test_daily_impression_sources_are_deprioritized_not_removed():
     )
     assert [bucket["id"] for bucket, _reason in fallback] == [
         "latest",
-        "older",
         "cited-high",
+        "older",
     ]
 
 
@@ -396,9 +404,60 @@ def test_older_unresolved_randomly_rotates_without_immediate_repeat(monkeypatch)
     assert second_id == "older-mid"
     assert first_id != second_id
     assert seen_pools == [
-        ["older-high", "older-mid", "older-low"],
-        ["older-mid", "older-low"],
+        ["older-high", "older-mid"],
+        ["older-mid"],
     ]
+
+
+def test_older_association_uses_upstream_neglect_thresholds(monkeypatch):
+    reference = datetime.fromisoformat("2026-08-21T12:00:00")
+    buckets = [
+        make_bucket(
+            "never-seen-important",
+            "从未激活的重要旧事。",
+            created="2026-08-10T09:00:00",
+            importance=8,
+            activation_count=0,
+        ),
+        make_bucket(
+            "stale-critical",
+            "七天没有活跃的极重要旧事。",
+            created="2026-08-01T09:00:00",
+            importance=9,
+            activation_count=3,
+            last_active="2026-08-10T09:00:00",
+        ),
+        make_bucket(
+            "seen-mid",
+            "已经激活过的八分旧事不进入联想池。",
+            created="2026-08-01T08:00:00",
+            importance=8,
+            activation_count=2,
+        ),
+        make_bucket(
+            "fresh-critical",
+            "最近仍活跃的九分旧事不进入联想池。",
+            created="2026-08-01T07:00:00",
+            importance=9,
+            activation_count=2,
+            last_active="2026-08-20T09:00:00",
+        ),
+    ]
+    seen_pools = []
+
+    def pick_first(pool):
+        seen_pools.append([bucket["id"] for bucket in pool])
+        return pool[0]
+
+    monkeypatch.setattr(startup_module.random, "choice", pick_first)
+    selected, _ = startup_module._select_memories(
+        buckets,
+        max_results=1,
+        reference_time=reference,
+    )
+
+    assert selected[0][0]["id"] == "stale-critical"
+    assert seen_pools == [["stale-critical", "never-seen-important"]]
 
 
 @pytest.mark.asyncio
@@ -462,7 +521,7 @@ async def test_startup_lists_plan_pointer_when_full_body_exceeds_plan_budget():
 
 
 @pytest.mark.asyncio
-async def test_next_whole_body_may_cross_soft_target_then_stops_selection():
+async def test_fixed_recent_slots_continue_past_soft_target():
     reference = datetime.fromisoformat("2026-08-18T12:00:00")
     large_body = "低优先级长正文完整性标记。" * 180
     buckets = [
@@ -475,7 +534,7 @@ async def test_next_whole_body_may_cross_soft_target_then_stops_selection():
         ),
         make_bucket(
             "later-low",
-            "跨过软目标后不应继续选择下一条正文。",
+            "跨过软目标后仍应返回第三条近期正文。",
             created="2026-08-18T09:00:00",
             importance=4,
         ),
@@ -494,9 +553,52 @@ async def test_next_whole_body_may_cross_soft_target_then_stops_selection():
     assert count_tokens_approx(output) > 700
     assert "[未展开] [bucket_id:large-low]" not in output
     assert "soft_target" not in output
-    assert "跨过软目标后不应继续选择下一条正文。" not in output
-    assert "达到软目标后停止追加近期桶" in output
+    assert "跨过软目标后仍应返回第三条近期正文。" in output
+    assert "达到软目标后停止追加近期桶" not in output
     assert count_tokens_approx(output) <= 5000
+
+
+@pytest.mark.asyncio
+async def test_oversized_old_association_becomes_pointer_after_three_recent():
+    reference = datetime.fromisoformat("2026-08-21T12:00:00")
+    old_body = "OLD-ASSOCIATION-WHOLE-BODY " * 700
+    buckets = [
+        make_bucket("latest", "最新正文。", created="2026-08-21T11:30:00"),
+        make_bucket(
+            "recent-one",
+            "第一条近期正文。",
+            created="2026-08-21T10:30:00",
+            importance=9,
+        ),
+        make_bucket(
+            "recent-two",
+            "第二条近期正文。",
+            created="2026-08-21T09:30:00",
+            importance=8,
+        ),
+        make_bucket(
+            "old-too-large",
+            old_body,
+            created="2026-08-01T09:00:00",
+            importance=9,
+        ),
+    ]
+
+    output = await surface_startup(
+        buckets,
+        max_results=4,
+        soft_tokens=500,
+        hard_tokens=1200,
+        reference_time=reference,
+    )
+
+    assert "最新正文。" in output
+    assert "第一条近期正文。" in output
+    assert "第二条近期正文。" in output
+    assert "OLD-ASSOCIATION-WHOLE-BODY" not in output
+    assert "[未展开] [bucket_id:old-too-large]" in output
+    assert "[reason:hard_limit]" in output
+    assert count_tokens_approx(output) <= 1200
 
 
 @pytest.mark.asyncio

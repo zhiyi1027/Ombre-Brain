@@ -1,9 +1,10 @@
 """Bounded zero-argument Breath handoff.
 
-The startup surface is a briefing, not an associative sample.  It returns the
-small pinned core verbatim, reconnects the newest/most important memories from
-the last 24 hours, randomly rotates one older unresolved item without an
-immediate repeat, and lists active plans.
+The startup surface is primarily a briefing, with one bounded associative
+slot.  It returns the small pinned core verbatim, reconnects the newest/most
+important memories from the last 24 hours, then randomly rotates one
+high-importance neglected item without an immediate repeat, and lists active
+plans.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ RECENT_LIMIT = 3
 PLAN_LIMIT = 5
 PLAN_TOKEN_BUDGET = 350
 OLDER_UNRESOLVED_POOL_LIMIT = 20
+OLDER_INACTIVE_DAYS = 7
 DEFAULT_SOFT_TOKENS = 3000
 DEFAULT_HARD_TOKENS = 5000
 _PRIVATE_TYPES = {"permanent", "feel", "plan", "letter", "self", "i"}
@@ -115,6 +117,30 @@ def _is_startup_memory(bucket: dict, *, allow_digested: bool = False) -> bool:
     )
 
 
+def _is_neglected_older_memory(bucket: dict, *, reference_time: datetime) -> bool:
+    """Match upstream OB's narrow passive-association eligibility rule."""
+
+    meta = bucket.get("metadata") or {}
+    importance = _importance(bucket)
+    try:
+        activation_count = int(meta.get("activation_count") or 0)
+    except (TypeError, ValueError, OverflowError):
+        activation_count = 0
+    if activation_count == 0 and importance >= 8:
+        return True
+    if importance < 9:
+        return False
+
+    value = meta.get("last_active") or meta.get("created_at") or meta.get("created")
+    if not value:
+        return False
+    try:
+        last_active = parse_iso_datetime(value)
+    except (TypeError, ValueError, OSError):
+        return False
+    return last_active < reference_time - timedelta(days=OLDER_INACTIVE_DAYS)
+
+
 def _select_memories(
     all_buckets: list[dict],
     *,
@@ -123,7 +149,7 @@ def _select_memories(
     exclude_older_id: str = "",
     daily_cited_bucket_ids: set[str] | None = None,
 ) -> tuple[list[tuple[dict, str]], int]:
-    """Select guaranteed handoff slots before optional recent detail."""
+    """Select recent handoff slots before one bounded passive association."""
 
     eligible = [bucket for bucket in all_buckets if _is_startup_memory(bucket)]
     latest_eligible = [
@@ -151,49 +177,9 @@ def _select_memories(
         selected.append((latest, "recent_latest"))
         selected_ids.add(str(latest.get("id") or ""))
 
-    # The older association is a startup guarantee, not optional recent
-    # detail.  Reserve it immediately after the true latest memory so the soft
-    # target cannot starve it behind two large recent bodies.
-    if len(selected) < max_results:
-        older_unresolved = []
-        for bucket in eligible:
-            bucket_id = str(bucket.get("id") or "")
-            if bucket_id in selected_ids:
-                continue
-            meta = bucket.get("metadata") or {}
-            created = _created_datetime(bucket)
-            if meta.get("resolved", False):
-                continue
-            if created is not None and created >= cutoff:
-                continue
-            older_unresolved.append(bucket)
-        older_unresolved.sort(
-            key=lambda bucket: (
-                _score(bucket),
-                _importance(bucket),
-                _last_active_timestamp(bucket),
-                _created_timestamp(bucket),
-                str(bucket.get("id") or ""),
-            ),
-            reverse=True,
-        )
-        if older_unresolved:
-            pool = older_unresolved[:OLDER_UNRESOLVED_POOL_LIMIT]
-            if len(pool) > 1 and exclude_older_id:
-                without_previous = [
-                    bucket
-                    for bucket in pool
-                    if str(bucket.get("id") or "") != exclude_older_id
-                ]
-                if without_previous:
-                    pool = without_previous
-            older = random.choice(pool)
-            selected.append((older, "older_unresolved"))
-            selected_ids.add(str(older.get("id") or ""))
-
-    # Fill the remaining ordinary-memory slots with recent detail.  Sources
+    # Fill up to three ordinary-memory slots with recent detail first. Sources
     # already represented in yesterday's impression remain reachable, but
-    # uncited material gets first use of the optional token budget.
+    # uncited material gets first use of the two additional recent slots.
     recent_cap = min(RECENT_LIMIT, max_results)
     remaining = [
         bucket
@@ -228,6 +214,51 @@ def _select_memories(
             break
         selected.append((bucket, "recent_important"))
         selected_ids.add(str(bucket.get("id") or ""))
+
+    # The final ordinary-memory slot is associative rather than part of the
+    # handoff.  Keep upstream OB's narrow passive pool: an older unresolved
+    # memory must either be important and never activated, or very important
+    # and inactive for at least seven days.  Randomness only rotates within the
+    # best-scoring bounded pool, and the previous surfaced item is avoided when
+    # another candidate exists.
+    if len(selected) < max_results:
+        older_unresolved = []
+        for bucket in eligible:
+            bucket_id = str(bucket.get("id") or "")
+            if bucket_id in selected_ids:
+                continue
+            meta = bucket.get("metadata") or {}
+            created = _created_datetime(bucket)
+            if meta.get("resolved", False):
+                continue
+            if created is not None and created >= cutoff:
+                continue
+            if not _is_neglected_older_memory(bucket, reference_time=reference_time):
+                continue
+            older_unresolved.append(bucket)
+        older_unresolved.sort(
+            key=lambda bucket: (
+                _score(bucket),
+                _importance(bucket),
+                _last_active_timestamp(bucket),
+                _created_timestamp(bucket),
+                str(bucket.get("id") or ""),
+            ),
+            reverse=True,
+        )
+        if older_unresolved:
+            pool = older_unresolved[:OLDER_UNRESOLVED_POOL_LIMIT]
+            if len(pool) > 1 and exclude_older_id:
+                without_previous = [
+                    bucket
+                    for bucket in pool
+                    if str(bucket.get("id") or "") != exclude_older_id
+                ]
+                if without_previous:
+                    pool = without_previous
+            older = random.choice(pool)
+            selected.append((older, "older_unresolved"))
+            selected_ids.add(str(older.get("id") or ""))
 
     normally_eligible_recent_ids = {
         str(bucket.get("id") or "")
@@ -316,8 +347,8 @@ async def surface_startup(
     plan_results: list[str] = []
     pointers: list[str] = []
     notices: list[str] = [
-        f"软目标 {soft_tokens} token，硬上限 {hard_tokens} token；"
-        "软目标只削减额外近期桶，真正最新与随机旧桶保证项仍整桶尝试；"
+        f"软参考 {soft_tokens} token，硬上限 {hard_tokens} token；"
+        "最多三条近期交接与一条合格旧事联想均整桶尝试；"
         "硬上限内绝不截断。"
     ]
 
@@ -405,16 +436,11 @@ async def surface_startup(
         daily_cited_bucket_ids=daily_cited_bucket_ids,
     )
     returned_recent = 0
-    soft_deferred = 0
-    for index, (bucket, reason) in enumerate(selected):
-        # The soft budget is a selection target, not a second hard cap.  Once
-        # the envelope reaches it we stop taking another optional memory, but
-        # the last memory selected below the target may cross it as one whole
-        # bucket.  Only the hard limit is allowed to turn a body into a pointer.
-        guaranteed = reason in {"recent_latest", "older_unresolved"}
-        if not guaranteed and count_tokens_approx(compose()) >= soft_tokens:
-            soft_deferred = len(selected) - index
-            break
+    for bucket, reason in selected:
+        # The four ordinary-memory slots are a fixed startup contract: true
+        # latest, up to two additional recent details, then one qualified old
+        # association.  The soft target is diagnostic only for this fixed set;
+        # only the hard cap may turn a whole body into a pointer.
         if reason == "recent_latest":
             prefix = f"🕒 [最近一条] [bucket_id:{bucket['id']}]"
             collection = recent_results
@@ -438,12 +464,6 @@ async def surface_startup(
 
     if total_recent > returned_recent:
         notice = f"最近24小时另有 {total_recent - returned_recent} 条记忆未进入本次 {max_results} 条正文名额。"
-        append_if_fits(notices, notice, limit=hard_tokens)
-    if soft_deferred:
-        notice = (
-            f"达到软目标后停止追加近期桶；另有 {soft_deferred} 条已选候选"
-            "未进入本次正文。"
-        )
         append_if_fits(notices, notice, limit=hard_tokens)
     if total_plans > expanded_plans:
         notice = (

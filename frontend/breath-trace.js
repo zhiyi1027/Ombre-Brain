@@ -146,8 +146,8 @@
     var grid = document.createElement('div');
     grid.id = 'breath-actual-section';
     grid.className = 'breath-trace-grid';
-    grid.innerHTML = '<section class="breath-trace-card"><h3>最近一次真实 Breath</h3><div class="breath-trace-note">这里记录 MCP 无参 breath 真正送进模型上下文的短核心全文、最近 24 小时、较早未完事项和活动计划。选择过程不使用随机数。</div><div class="breath-trace-actions"><button id="breath-refresh-actual">刷新真实记录</button><div id="breath-actual-runs" class="breath-trace-runs"></div></div><div id="breath-actual-detail"></div></section>' +
-      '<section class="breath-trace-card"><h3>确定性睁眼试跑</h3><div class="breath-trace-note">直接复用真实无参 breath 代码。同一批记忆与同一时间窗口会得到相同结果；只有记忆、计划或 24 小时窗口变化时才会改变。</div><div class="breath-trace-actions"><button id="breath-simulate-exact">试跑一次睁眼简报</button></div><div id="breath-simulation-detail" class="breath-trace-empty">尚未试跑。</div></section>';
+    grid.innerHTML = '<section class="breath-trace-card"><h3>最近一次真实 Breath</h3><div class="breath-trace-note">这里记录 MCP 无参 breath 真正送进模型上下文的短核心全文、最近 24 小时、较早未完事项和活动计划。近期交接稳定选择；旧事联想在合格候选池中随机轮换。</div><div class="breath-trace-actions"><button id="breath-refresh-actual">刷新真实记录</button><div id="breath-actual-runs" class="breath-trace-runs"></div></div><div id="breath-actual-detail"></div></section>' +
+      '<section class="breath-trace-card"><h3>睁眼试跑</h3><div class="breath-trace-note">直接复用真实无参 breath 代码。近期交接稳定选择；合格旧事会随机轮换并避免紧邻重复。</div><div class="breath-trace-actions"><button id="breath-simulate-exact">试跑一次睁眼简报</button></div><div id="breath-simulation-detail" class="breath-trace-empty">尚未试跑。</div></section>';
     view.insertBefore(grid, view.firstChild);
 
     var debug = document.createElement('section');
