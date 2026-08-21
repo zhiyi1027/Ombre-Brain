@@ -54,6 +54,31 @@ STARTUP_OUTPUT = """=== 轻量睁眼 ===
 === 本次预算 ===
 软目标 3000 token，硬上限 5000 token；记忆正文只整桶返回，不截断。"""
 
+ONE_BUTTON_OUTPUT = """=== 一键睁眼 ===
+一次返回完整启动上下文。
+
+=== 昨日印象 · 2026-08-20 ===
+发生了什么：
+- 昨日正文
+
+=== 最近24小时 ===
+🕒 [最近一条] [bucket_id:recent-one]
+最近正文
+
+=== 自动精读 ===
+🔎 [自动精读] [bucket_id:reflection-one]
+精读正文
+---
+🔎 [自动精读] ↗ [未展开] [bucket_id:reflection-large] [reason:reflection_budget] 大桶
+
+=== 相关 feel ===
+💗 [直属感受] [bucket_id:feel-direct] [source_bucket:recent-one]
+直属正文
+---
+💭 [相关感受] [bucket_id:feel-related]
+相关正文
+"""
+
 
 class NoopDecay:
     async def ensure_started(self):
@@ -155,6 +180,38 @@ def test_trace_understands_deterministic_startup_sections_and_pointer():
     assert row["output"] == STARTUP_OUTPUT
 
 
+def test_trace_understands_one_button_reflection_and_feel_sections():
+    row = record_surface_output(
+        ONE_BUTTON_OUTPUT,
+        kind="simulation",
+        mode="startup",
+        max_results=4,
+        max_tokens=9000,
+        run_id="one-button-run",
+    )
+
+    assert [entry["section"] for entry in row["entries"]] == [
+        "daily",
+        "recent",
+        "reflection",
+        "reflection",
+        "feel",
+        "feel",
+    ]
+    assert [entry["reason"] for entry in row["entries"]] == [
+        "daily_continuity",
+        "recent_latest",
+        "automatic_reflection",
+        "automatic_reflection",
+        "direct_source_feel",
+        "context_relevance",
+    ]
+    assert row["entries"][3]["status"] == "pointer"
+    assert row["counts"] == {"returned": 5, "omitted_budget": 1, "pointers": 1}
+    enriched = breath_trace._with_bucket_names(row, {})
+    assert enriched["entries"][0]["name"] == "昨日印象 · 2026-08-20"
+
+
 @pytest.mark.asyncio
 async def test_dispatch_records_the_exact_default_breath_without_changing_it(monkeypatch):
     async def fake_surface_default(**kwargs):
@@ -191,7 +248,7 @@ async def test_exact_simulation_reuses_default_surface_and_is_labeled(monkeypatc
 
     async def fake_surface_default(**kwargs):
         calls.append(kwargs)
-        return SAMPLE_OUTPUT
+        return ONE_BUTTON_OUTPUT
 
     monkeypatch.setattr(breath_module, "surface_default", fake_surface_default)
     monkeypatch.setattr(rt, "decay_engine", NoopDecay())
@@ -220,7 +277,8 @@ async def test_exact_simulation_reuses_default_surface_and_is_labeled(monkeypatc
     ]
     assert row["kind"] == "simulation"
     assert row["mode"] == "startup"
-    assert row["output"] == SAMPLE_OUTPUT
+    assert row["limits"]["max_tokens"] == 5500
+    assert row["output"] == ONE_BUTTON_OUTPUT
 
 
 @pytest.mark.asyncio
@@ -267,5 +325,7 @@ def test_dashboard_contract_separates_actual_trace_from_score_debug():
     assert "/api/breath-runs?kind=actual" in script
     assert "/api/breath-simulate" in script
     assert "最近一次真实 Breath" in script
+    assert "自动精读" in script
+    assert "相关 feel" in script
     assert "四维评分调试" in script
     assert "不代表真实无参 breath 返回顺序" in script

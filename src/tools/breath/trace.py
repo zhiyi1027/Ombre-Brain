@@ -47,8 +47,10 @@ def record_run(record: dict) -> dict:
 _SECTION_HEADERS = {
     "=== 核心准则 ===": "core",
     "=== 最近24小时 ===": "recent",
+    "=== 自动精读 ===": "reflection",
     "=== 较早未完事项 ===": "unfinished",
     "=== 活动计划 ===": "plan",
+    "=== 相关 feel ===": "feel",
     "=== 未展开（按需读取） ===": "deferred",
     "=== 本次预算 ===": "budget",
     "=== 浮现记忆 ===": "dynamic",
@@ -56,6 +58,7 @@ _SECTION_HEADERS = {
     "=== 偶然想起 ===": "encounter",
 }
 _BUCKET_ID_RE = re.compile(r"\[bucket_id:([^\]]+)\]")
+_DAILY_HEADER_RE = re.compile(r"^=== 昨日印象 · ([0-9]{4}-[0-9]{2}-[0-9]{2}) ===$")
 _SCORE_RE = re.compile(r"\[权重:([0-9.]+)\]")
 _OMITTED_RE = re.compile(r"有\s*(\d+)\s*条主要浮现记忆")
 _USED_RE = re.compile(r"当前约使用\s*(\d+)\s*/\s*(\d+)\s*token")
@@ -77,6 +80,20 @@ def _parse_entries(output: str) -> list[dict]:
     offset = 0
     for line in text.splitlines(keepends=True):
         stripped = line.strip()
+        daily_match = _DAILY_HEADER_RE.match(stripped)
+        if daily_match:
+            section = "daily"
+            entries.append({
+                "bucket_id": f"daily_impression:{daily_match.group(1)}",
+                "section": "daily",
+                "status": "returned",
+                "reason": "daily_continuity",
+                "tokens": 0,
+                "score": None,
+                "_offset": offset,
+            })
+            offset += len(line)
+            continue
         if stripped in _SECTION_HEADERS:
             section = _SECTION_HEADERS[stripped]
             offset += len(line)
@@ -84,8 +101,13 @@ def _parse_entries(output: str) -> list[dict]:
         is_bucket_header = (
             (section == "core" and stripped.startswith("📌 [核心准则]"))
             or (section == "recent" and stripped.startswith("🕒 ["))
+            or (section == "reflection" and stripped.startswith("🔎 [自动精读]"))
             or (section == "unfinished" and stripped.startswith("🧭 [未完记忆]"))
             or (section == "plan" and stripped.startswith("📋 [活动计划]"))
+            or (
+                section == "feel"
+                and stripped.startswith(("💗 [直属感受]", "💭 [相关感受]"))
+            )
             or (section == "deferred" and stripped.startswith("↗ [未展开]"))
             or (
                 section == "dynamic"
@@ -107,8 +129,10 @@ def _parse_entries(output: str) -> list[dict]:
         score_match = _SCORE_RE.search(line[: match.end()])
         reason = {
             "core": "core_always_surface",
+            "reflection": "automatic_reflection",
             "unfinished": "older_unresolved",
             "plan": "active_plan",
+            "feel": "context_relevance",
             "deferred": "budget_pointer",
             "dynamic": "default_surface_order",
             "passive": "long_inactive_association",
@@ -116,10 +140,13 @@ def _parse_entries(output: str) -> list[dict]:
         }.get(section, "default_surface_order")
         if section == "recent":
             reason = "recent_latest" if "[最近一条]" in stripped else "recent_important"
+        elif section == "feel" and "[直属感受]" in stripped:
+            reason = "direct_source_feel"
+        is_pointer = section == "deferred" or "↗ [未展开]" in stripped
         entries.append({
             "bucket_id": match.group(1),
             "section": section,
-            "status": "pointer" if section == "deferred" else "returned",
+            "status": "pointer" if is_pointer else "returned",
             "reason": reason,
             "tokens": 0,
             "score": float(score_match.group(1)) if score_match else None,
@@ -139,7 +166,11 @@ def _parse_entries(output: str) -> list[dict]:
         # to the preceding bucket.  The UI labels this value as approximate.
         boundaries = [
             position
-            for marker in (*_SECTION_HEADERS.keys(), "token 预算不足：")
+            for marker in (
+                *_SECTION_HEADERS.keys(),
+                "=== 昨日印象 ·",
+                "token 预算不足：",
+            )
             if (position := rendered.find(marker)) >= 0
         ]
         if boundaries:

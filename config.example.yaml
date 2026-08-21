@@ -191,7 +191,7 @@ surfacing:
   # core and selected memories return verbatim; plans expand within their budget.
   startup_breath_max_results: 4    # 1-4, up to 3 recent bodies + 1 older unresolved body
   startup_breath_soft_tokens: 3000 # 500-10000, advisory target; fixed recent + qualified older slots bypass it
-  startup_breath_max_tokens: 5000  # 500-10000, hard cap for the complete startup envelope
+  startup_breath_max_tokens: 5000  # 500-10000, base-memory hard cap; reflection + feel add 2000 each (9000 total by default)
   # breath_advanced() and explicit search keep the larger manual-read defaults.
   breath_max_results: 20          # 1-50, hard cap of buckets returned per breath
   breath_max_tokens: 10000        # 500-20000, total token cap per breath

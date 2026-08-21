@@ -13,8 +13,12 @@
       core_always_surface: '核心准则',
       recent_latest: '最近一条',
       recent_important: '近期重要',
+      daily_continuity: '昨日连续性',
+      automatic_reflection: '自动精读',
       older_unresolved: '较早未完',
       active_plan: '活动计划',
+      direct_source_feel: '直属来源',
+      context_relevance: '语义/关键词相关',
       budget_pointer: '预算内仅列索引',
       default_surface_order: '真实浮现顺序',
       long_inactive_association: '久未浮现',
@@ -23,7 +27,7 @@
   }
 
   function sectionLabel(value) {
-    return ({core: '核心', recent: '最近24h', unfinished: '未完', plan: '计划', deferred: '未展开', dynamic: '动态', passive: '久未浮现', encounter: '偶遇'})[value] || value || '其它';
+    return ({core: '核心', daily: '日印象', recent: '最近24h', reflection: '自动精读', unfinished: '未完', plan: '计划', feel: '相关 feel', deferred: '未展开', dynamic: '动态', passive: '久未浮现', encounter: '偶遇'})[value] || value || '其它';
   }
 
   function runHtml(run) {
@@ -35,8 +39,8 @@
       : Number(limits.max_tokens || 0);
     var when = run.completed_at ? new Date(run.completed_at).toLocaleString() : '—';
     var kind = run.kind === 'simulation'
-      ? '轻量睁眼同算法试跑'
-      : (run.mode === 'startup' ? '真实轻量 MCP breath' : '真实完整 MCP breath');
+      ? '一键睁眼同算法试跑'
+      : (run.mode === 'startup' ? '真实一键 MCP breath' : '真实完整 MCP breath');
     var entries = (run.entries || []).map(function (entry, index) {
       return '<div class="breath-trace-entry">' +
         '<span class="breath-trace-rank">' + (index + 1) + '</span>' +
@@ -54,8 +58,8 @@
         '<code>' + h(run.run_id.slice(0, 12)) + '</code>' +
       '</div>' +
       '<div class="breath-trace-stats">' +
-        '<span>正文返回 <b>' + Number(counts.returned || 0) + '</b> 桶</span>' +
-        '<span>仅列索引 <b>' + omitted + '</b> 桶</span>' +
+        '<span>正文返回 <b>' + Number(counts.returned || 0) + '</b> 项</span>' +
+        '<span>仅列索引 <b>' + omitted + '</b> 项</span>' +
         '<span>入选内容约 <b>' + Number(run.budgeted_entry_tokens || 0) + ' / ' + budgetLabel + '</b> token</span>' +
         '<span>完整返回约 <b>' + Number(run.output_tokens_estimate || 0) + '</b> token（含标题与提示）</span>' +
       '</div>' +
@@ -99,7 +103,7 @@
       list.innerHTML = runs.map(function (run, index) {
         var when = run.completed_at ? new Date(run.completed_at).toLocaleTimeString() : '—';
         return '<button class="breath-run-chip' + (index === 0 ? ' active' : '') + '" data-run-id="' + h(run.run_id) + '">' +
-          h(when) + ' · ' + Number((run.counts || {}).returned || 0) + '桶</button>';
+          h(when) + ' · ' + Number((run.counts || {}).returned || 0) + '项</button>';
       }).join('');
       list.querySelectorAll('[data-run-id]').forEach(function (button) {
         button.addEventListener('click', function () {
@@ -146,8 +150,8 @@
     var grid = document.createElement('div');
     grid.id = 'breath-actual-section';
     grid.className = 'breath-trace-grid';
-    grid.innerHTML = '<section class="breath-trace-card"><h3>最近一次真实 Breath</h3><div class="breath-trace-note">这里记录 MCP 无参 breath 真正送进模型上下文的短核心全文、最近 24 小时、较早未完事项和活动计划。近期交接稳定选择；旧事联想在合格候选池中随机轮换。</div><div class="breath-trace-actions"><button id="breath-refresh-actual">刷新真实记录</button><div id="breath-actual-runs" class="breath-trace-runs"></div></div><div id="breath-actual-detail"></div></section>' +
-      '<section class="breath-trace-card"><h3>睁眼试跑</h3><div class="breath-trace-note">直接复用真实无参 breath 代码。近期交接稳定选择；合格旧事会随机轮换并避免紧邻重复。</div><div class="breath-trace-actions"><button id="breath-simulate-exact">试跑一次睁眼简报</button></div><div id="breath-simulation-detail" class="breath-trace-empty">尚未试跑。</div></section>';
+    grid.innerHTML = '<section class="breath-trace-card"><h3>最近一次真实 Breath</h3><div class="breath-trace-note">这里逐字记录 MCP 无参 breath 真正送进模型上下文的核心、日印象、近期交接、自动精读、旧事联想、活动计划与相关 feel。</div><div class="breath-trace-actions"><button id="breath-refresh-actual">刷新真实记录</button><div id="breath-actual-runs" class="breath-trace-runs"></div></div><div id="breath-actual-detail"></div></section>' +
+      '<section class="breath-trace-card"><h3>睁眼试跑</h3><div class="breath-trace-note">直接复用真实无参 breath 代码；旧事槽仍会自然随机，因此试跑展示的是一次真实算法样例，不锁定下一次结果。</div><div class="breath-trace-actions"><button id="breath-simulate-exact">试跑一次一键睁眼</button></div><div id="breath-simulation-detail" class="breath-trace-empty">尚未试跑。</div></section>';
     view.insertBefore(grid, view.firstChild);
 
     var debug = document.createElement('section');

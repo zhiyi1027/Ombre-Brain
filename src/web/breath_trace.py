@@ -30,7 +30,11 @@ def _with_bucket_names(
         return None
     for entry in record.get("entries") or []:
         bucket_id = entry.get("bucket_id", "")
-        entry["name"] = names.get(bucket_id, bucket_id)
+        if str(bucket_id).startswith("daily_impression:"):
+            day = str(bucket_id).split(":", 1)[1]
+            entry["name"] = f"昨日印象 · {day}"
+        else:
+            entry["name"] = names.get(bucket_id, bucket_id)
     return record
 
 

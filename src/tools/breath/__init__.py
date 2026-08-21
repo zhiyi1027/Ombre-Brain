@@ -37,6 +37,7 @@ from .feel import surface_feels
 from .importance import surface_by_importance
 from .surface import surface_daily_impressions, surface_default, surface_plans
 from .search import surface_search
+from .startup import startup_total_hard_tokens
 from .trace import get_run, new_run_id, record_surface_output
 
 
@@ -209,7 +210,11 @@ async def dispatch(
             output,
             kind="actual",
             max_results=max_results,
-            max_tokens=max_tokens,
+            max_tokens=(
+                startup_total_hard_tokens(max_tokens)
+                if startup_surface
+                else max_tokens
+            ),
             soft_tokens=(
                 int(surfacing_cfg.get("startup_breath_soft_tokens") or 3000)
                 if startup_surface
@@ -261,7 +266,7 @@ async def simulate_default_surface() -> dict:
         output,
         kind="simulation",
         max_results=max_results,
-        max_tokens=max_tokens,
+        max_tokens=startup_total_hard_tokens(max_tokens),
         soft_tokens=int(surfacing_cfg.get("startup_breath_soft_tokens") or 3000),
         run_id=run_id,
         mode="startup",

@@ -173,7 +173,8 @@ async def test_startup_is_deterministic_and_reconnects_recent_unfinished_and_pla
     assert "[最近一条] [bucket_id:latest]" in first
     assert "近期高重要度正文。" in first
     assert "已经解决但仍属于最近一天的正文。" in first
-    assert "近期低重要度正文" not in first
+    assert "🔎 [自动精读] [bucket_id:recent-low]" in first
+    assert "近期低重要度正文不应挤掉更重要的候选。" in first
     assert "[未完记忆]" in first
     assert "较早但仍未解决的正文。" in first
     assert "[活动计划] [bucket_id:active-plan]" in first
@@ -182,6 +183,181 @@ async def test_startup_is_deterministic_and_reconnects_recent_unfinished_and_pla
     assert "久未浮现" not in first
     assert "偶然想起" not in first
     assert count_tokens_approx(first) <= 5000
+
+
+@pytest.mark.asyncio
+async def test_startup_auto_reads_at_most_two_unprocessed_memories():
+    reference = datetime.fromisoformat("2026-08-21T12:00:00")
+    buckets = [
+        make_bucket("latest", "最新交接。", created="2026-08-21T11:30:00"),
+        make_bucket(
+            "reflection-high",
+            "最高重要度的未消化记忆。",
+            created="2026-08-20T09:00:00",
+            importance=9,
+        ),
+        make_bucket(
+            "reflection-newer",
+            "同重要度里更新的一条。",
+            created="2026-08-20T11:00:00",
+            importance=8,
+        ),
+        make_bucket(
+            "reflection-older",
+            "第三条不能挤进自动精读。",
+            created="2026-08-20T10:00:00",
+            importance=8,
+        ),
+        make_bucket(
+            "already-digested",
+            "已经消化的不再自动精读。",
+            created="2026-08-20T12:00:00",
+            importance=10,
+            digested=True,
+        ),
+        make_bucket(
+            "already-resolved",
+            "已经解决的不再自动精读。",
+            created="2026-08-20T13:00:00",
+            importance=10,
+            resolved=True,
+        ),
+    ]
+
+    output = await surface_startup(
+        buckets,
+        max_results=1,
+        soft_tokens=3000,
+        hard_tokens=5000,
+        reference_time=reference,
+    )
+
+    assert output.count("🔎 [自动精读]") == 2
+    assert "[bucket_id:reflection-high]" in output
+    assert "[bucket_id:reflection-newer]" in output
+    assert "第三条不能挤进自动精读" not in output
+    assert "已经消化的不再自动精读" not in output
+    assert "已经解决的不再自动精读" not in output
+
+
+@pytest.mark.asyncio
+async def test_startup_appends_direct_then_contextual_feels(monkeypatch):
+    reference = datetime.fromisoformat("2026-08-21T12:00:00")
+
+    class Embedding:
+        enabled = True
+
+        async def search_similar(self, _query, top_k, allowed_bucket_ids):
+            assert allowed_bucket_ids == {"semantic-feel", "noise-feel"}
+            return [("semantic-feel", 0.9), ("noise-feel", 0.1)]
+
+    monkeypatch.setattr(rt, "embedding_engine", Embedding(), raising=False)
+    buckets = [
+        make_bucket(
+            "latest",
+            "搬家以后担心失去连续性。",
+            created="2026-08-21T11:30:00",
+        ),
+        make_bucket(
+            "direct-feel",
+            "这条是最新交接亲生的感受。",
+            created="2026-08-21T11:40:00",
+            bucket_type="feel",
+            triggered_by="latest",
+        ),
+        make_bucket(
+            "semantic-feel",
+            "语义相关的感受。",
+            created="2026-08-20T10:00:00",
+            bucket_type="feel",
+        ),
+        make_bucket(
+            "noise-feel",
+            "无关感受。",
+            created="2026-08-20T09:00:00",
+            bucket_type="feel",
+        ),
+    ]
+
+    output = await surface_startup(
+        buckets,
+        max_results=1,
+        soft_tokens=3000,
+        hard_tokens=5000,
+        reference_time=reference,
+    )
+
+    assert "=== 相关 feel ===" in output
+    assert "💗 [直属感受] [bucket_id:direct-feel]" in output
+    assert "💭 [相关感受] [bucket_id:semantic-feel]" in output
+    assert "无关感受" not in output
+    assert output.index("[bucket_id:direct-feel]") < output.index(
+        "[bucket_id:semantic-feel]"
+    )
+    assert count_tokens_approx(output) <= 9000
+
+
+@pytest.mark.asyncio
+async def test_oversized_reflection_is_a_pointer_and_cannot_seed_feels(monkeypatch):
+    reference = datetime.fromisoformat("2026-08-21T12:00:00")
+    monkeypatch.setattr(rt, "embedding_engine", None, raising=False)
+    buckets = [
+        make_bucket("latest", "最新交接。", created="2026-08-21T11:30:00"),
+        make_bucket(
+            "large-reflection",
+            "REFLECTION-WHOLE-BODY " * 1000,
+            created="2026-08-20T11:00:00",
+            importance=9,
+        ),
+        make_bucket(
+            "reflection-feel",
+            "只有完整读过来源桶才可以自动带回我。",
+            created="2026-08-20T12:00:00",
+            bucket_type="feel",
+            triggered_by="large-reflection",
+        ),
+    ]
+
+    output = await surface_startup(
+        buckets,
+        max_results=1,
+        soft_tokens=3000,
+        hard_tokens=5000,
+        reference_time=reference,
+    )
+
+    assert "REFLECTION-WHOLE-BODY" not in output
+    assert "[bucket_id:large-reflection]" in output
+    assert "[reason:reflection_budget]" in output
+    assert "只有完整读过来源桶" not in output
+    assert count_tokens_approx(output) <= 9000
+
+
+@pytest.mark.asyncio
+async def test_oversized_related_feel_is_omitted_whole_with_notice(monkeypatch):
+    reference = datetime.fromisoformat("2026-08-21T12:00:00")
+    buckets = [
+        make_bucket("latest", "最新交接。", created="2026-08-21T11:30:00"),
+        make_bucket(
+            "large-feel",
+            "FEEL-WHOLE-BODY " * 1000,
+            created="2026-08-21T11:40:00",
+            bucket_type="feel",
+            triggered_by="latest",
+        ),
+    ]
+
+    output = await surface_startup(
+        buckets,
+        max_results=1,
+        soft_tokens=3000,
+        hard_tokens=5000,
+        reference_time=reference,
+    )
+
+    assert "FEEL-WHOLE-BODY" not in output
+    assert "有 1 条相关 feel 因独立预算不足未返回" in output
+    assert count_tokens_approx(output) <= 9000
 
 
 @pytest.mark.asyncio

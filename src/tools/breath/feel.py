@@ -69,6 +69,53 @@ def _literal_matches(feels: list[dict], query: str) -> list[dict]:
     return matched
 
 
+async def select_relevant_feels(
+    feels: list[dict],
+    *,
+    source_ids: set[str],
+    reference_text: str,
+    max_results: int = MAX_RELEVANT_FEELS,
+) -> tuple[list[tuple[dict, str]], bool]:
+    """Select direct-source feels first, then fill by contextual relevance."""
+
+    limit = max(1, min(int(max_results or MAX_RELEVANT_FEELS), MAX_RELEVANT_FEELS))
+    normalized_sources = {
+        str(source_id or "").strip()
+        for source_id in source_ids
+        if str(source_id or "").strip()
+    }
+    direct = [
+        feel
+        for feel in feels
+        if str((feel.get("metadata") or {}).get("triggered_by") or "")
+        in normalized_sources
+    ]
+    direct.sort(key=_created, reverse=True)
+    selected: list[tuple[dict, str]] = [
+        (feel, "direct_source") for feel in direct[:limit]
+    ]
+    selected_ids = {str(feel.get("id") or "") for feel, _reason in selected}
+
+    reference = str(reference_text or "").strip()
+    vector_ok = True
+    if len(selected) < limit and reference:
+        remaining = [
+            feel
+            for feel in feels
+            if str(feel.get("id") or "") not in selected_ids
+        ]
+        if remaining:
+            ranked, vector_ok = await rank_feels(
+                remaining,
+                reference,
+                max_feels=limit - len(selected),
+            )
+            selected.extend(
+                (feel, "context_relevance") for feel, _score in ranked
+            )
+    return selected, vector_ok
+
+
 async def surface_feels(
     query: str = "",
     max_tokens: int = 0,
@@ -90,33 +137,16 @@ async def surface_feels(
 
         limit = max(1, min(int(max_results or MAX_RELEVANT_FEELS), MAX_RELEVANT_FEELS))
         source_ids = _source_ids(query)
-        direct = [
-            feel
-            for feel in feels
-            if str((feel.get("metadata") or {}).get("triggered_by") or "")
-            in source_ids
-        ]
-        direct.sort(key=_created, reverse=True)
-        selected = direct[:limit]
-        selected_ids = {str(feel.get("id") or "") for feel in selected}
-
         reference = _reference_text(query)
-        vector_ok = True
-        if len(selected) < limit and reference:
-            remaining = [
-                feel
-                for feel in feels
-                if str(feel.get("id") or "") not in selected_ids
-            ]
-            ranked, vector_ok = await rank_feels(
-                remaining,
-                reference,
-                max_feels=limit - len(selected),
-            )
-            related = [feel for feel, _score in ranked]
-            if not related and not vector_ok:
-                related = _literal_matches(remaining, reference)[: limit - len(selected)]
-            selected.extend(related)
+        selected_with_reasons, vector_ok = await select_relevant_feels(
+            feels,
+            source_ids=source_ids,
+            reference_text=reference,
+            max_results=limit,
+        )
+        selected = [feel for feel, _reason in selected_with_reasons]
+        if not selected and reference and not vector_ok:
+            selected = _literal_matches(feels, reference)[:limit]
 
         if not selected:
             head = f"没有和「{reference or query}」相关的 feel。"

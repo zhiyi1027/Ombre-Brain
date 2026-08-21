@@ -109,6 +109,25 @@ async def test_direct_source_feel_precedes_semantic_fill(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_direct_only_result_does_not_claim_semantic_degradation(monkeypatch):
+    monkeypatch.setattr(
+        rt,
+        "bucket_mgr",
+        StaticBuckets([feel("direct", "直属感受正文。", source="memory-1")]),
+    )
+    monkeypatch.setattr(rt, "embedding_engine", DisabledEngine(), raising=False)
+
+    output = await surface_feels(
+        query="[bucket_id:memory-1] 当前主题",
+        max_tokens=2_000,
+        max_results=5,
+    )
+
+    assert "直属感受正文" in output
+    assert "检索降级" not in output
+
+
+@pytest.mark.asyncio
 async def test_keyword_fallback_is_explicit_and_does_not_add_noise(monkeypatch):
     buckets = [
         feel("related", "删掉自己写的东西时真的很舍不得。"),
