@@ -73,12 +73,13 @@ async def rank_feels(
     for feel in feels:
         bucket_id = str(feel.get("id") or "")
         keyword = keyword_overlap(str(feel.get("content") or ""), reference_tokens)
-        score = (
-            VECTOR_WEIGHT * vector_scores.get(bucket_id, 0.0)
-            + KEYWORD_WEIGHT * keyword
-            if vector_ok
-            else keyword
-        )
+        if vector_ok and bucket_id in vector_scores:
+            score = VECTOR_WEIGHT * vector_scores[bucket_id] + KEYWORD_WEIGHT * keyword
+        else:
+            # The index may be only partially caught up.  A successful vector
+            # search for other feels must not make an unindexed feel incapable
+            # of crossing the relevance threshold.
+            score = keyword
         if score >= threshold:
             ranked.append((feel, score))
 
