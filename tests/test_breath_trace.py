@@ -4,6 +4,7 @@ import pytest
 
 import tools._runtime as rt
 import tools.breath as breath_module
+from tools.breath._envelope import DAILY_IMPRESSION_SENTINEL
 from tools.breath.trace import (
     clear_runs_for_tests,
     get_run,
@@ -54,9 +55,10 @@ STARTUP_OUTPUT = """=== 轻量睁眼 ===
 === 本次预算 ===
 软目标 3000 token，硬上限 5000 token；记忆正文只整桶返回，不截断。"""
 
-ONE_BUTTON_OUTPUT = """=== 一键睁眼 ===
+ONE_BUTTON_OUTPUT = f"""=== 一键睁眼 ===
 一次返回完整启动上下文。
 
+{DAILY_IMPRESSION_SENTINEL}
 === 昨日印象 · 2026-08-20 ===
 发生了什么：
 - 昨日正文
@@ -77,6 +79,17 @@ ONE_BUTTON_OUTPUT = """=== 一键睁眼 ===
 ---
 💭 [相关感受] [bucket_id:feel-related]
 相关正文
+"""
+
+DAILY_HEADING_INSIDE_BUCKET_OUTPUT = """=== 核心准则 ===
+📌 [核心准则] [bucket_id:core-with-heading]
+这是记忆正文。
+=== 昨日印象 · 2026-08-19 ===
+这一行也只是记忆正文，不是启动分区。
+
+=== 最近24小时 ===
+🕒 [最近一条] [bucket_id:recent-after-heading]
+最近正文
 """
 
 
@@ -210,6 +223,22 @@ def test_trace_understands_one_button_reflection_and_feel_sections():
     assert row["counts"] == {"returned": 5, "omitted_budget": 1, "pointers": 1}
     enriched = breath_trace._with_bucket_names(row, {})
     assert enriched["entries"][0]["name"] == "昨日印象 · 2026-08-20"
+
+
+def test_trace_does_not_treat_daily_heading_inside_bucket_body_as_section():
+    row = record_surface_output(
+        DAILY_HEADING_INSIDE_BUCKET_OUTPUT,
+        kind="actual",
+        mode="startup",
+        max_results=4,
+        max_tokens=9000,
+    )
+
+    assert [entry["bucket_id"] for entry in row["entries"]] == [
+        "core-with-heading",
+        "recent-after-heading",
+    ]
+    assert all(entry["section"] != "daily" for entry in row["entries"])
 
 
 @pytest.mark.asyncio

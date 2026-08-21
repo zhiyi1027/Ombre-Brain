@@ -636,6 +636,43 @@ def test_older_association_uses_upstream_neglect_thresholds(monkeypatch):
     assert seen_pools == [["stale-critical", "never-seen-important"]]
 
 
+def test_older_association_parses_string_resolved_flags(monkeypatch):
+    reference = datetime.fromisoformat("2026-08-21T12:00:00")
+    buckets = [
+        make_bucket(
+            "string-false",
+            "resolved 字符串为 false 时仍是未完事项。",
+            created="2026-08-01T09:00:00",
+            importance=9,
+            activation_count=0,
+            resolved="false",
+        ),
+        make_bucket(
+            "string-true",
+            "resolved 字符串为 true 时不应被动联想。",
+            created="2026-08-01T08:00:00",
+            importance=10,
+            activation_count=0,
+            resolved="true",
+        ),
+    ]
+    seen_pools = []
+
+    def pick_first(pool):
+        seen_pools.append([bucket["id"] for bucket in pool])
+        return pool[0]
+
+    monkeypatch.setattr(startup_module.random, "choice", pick_first)
+    selected, _ = startup_module._select_memories(
+        buckets,
+        max_results=1,
+        reference_time=reference,
+    )
+
+    assert selected[0][0]["id"] == "string-false"
+    assert seen_pools == [["string-false"]]
+
+
 @pytest.mark.asyncio
 async def test_startup_returns_long_plan_verbatim_when_total_plan_budget_allows():
     reference = datetime.fromisoformat("2026-08-18T12:00:00")

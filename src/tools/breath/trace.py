@@ -16,6 +16,7 @@ from threading import RLock
 from uuid import uuid4
 
 from utils import count_tokens_approx
+from ._envelope import DAILY_IMPRESSION_SENTINEL
 
 
 _TRACE_LIMIT = 50
@@ -78,10 +79,20 @@ def _parse_entries(output: str) -> list[dict]:
     # swallowed by a naive separator split.  Keep offsets to estimate each
     # returned bucket's rendered size afterward.
     offset = 0
+    expect_daily_header = False
     for line in text.splitlines(keepends=True):
         stripped = line.strip()
-        daily_match = _DAILY_HEADER_RE.match(stripped)
+        if stripped == DAILY_IMPRESSION_SENTINEL:
+            expect_daily_header = True
+            offset += len(line)
+            continue
+        daily_match = (
+            _DAILY_HEADER_RE.fullmatch(stripped)
+            if expect_daily_header
+            else None
+        )
         if daily_match:
+            expect_daily_header = False
             section = "daily"
             entries.append({
                 "bucket_id": f"daily_impression:{daily_match.group(1)}",
@@ -94,6 +105,8 @@ def _parse_entries(output: str) -> list[dict]:
             })
             offset += len(line)
             continue
+        if stripped:
+            expect_daily_header = False
         if stripped in _SECTION_HEADERS:
             section = _SECTION_HEADERS[stripped]
             offset += len(line)
@@ -168,7 +181,7 @@ def _parse_entries(output: str) -> list[dict]:
             position
             for marker in (
                 *_SECTION_HEADERS.keys(),
-                "=== 昨日印象 ·",
+                DAILY_IMPRESSION_SENTINEL,
                 "token 预算不足：",
             )
             if (position := rendered.find(marker)) >= 0

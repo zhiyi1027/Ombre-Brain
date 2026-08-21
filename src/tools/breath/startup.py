@@ -14,6 +14,7 @@ from ombrebrain.policy.surfacing import SurfacePolicyVM
 
 from .. import _runtime as rt
 from utils import count_tokens_approx, parse_bool, parse_iso_datetime
+from ._envelope import DAILY_IMPRESSION_SENTINEL
 from ._verbatim import render_stored_bucket
 from .feel import MAX_RELEVANT_FEELS, select_relevant_feels
 
@@ -239,7 +240,7 @@ def _select_memories(
                 continue
             meta = bucket.get("metadata") or {}
             created = _created_datetime(bucket)
-            if meta.get("resolved", False):
+            if parse_bool(meta.get("resolved"), default=False):
                 continue
             if created is not None and created >= cutoff:
                 continue
@@ -418,7 +419,9 @@ async def surface_startup(
         if core_results:
             parts.append("=== 核心准则 ===\n" + "\n---\n".join(core_results))
         if daily_results:
-            parts.extend(daily_results)
+            parts.append(
+                DAILY_IMPRESSION_SENTINEL + "\n" + "\n---\n".join(daily_results)
+            )
         if recent_results:
             parts.append("=== 最近24小时 ===\n" + "\n---\n".join(recent_results))
         if reflection_results:

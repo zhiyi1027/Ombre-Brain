@@ -1658,6 +1658,7 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 
 ## 14. 安全部署模式与首次向导
 
+- 一键睁眼必须按“先部署 OB 服务端 → 实际调用 `breath()` 验证自动精读与相关 feel 分区 → 再切换 Codex/CC 启动提示”的顺序上线。服务端验证前，客户端保留旧的多步启动流程。
 - `src/deployment_profile.py` 是纯领域层：定义三种模式、生成最小配置补丁、校验公网安全不变量，并生成“已保存 / 实际生效 / 环境来源”报告。
 - `src/web/onboarding.py` 独立注册 `/onboarding`、`/api/onboarding/profile`、`/api/onboarding/preflight`、`/api/onboarding/apply`。API 复用 Dashboard 会话；保存采用同目录临时文件、`fsync` 和原子替换。
 - `frontend/onboarding.html` 只消费后端模式目录，不复制安全规则；Dashboard 的 MCP 设置和首次运行提示都链接到该页面。
