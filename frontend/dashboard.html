@@ -916,13 +916,17 @@
   .tab:active { transform: translateY(1px); box-shadow: inset 3px 3px 7px var(--shadow-dark-subtle), inset -2px -2px 6px var(--shadow-light); }
   .tab-spacer { box-shadow: none; background: transparent; }
 
-  .daily-layout { display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr);gap:16px;align-items:start; }
-  .daily-day-list { display:flex;flex-direction:column;gap:8px;max-height:68vh;overflow:auto;padding:2px; }
-  .daily-day-card { width:100%;text-align:left;padding:11px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-solid);color:var(--text);cursor:pointer; }
+  .daily-layout { display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr);gap:16px;align-items:start;width:100%;min-width:0; }
+  .daily-layout > *, #daily-detail, #daily-view details { min-width:0;max-width:100%;box-sizing:border-box; }
+  .daily-day-list { display:flex;flex-direction:column;gap:8px;max-height:68vh;overflow:auto;padding:2px;min-width:0;max-width:100%; }
+  .daily-day-card { width:100%;min-width:0;max-width:100%;box-sizing:border-box;overflow:hidden;text-align:left;padding:11px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-solid);color:var(--text);cursor:pointer; }
+  .daily-day-preview { display:block;width:100%;min-width:0;max-width:100%;font-size:11px;color:var(--text-dim);margin-top:7px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
   .daily-day-card.active { border-color:var(--accent);box-shadow:inset 3px 3px 7px var(--shadow-dark-subtle),inset -2px -2px 6px var(--shadow-light); }
   .daily-status { display:inline-flex;align-items:center;padding:2px 7px;border:1px solid var(--border);border-radius:999px;font-size:10px;color:var(--text-dim);white-space:nowrap; }
-  .daily-document { margin:0;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;white-space:pre-wrap;word-break:break-word;font:12px/1.75 'Share Tech Mono','SF Mono',Consolas,monospace;max-height:360px;overflow:auto; }
-  @media (max-width: 760px) { .daily-layout { grid-template-columns:1fr; } .daily-day-list { max-height:260px; } }
+  .daily-evidence-sources .daily-status { min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-all; }
+  .daily-document { width:100%;max-width:100%;box-sizing:border-box;margin:0;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:12px/1.75 'Share Tech Mono','SF Mono',Consolas,monospace;max-height:360px;overflow:auto; }
+  #daily-impression-editor, #daily-manual-note-content { min-width:0;max-width:100%; }
+  @media (max-width: 760px) { .daily-layout { grid-template-columns:minmax(0,1fr); } .daily-day-list { max-height:260px; } }
 
   /* ============ 模块块：Bento 注塑外壳（无边框，靠留白+柔影聚合） ============ */
   .config-section, .breath-info, .breath-flow {
@@ -7883,7 +7887,7 @@ function renderDailyDayList() {
         '<span class="daily-status">' + esc(_dailyStatusLabel(day)) + '</span>' +
       '</div>' +
       '<div style="font-size:10px;color:var(--text-light);margin-top:6px;">' + esc(clients || '尚无来源') + (sources.length ? ' · ' + sources.length + ' 份便签' : '') + '</div>' +
-      (day.preview ? '<div style="font-size:11px;color:var(--text-dim);margin-top:7px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(day.preview.replace(/\s+/g, ' ')) + '</div>' : '') +
+      (day.preview ? '<div class="daily-day-preview">' + esc(day.preview.replace(/\s+/g, ' ')) + '</div>' : '') +
     '</button>';
   }).join('');
 }
@@ -7955,8 +7959,8 @@ function renderDailyEvidence(day) {
       blocks.push(
         '<div style="padding:9px 0;border-bottom:1px solid var(--border);">' +
           '<div style="font-size:10px;color:var(--text-light);margin-bottom:4px;">' + esc(section[1]) + '</div>' +
-          '<div style="font-size:12px;line-height:1.65;">' + esc(entry.text || '') + '</div>' +
-          '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">' + citations + '</div>' +
+          '<div style="font-size:12px;line-height:1.65;overflow-wrap:anywhere;">' + esc(entry.text || '') + '</div>' +
+          '<div class="daily-evidence-sources" style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;">' + citations + '</div>' +
         '</div>'
       );
     });
