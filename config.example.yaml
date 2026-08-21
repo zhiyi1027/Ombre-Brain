@@ -195,7 +195,7 @@ surfacing:
   # breath_advanced() and explicit search keep the larger manual-read defaults.
   breath_max_results: 20          # 1-50, hard cap of buckets returned per breath
   breath_max_tokens: 10000        # 500-20000, total token cap per breath
-  feel_max_tokens: 6000           # 500-20000, full-text budget for feel history; older feels collapse to one-line summaries
+  feel_max_tokens: 6000           # 500-20000, dream's related-feel section; active feel search uses max_tokens
   # iter 1.8: weighted sampling for breath surfacing mode（无参数浮现）
   # 加权采样：从 top_k 候选里按 score**(1/temperature) 抽 sample_k 个，让"想起"带轻微随机性。
   # 测试 fixture 里默认关 (enabled=false)，保证排序确定。生产可以开。

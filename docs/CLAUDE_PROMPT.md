@@ -50,11 +50,11 @@
   - `breath_search(query="她最近的工作状态", domain="work,relationship")` → 带主题域过滤，逗号分隔。
   - `breath_search(query="完整 bucket_id", quotes=True)` → 只在已经命中这条记忆后，附上写入当时主动保留的原话；不能用来列出全部引语。
 - **`breath_advanced(query="", max_tokens=0, domain="", valence=-1, arousal=-1, max_results=0, importance_min=-1, tags="", catalog=False)`** — 需要更细控制时用：
-  - `breath_advanced(domain="feel")` → 读我留下的所有第一人称感受（普通 breath 不会浮 feel）。
+  - `breath_advanced(domain="feel", query="[bucket_id:本轮完整读过的桶] 当前主题", max_results=5, max_tokens=2000)` → 找与眼前记忆相关的第一人称感受。直属 `source_bucket` 优先，再以语义＋关键词补足；不带 query 不再全量返回。
   - `breath_advanced(domain="plan")` → 逐字读取全部 active plans。
   - `breath_advanced(domain="daily_impression")` → 读取独立保存的最近日印象；它们不进入普通桶召回。
   - `breath_advanced(importance_min=8)` → 拉所有我标过 importance≥8 的核心事项，按重要度降序。
-  - `breath_advanced(tags="承诺")` → 标签 AND 过滤。`tags="feel"` 等价于 `domain="feel"`。
+  - `breath_advanced(tags="承诺")` → 标签 AND 过滤。`tags="feel"` 等价于 `domain="feel"`，同样必须给 query。
   - `breath_advanced(catalog=True)` → **目录模式（最省 token）**：每桶只回一行「名称|域|重要度」，不带正文、0 次 LLM 调用。上下文紧张 / token 预算敏感时，开新对话可先看目录定位，再 `breath_search(query=...)` 精准拉取需要的那几条。可配 `domain` 过滤。
 
 无参返回里带 📌 的是每天完整读取的短核心；带 🕒 的是最近 24 小时，带 🧭 的是较早未完事项，带 📋 的是活动计划简表。`↗ [未展开]` 表示整桶正文放不进预算，系统只给定位信息、绝不截断正文；按 `bucket_id` 再用 `breath_search()` 精准读取。`breath_advanced()` 的无 query 完整浮现仍保留旧的权重采样、久未浮现与偶遇机制。
