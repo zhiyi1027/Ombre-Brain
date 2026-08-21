@@ -668,6 +668,46 @@ async def test_startup_places_daily_impression_after_core_before_recent(monkeypa
     assert output.index("核心正文") < output.index("昨日正文") < output.index("近期正文")
 
 
+@pytest.mark.asyncio
+async def test_previous_cited_bucket_ids_uses_visible_generated_evidence_only(tmp_path):
+    source_id = "memory_bucket:bucket-one"
+    dehydrator = FakeDehydrator(
+        {
+            "skip": False,
+            "events": [
+                {
+                    "text": "我记得这件事。",
+                    "source_ids": [source_id],
+                }
+            ],
+            "open_loops": [],
+            "impressions": [],
+        }
+    )
+    service = make_service(
+        tmp_path,
+        dehydrator=dehydrator,
+        buckets=[
+            {
+                "id": "bucket-one",
+                "content": "完整原桶细节",
+                "metadata": {
+                    "type": "dynamic",
+                    "created": "2026-08-20T12:00:00+08:00",
+                },
+            }
+        ],
+    )
+    result = await service.generate_day("2026-08-20")
+    reference = datetime(2026, 8, 21, 8, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+    assert result["status"] == "ready"
+    assert service.previous_cited_bucket_ids(reference) == {"bucket-one"}
+
+    service.edit_impression("2026-08-20", "人工改写后的日印象")
+    assert service.previous_cited_bucket_ids(reference) == set()
+
+
 def _load_sync_module():
     path = ROOT / "scripts" / "sync-daily-note.py"
     spec = importlib.util.spec_from_file_location("sync_daily_note", path)

@@ -997,6 +997,32 @@ class DailyContinuityService:
     def read_previous(self, reference: datetime | None = None) -> str:
         return self.read_day(self.previous_day(reference))
 
+    def previous_cited_bucket_ids(
+        self,
+        reference: datetime | None = None,
+    ) -> set[str]:
+        """Return ordinary bucket IDs represented in the visible impression.
+
+        A manual override has no entry-level evidence map, so it deliberately
+        returns no IDs instead of guessing that the generated mapping still
+        describes the edited prose.
+        """
+
+        target = self.previous_day(reference)
+        override = self._override_for_day(target)
+        if override and override[1].strip():
+            return set()
+        parsed = _read_document(self._impression_path(target))
+        if not parsed or parsed[0].get("status") != "ready":
+            return set()
+        result: set[str] = set()
+        for source_id in parsed[0].get("cited_source_ids") or []:
+            text = str(source_id or "").strip()
+            prefix = "memory_bucket:"
+            if text.startswith(prefix) and text[len(prefix):]:
+                result.add(text[len(prefix):])
+        return result
+
     def read_recent(self, *, max_tokens: int, limit: int = 7) -> str:
         documents: list[tuple[date, str]] = []
         with self._file_lock:

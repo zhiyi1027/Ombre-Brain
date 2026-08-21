@@ -7,6 +7,7 @@ import pytest
 import tools._runtime as rt
 import tools.breath as breath_module
 import tools.breath.startup as startup_module
+import tools.breath.surface as surface_module
 from tools.breath.startup import surface_startup
 from utils import count_tokens_approx
 from web import config_api
@@ -20,6 +21,15 @@ class NoopDecay:
 
     def calculate_score(self, meta):
         return float(meta.get("importance") or 0)
+
+
+class StaticBuckets:
+    def __init__(self, buckets):
+        self.buckets = list(buckets)
+
+    async def list_all(self, include_archive=False):
+        assert include_archive is False
+        return list(self.buckets)
 
 
 class FakeMCP:
@@ -174,6 +184,171 @@ async def test_startup_is_deterministic_and_reconnects_recent_unfinished_and_pla
     assert count_tokens_approx(first) <= 5000
 
 
+@pytest.mark.asyncio
+async def test_true_latest_returns_even_when_it_is_digested():
+    reference = datetime.fromisoformat("2026-08-21T12:00:00")
+    buckets = [
+        make_bucket(
+            "true-latest",
+            "真正最新的交接正文。",
+            created="2026-08-21T10:23:41",
+            importance=8,
+            digested=True,
+        ),
+        make_bucket(
+            "older-undigested",
+            "更早但尚未消化的正文。",
+            created="2026-08-21T00:14:52",
+            importance=9,
+        ),
+    ]
+
+    output = await surface_startup(
+        buckets,
+        max_results=4,
+        soft_tokens=3000,
+        hard_tokens=5000,
+        reference_time=reference,
+    )
+
+    assert "[最近一条] [bucket_id:true-latest]" in output
+    assert "真正最新的交接正文。" in output
+    assert "[近期重要] [bucket_id:older-undigested]" in output
+
+
+@pytest.mark.asyncio
+async def test_random_older_memory_is_not_blocked_by_soft_target():
+    reference = datetime.fromisoformat("2026-08-21T12:00:00")
+    latest_body = "最新长正文完整返回。" * 180
+    buckets = [
+        make_bucket(
+            "latest",
+            latest_body,
+            created="2026-08-21T11:30:00",
+            importance=8,
+        ),
+        make_bucket(
+            "recent-optional",
+            "弹性近期正文不应挤掉随机旧桶。",
+            created="2026-08-21T10:00:00",
+            importance=9,
+        ),
+        make_bucket(
+            "older-guaranteed",
+            "随机旧桶保证正文。",
+            created="2026-08-10T09:00:00",
+            importance=7,
+        ),
+    ]
+
+    output = await surface_startup(
+        buckets,
+        max_results=4,
+        soft_tokens=700,
+        hard_tokens=5000,
+        reference_time=reference,
+    )
+
+    assert latest_body in output
+    assert count_tokens_approx(output) > 700
+    assert "[未完记忆]" in output
+    assert "随机旧桶保证正文。" in output
+    assert "弹性近期正文不应挤掉随机旧桶。" not in output
+
+
+@pytest.mark.asyncio
+async def test_daily_impression_sources_are_deprioritized_not_removed():
+    reference = datetime.fromisoformat("2026-08-21T12:00:00")
+    buckets = [
+        make_bucket(
+            "latest",
+            "真正最新。",
+            created="2026-08-21T11:30:00",
+        ),
+        make_bucket(
+            "cited-high",
+            "日印象已经引用过，但原文仍然保留候补资格。",
+            created="2026-08-21T10:30:00",
+            importance=10,
+        ),
+        make_bucket(
+            "uncited-one",
+            "未被日印象覆盖的细节一。",
+            created="2026-08-21T09:30:00",
+            importance=6,
+        ),
+        make_bucket(
+            "uncited-two",
+            "未被日印象覆盖的细节二。",
+            created="2026-08-21T08:30:00",
+            importance=5,
+        ),
+        make_bucket(
+            "older",
+            "随机旧桶。",
+            created="2026-08-10T08:00:00",
+            importance=7,
+        ),
+    ]
+
+    selected, _total_recent = startup_module._select_memories(
+        buckets,
+        max_results=4,
+        reference_time=reference,
+        daily_cited_bucket_ids={"cited-high"},
+    )
+
+    selected_ids = [bucket["id"] for bucket, _reason in selected]
+    assert selected_ids == ["latest", "older", "uncited-one", "uncited-two"]
+
+    fallback, _total_recent = startup_module._select_memories(
+        [buckets[0], buckets[1], buckets[4]],
+        max_results=3,
+        reference_time=reference,
+        daily_cited_bucket_ids={"cited-high"},
+    )
+    assert [bucket["id"] for bucket, _reason in fallback] == [
+        "latest",
+        "older",
+        "cited-high",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_startup_surface_passes_daily_evidence_map_to_selector(monkeypatch):
+    captured = {}
+
+    class DailyService:
+        enabled = True
+
+        def read_previous(self):
+            return "=== 昨日印象 ===\n- 压缩正文"
+
+        def previous_cited_bucket_ids(self):
+            return {"already-cited"}
+
+    async def fake_surface_startup(_buckets, **kwargs):
+        captured.update(kwargs)
+        return "startup"
+
+    monkeypatch.setattr(rt, "bucket_mgr", StaticBuckets([]), raising=False)
+    monkeypatch.setattr(rt, "daily_continuity", DailyService(), raising=False)
+    monkeypatch.setattr(rt, "config", {"surfacing": {}}, raising=False)
+    monkeypatch.setattr(surface_module, "surface_startup", fake_surface_startup)
+    monkeypatch.setattr(surface_module, "_last_startup_unfinished_id", lambda: "")
+
+    output = await surface_module.surface_default(
+        max_results=4,
+        max_tokens=5000,
+        tag_filter=[],
+        startup=True,
+    )
+
+    assert output == "startup"
+    assert captured["daily_impression"].startswith("=== 昨日印象")
+    assert captured["daily_cited_bucket_ids"] == {"already-cited"}
+
+
 def test_older_unresolved_randomly_rotates_without_immediate_repeat(monkeypatch):
     reference = datetime.fromisoformat("2026-08-18T12:00:00")
     buckets = [
@@ -320,7 +495,7 @@ async def test_next_whole_body_may_cross_soft_target_then_stops_selection():
     assert "[未展开] [bucket_id:large-low]" not in output
     assert "soft_target" not in output
     assert "跨过软目标后不应继续选择下一条正文。" not in output
-    assert "达到软目标后停止继续取桶" in output
+    assert "达到软目标后停止追加近期桶" in output
     assert count_tokens_approx(output) <= 5000
 
 

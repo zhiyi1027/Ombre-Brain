@@ -171,12 +171,22 @@ async def surface_default(
     surfacing_cfg = rt.config.get("surfacing", {}) or {}
     if startup:
         daily_impression = ""
+        daily_cited_bucket_ids: set[str] = set()
         service = getattr(rt, "daily_continuity", None)
         if service is not None and getattr(service, "enabled", False):
             try:
                 daily_impression = service.read_previous()
             except Exception as exc:
                 rt.logger.warning("Daily startup impression unavailable: %s", exc)
+            try:
+                cited_reader = getattr(service, "previous_cited_bucket_ids", None)
+                if callable(cited_reader):
+                    daily_cited_bucket_ids = set(cited_reader())
+            except Exception as exc:
+                rt.logger.warning(
+                    "Daily startup evidence map unavailable: %s",
+                    exc,
+                )
         return await surface_startup(
             all_buckets,
             max_results=max_results,
@@ -187,6 +197,7 @@ async def surface_default(
             ),
             exclude_older_id=_last_startup_unfinished_id(),
             daily_impression=daily_impression,
+            daily_cited_bucket_ids=daily_cited_bucket_ids,
         )
 
     # --- pinned/protected 桶置顶（排除 letter 桶：letter 的 importance=10 不代表核心准则）---
