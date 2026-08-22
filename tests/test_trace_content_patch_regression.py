@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from tools import _runtime as rt
+from tools.trace import core as trace_core_module
 from tools.trace.core import trace_core
 
 
@@ -334,3 +335,74 @@ async def test_trace_patch_records_plan_edit_change_log(trace_runtime):
     assert bucket is not None
     assert bucket["content"] == "计划新正文"
     assert bucket["metadata"]["change_log"][-1]["action"] == "edit"
+
+
+@pytest.mark.asyncio
+async def test_trace_plan_patch_refreshes_confirmation_time(
+    trace_runtime,
+    monkeypatch,
+):
+    manager = trace_runtime
+    bucket_id = await manager.create(
+        content="计划旧正文",
+        bucket_type="plan",
+        weight=0.7,
+    )
+    await manager.update(
+        bucket_id,
+        status="active",
+        last_confirmed_at="2026-07-01T00:00:00",
+    )
+    monkeypatch.setattr(
+        trace_core_module,
+        "confirmation_timestamp",
+        lambda: "2026-08-22T13:00:00",
+    )
+
+    result = await trace_core(
+        bucket_id,
+        old_str="旧正文",
+        new_str="新正文",
+    )
+    bucket = await manager.get(bucket_id)
+
+    assert "content=已局部替换" in result
+    assert bucket is not None
+    assert bucket["metadata"]["last_confirmed_at"] == "2026-08-22T13:00:00"
+    assert bucket["metadata"]["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_trace_plan_full_edit_and_reopen_refresh_confirmation_time(
+    trace_runtime,
+    monkeypatch,
+):
+    manager = trace_runtime
+    bucket_id = await manager.create(
+        content="原计划正文",
+        bucket_type="plan",
+        weight=0.7,
+    )
+    await manager.update(
+        bucket_id,
+        status="resolved",
+        last_confirmed_at="2026-07-01T00:00:00",
+    )
+    timestamps = iter(("2026-08-22T14:00:00", "2026-08-22T15:00:00"))
+    monkeypatch.setattr(
+        trace_core_module,
+        "confirmation_timestamp",
+        lambda: next(timestamps),
+    )
+
+    reopened = await trace_core(bucket_id, status="active")
+    after_reopen = await manager.get(bucket_id)
+    edited = await trace_core(bucket_id, content="修改后的计划正文")
+    after_edit = await manager.get(bucket_id)
+
+    assert "status=active" in reopened
+    assert after_reopen is not None
+    assert after_reopen["metadata"]["last_confirmed_at"] == "2026-08-22T14:00:00"
+    assert "content=已替换" in edited
+    assert after_edit is not None
+    assert after_edit["metadata"]["last_confirmed_at"] == "2026-08-22T15:00:00"

@@ -274,6 +274,44 @@ async def test_dashboard_lists_stale_state_and_confirm_refreshes_timestamp(monke
     assert rejected["error"] == "only active plans can be confirmed"
 
 
+@pytest.mark.asyncio
+async def test_dashboard_confirm_persists_through_real_bucket_manager(
+    monkeypatch,
+    bucket_mgr,
+):
+    bucket_id = await bucket_mgr.create(
+        content="需要继续确认的真实计划",
+        bucket_type="plan",
+        weight=0.8,
+    )
+    await bucket_mgr.update(
+        bucket_id,
+        status="active",
+        last_confirmed_at="2026-07-01T00:00:00",
+    )
+    monkeypatch.setattr(plans_web.sh, "_require_auth", lambda _request: None)
+    monkeypatch.setattr(plans_web.sh, "bucket_mgr", bucket_mgr, raising=False)
+    monkeypatch.setattr(plans_web.sh, "config", {}, raising=False)
+    monkeypatch.setattr(
+        plans_web,
+        "confirmation_timestamp",
+        lambda: "2026-08-22T16:00:00",
+    )
+    mcp = _FakeMCP()
+    plans_web.register(mcp)
+
+    response = await mcp.routes[("POST", "/api/plans/{bucket_id}/action")](
+        _Request({"action": "confirm"}, bucket_id=bucket_id)
+    )
+    stored = await bucket_mgr.get(bucket_id)
+
+    assert response.status_code == 200
+    assert stored is not None
+    assert stored["metadata"]["status"] == "active"
+    assert stored["metadata"]["last_confirmed_at"] == "2026-08-22T16:00:00"
+    assert stored["metadata"]["change_log"][-1]["action"] == "confirmed"
+
+
 def test_dashboard_contains_stale_badge_and_continue_action():
     html = Path("frontend/dashboard.html").read_text(encoding="utf-8")
 

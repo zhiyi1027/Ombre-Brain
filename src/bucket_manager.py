@@ -308,6 +308,7 @@ _TRIGGERED_BY_MAX = 64
 _STATE_KEY_MAX = 120
 _SUPERSEDED_BY_MAX = 256
 _SUPERSEDED_AT_MAX = 64
+_LAST_CONFIRMED_AT_MAX = 64
 _DEFAULT_MAX_BUCKET_BYTES = 50 * 1024
 _MAX_TAGS = 64
 _MAX_TAG_CHARS = 128
@@ -344,6 +345,7 @@ _METADATA_TEXT_LIMITS = {
     "state_key": _STATE_KEY_MAX,
     "superseded_by": _SUPERSEDED_BY_MAX,
     "superseded_at": _SUPERSEDED_AT_MAX,
+    "last_confirmed_at": _LAST_CONFIRMED_AT_MAX,
 }
 
 # --- _time_ripple：时间涾漪 ---
@@ -1982,7 +1984,7 @@ class BucketManager:
         # 由 server.py 的 plan() / trace() / /api/plans/{id}/action 维护，bucket_manager 不参与生成。
         for k in ("status", "type", "resolution_reason", "resolved_by",
                   "related_bucket", "author", "user_name", "title", "letter_date",
-                  "change_log",
+                  "change_log", "last_confirmed_at",
                   # iter 1.8 新增字段。除 weight 外全部透传不转换。
                   # weight 在 plan 上才有意义；这里不在这个循环里校验类型，由上层 server.py 保证传入范围。
                   "why_remembered", "dont_surface", "first_of_kind",

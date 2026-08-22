@@ -99,3 +99,26 @@ async def test_plan_domain_omits_whole_body_at_token_limit(monkeypatch):
     assert body not in output
     assert "另有 1 条 plan 因 token 预算不足未返回" in output
     assert "[bucket_id:too-long]" not in output
+
+
+@pytest.mark.asyncio
+async def test_plan_domain_marks_stale_plan_without_changing_status(monkeypatch):
+    stale = plan_bucket(
+        "stale-plan",
+        "仍需人工决定是否继续的旧计划。",
+        created="2020-01-01T00:00:00",
+        weight=0.3,
+    )
+    monkeypatch.setattr(rt, "bucket_mgr", BucketManager([stale]))
+    monkeypatch.setattr(
+        rt,
+        "config",
+        {"surfacing": {"plan_stale_after_days": 30}},
+    )
+
+    output = await dispatch(domain="plan", max_tokens=10000)
+
+    assert "[待确认:已" in output
+    assert "仍然有效吗" in output
+    assert "系统不会自动改状态" in output
+    assert stale["metadata"]["status"] == "active"

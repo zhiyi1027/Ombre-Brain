@@ -34,6 +34,7 @@ from contextlib import AsyncExitStack
 from typing import Optional
 
 from memory_messages import resolved_hint
+from plan_review import confirmation_timestamp
 from ombrebrain.storage.state_chain import (
     StateChainError,
     clear_supersession,
@@ -501,6 +502,16 @@ async def trace_core(
         content_change_requested = "content" in updates or patch_args_supplied
         is_plan = bucket.get("metadata", {}).get("type") == "plan"
         append_plan_history_in_patch = is_plan and patch_args_supplied
+        old_plan_status = str(
+            bucket.get("metadata", {}).get("status") or "active"
+        ).strip().lower()
+        if old_plan_status not in ("active", "resolved", "abandoned"):
+            old_plan_status = "active"
+        if is_plan and (
+            (content_change_requested and old_plan_status == "active")
+            or updates.get("status") == "active"
+        ):
+            updates["last_confirmed_at"] = confirmation_timestamp()
         if is_plan and not patch_args_supplied and (
             "status" in updates or content_change_requested
         ):
@@ -572,7 +583,14 @@ async def trace_core(
 
     _display_updates = {
         k: v for k, v in updates.items()
-        if k not in ("content", "meaning_append", "meaning", "media_append", "media")
+        if k not in (
+            "content",
+            "last_confirmed_at",
+            "meaning_append",
+            "meaning",
+            "media_append",
+            "media",
+        )
     }
     changed = ", ".join(f"{k}={v}" for k, v in _display_updates.items())
     if patch_args_supplied:
