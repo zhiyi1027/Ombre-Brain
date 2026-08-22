@@ -138,7 +138,7 @@
 - `plan("帮她查一下医保政策", weight=0.9, why_remembered="她明天就要交材料了")` — 重承诺，带原因。
 - `plan("尝试每天写一段日记", weight=0.2)` — 轻承诺。
 
-**plan 不衰减、不出现在普通 breath**，只在 dream 末尾给你看。后续每次 `hold/grow` 写新事件时，我会用向量+LLM 双判自动判断「这条事件是不是把某个 plan 闭环了」，如果是就自动标 resolved 并把对应的 related_bucket 也同步沉底。
+**plan 不衰减，也不进入普通记忆随机池**；一键 `breath()` 的独立计划段、`breath_advanced(domain="plan")` 和 dream 末尾都可以看到 active plan。计划默认连续 30 天没有确认时只标成「待确认」，绝不自动完成或放弃；Dashboard 可一键选择「继续 / 完成 / 放弃」，其中「继续」只刷新确认时间。后续每次 `hold/grow` 写新事件时，我会用向量+LLM 双判自动判断「这条事件是不是把某个 plan 闭环了」，如果是就自动标 resolved 并把对应的 related_bucket 也同步沉底。
 
 **严格字符串去重**：完全一样的 plan 不会重复创建，会返回原 ID。
 

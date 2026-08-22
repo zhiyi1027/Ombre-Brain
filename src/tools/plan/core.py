@@ -29,6 +29,7 @@ from typing import Optional
 
 from .. import _runtime as rt
 from errors import safe_error_detail
+from plan_review import confirmation_timestamp
 from .._common import check_content_size, check_metadata_size, check_query_size
 from utils import strip_wikilinks, get_ai_name
 
@@ -102,7 +103,11 @@ async def plan_create(
     )
     from .._common import append_plan_change_log
     initial_log = append_plan_change_log([], "created", to=status)
-    update_kwargs = {"status": status, "change_log": initial_log}
+    update_kwargs = {
+        "status": status,
+        "change_log": initial_log,
+        "last_confirmed_at": confirmation_timestamp(),
+    }
     if related_bucket.strip():
         update_kwargs["related_bucket"] = related_bucket.strip()
     try:

@@ -279,7 +279,7 @@ feel 桶自身：
 
 三个入口共用同一个内部实现 `tools/breath/dispatch()`，只是 MCP 层暴露的参数面不同（见 issue #17：claude.ai 按需加载工具时会跳过参数复杂的工具，单个 9 参数的 `breath` 会导致它常年加载不上，拆薄之后 `breath()` 能保证每次对话稳定自动加载）：
 
-- **`breath()`** — 0 参数。调用 `dispatch(startup=True)` 的一键简报：短核心全文、独立的昨日印象、真正最新的 1 条正文、最多 2 条额外近期重要正文、从有门槛的被动联想池随机轮换最多 1 条较早未完正文、计划预算内的最多 5 条 active plan；再自动精读最近 48 小时未消化且未在前述正文出现的最多 2 桶，并按本轮完整普通记忆附上最多 3 条相关且不重复的 feel；明显负面最多 2 条，无不同且仍相关的候选时留空。日常每次对话开头只需调用这一次。
+- **`breath()`** — 0 参数。调用 `dispatch(startup=True)` 的一键简报：短核心全文、独立的昨日印象、真正最新的 1 条正文、最多 2 条额外近期重要正文、从有门槛的被动联想池随机轮换最多 1 条较早未完正文、计划预算内的最多 5 条 active plan（待确认计划优先并标出未确认天数）；再自动精读最近 48 小时未消化且未在前述正文出现的最多 2 桶，并按本轮完整普通记忆附上最多 3 条相关且不重复的 feel；明显负面最多 2 条，无不同且仍相关的候选时留空。日常每次对话开头只需调用这一次。
 - **`breath_search(query, domain="", max_results=0)`** — 3 参数。等价于 `dispatch(query=query, domain=domain, max_results=max_results)`，即下面的「检索模式」。按关键词/语义找记忆时用。
 - **`breath_advanced(query="", max_tokens=0, domain="", valence=-1, arousal=-1, max_results=0, importance_min=-1, tags="", catalog=False)`** — 完整 9 参数，历史上单一 `breath` 工具的全部能力（`catalog` 目录模式 / `tags` 过滤 / `importance_min` 批量模式 / `valence`/`arousal` 情感检索 / `max_tokens` 预算）都保留在这里，供需要精细控制的场景用。
 
@@ -287,7 +287,7 @@ feel 桶自身：
 
 1. **Feel 通道**（`domain="feel"` 或 `tags` 含 `"feel"`/`"__feel__"`，仅 `breath_advanced`）：必须带 query，不再按时间全量倾倒。query 中的 `bucket_id:<id>` / `source_bucket:<id>` 会先命中 `triggered_by` 直属 feel，再复用 Dream 的向量 0.7＋关键词 0.3 混合排序补足，阈值 0.5，最多 5 条。向量不可用时明确降级到关键词字面匹配；命中正文逐字返回，放不下整条省略，不截断或摘要。
 2. **重要度批量模式**（`importance_min >= 1`，仅 `breath_advanced`）：跳过语义搜索，按 importance 降序返回 ≤20 条；过滤 `feel/plan/letter` 与 `dont_surface=True`；**不过滤 anchor、不过滤 pinned**（设计：主动按 importance 检索时希望能找到所有重要桶）。
-3. **浮现模式**（无 `query`）：无参 `breath()` 启用 `startup=True`，转入独立的一键简报算法：钉选短核心逐字返回；若存在已生成的上一记忆日日印象，则在核心之后优先整张返回；最近 24 小时真正最新的一条固定入选，即使它已被标记 `digested`，因为“已消化”不能抹掉启动交接；随后最多 2 条近期正文按 importance、created、score 稳定排序，其中被昨日印象 `cited_source_ids` 引用过的桶降为候补但不删除。之后从 24 小时之外的被动联想候选池随机轮换最多一条未解决正文，并排除上次实际返回的旧桶以避免连续重复；候选必须满足 `activation_count==0 && importance>=8`，或 `importance>=9` 且至少 7 天未活跃。最多三条近期交接先于旧事联想，固定普通记忆槽不受软参考拦截；只有基础记忆硬上限能把整桶降为指针。active plan 按 weight/created 稳定排序，在独立计划预算内逐字返回。随后从最近 48 小时 `digested=false`、`resolved=false` 且尚未在本轮正文出现的普通桶中，按 importance、created、score 选择最多 2 条自动精读，使用独立 2000 token 预算；最后收集本轮实际完整返回的普通记忆 ID 与正文，直属 `source_bucket` feel 优先，再以 Dream 的向量 0.7＋关键词 0.3 排序扫描最多 12 条合格候选；启动最多返回 3 条，存量向量相似度≥0.8（无向量时用保守的关键词重合）视为同主题，只留排位最靠前的一条；`valence<0.4` 的明显负面 feel 最多 2 条。无合格的不同视角时留空，不降低相关门槛强行补正向内容。feel 仍有独立 2000 token 预算，三层正文均整桶返回，默认总上限为 5000＋2000＋2000＝9000。测试数据、anchor、dont_surface 与私有类型不会进入普通记忆池。日印象独立存储，不进入 BucketManager；可用 `breath_advanced(domain="daily_impression")` 显式读取。启动模式不追加完整浮现模式的额外久未浮现或 3% 偶遇，也不调用 `touch()`；`dream()` 仅在主动回顾时调用，不再是固定启动步骤。`breath_advanced(domain="plan")` 逐字返回全部 active plans；其它无 query 调用保留原完整模式：未解决桶按衰减分排序，支持加权采样或 Top-1 + shuffle，并可追加久未浮现与偶遇。
+3. **浮现模式**（无 `query`）：无参 `breath()` 启用 `startup=True`，转入独立的一键简报算法：钉选短核心逐字返回；若存在已生成的上一记忆日日印象，则在核心之后优先整张返回；最近 24 小时真正最新的一条固定入选，即使它已被标记 `digested`，因为“已消化”不能抹掉启动交接；随后最多 2 条近期正文按 importance、created、score 稳定排序，其中被昨日印象 `cited_source_ids` 引用过的桶降为候补但不删除。之后从 24 小时之外的被动联想候选池随机轮换最多一条未解决正文，并排除上次实际返回的旧桶以避免连续重复；候选必须满足 `activation_count==0 && importance>=8`，或 `importance>=9` 且至少 7 天未活跃。最多三条近期交接先于旧事联想，固定普通记忆槽不受软参考拦截；只有基础记忆硬上限能把整桶降为指针。active plan 先按是否待确认、再按 weight/created 稳定排序，在独立计划预算内逐字返回；待确认只是一条派生提醒，不自动修改 status。随后从最近 48 小时 `digested=false`、`resolved=false` 且尚未在本轮正文出现的普通桶中，按 importance、created、score 选择最多 2 条自动精读，使用独立 2000 token 预算；最后收集本轮实际完整返回的普通记忆 ID 与正文，直属 `source_bucket` feel 优先，再以 Dream 的向量 0.7＋关键词 0.3 排序扫描最多 12 条合格候选；启动最多返回 3 条，存量向量相似度≥0.8（无向量时用保守的关键词重合）视为同主题，只留排位最靠前的一条；`valence<0.4` 的明显负面 feel 最多 2 条。无合格的不同视角时留空，不降低相关门槛强行补正向内容。feel 仍有独立 2000 token 预算，三层正文均整桶返回，默认总上限为 5000＋2000＋2000＝9000。测试数据、anchor、dont_surface 与私有类型不会进入普通记忆池。日印象独立存储，不进入 BucketManager；可用 `breath_advanced(domain="daily_impression")` 显式读取。启动模式不追加完整浮现模式的额外久未浮现或 3% 偶遇，也不调用 `touch()`；`dream()` 仅在主动回顾时调用，不再是固定启动步骤。`breath_advanced(domain="plan")` 逐字返回全部 active plans；其它无 query 调用保留原完整模式：未解决桶按衰减分排序，支持加权采样或 Top-1 + shuffle，并可追加久未浮现与偶遇。
 4. **检索模式**（有 `query`；`breath_search()` 固定走这里）：每个 query 只生成一次查询向量，与 rapidfuzz/BM25 多维评分共同进入 `BucketManager.search()` → 过滤 `feel/plan/letter`，**pinned/permanent 仍可被检索命中（不过滤），命中后加 📌 前缀** → 纯语义候选相似度 `>=0.65` 标 `[语义关联]`，且不能绕过 domain/tags/type 过滤 → 命中时 `touch()` → 结果不足 3 条时 40% 概率随机漂浮 1~3 条低权重旧桶。embedding 不可用时明确提示后继续关键词/BM25；桶一旦命中，返回层直接使用当前存储的完整 `content`，不调用 dehydrate、不剥除 wikilink、不截断或改写。**不过滤 anchor**（设计：主动检索时希望能找到坐标系桶）。
 
 (实现注意：`tags="feel"` 在第一个分支被映射为 `domain="feel"` 后清出 tag_filter；其它 tag 走 AND 过滤；`max_tokens` 上限 20000，`max_results` 上限 50；`importance_min` 模式下硬上限 20 条不可调；浮现模式中钉选桶**不计入** `max_results` 上限。)
@@ -360,6 +360,8 @@ feel 桶自身：
 
 写入 `plans/active/`，自动打 `__plan__` 标签，**硬编码** `importance=7` / `domain=["plan"]` / `valence=0.5` / `arousal=0.4`（设计：plan 不开放给用户调情感坐标）。`status` 仅接受 `active`/`resolved`/`abandoned`，其它静默回退为 `active`。`weight` 是「承诺重量」（0~1，dashboard 看板按此倒序）。`why_remembered` 写自由文本说明为什么登记这条。
 
+**陈旧确认**：新计划写入 `last_confirmed_at`；旧计划无需迁移，读取时依次从该字段、`change_log` 的 confirmed/edit/reopen/created 记录、原始 created 时间推导。active plan 连续 `surfacing.plan_stale_after_days`（默认 30）天未确认后只派生 `is_stale=true`，不会落盘改 status。一键 breath 优先展示 stale plan 并询问是否仍有效；Dashboard 的 `confirm` 动作只刷新 `last_confirmed_at` 并追加 confirmed 历史，编辑 active plan 或 reopen 也视为重新确认。resolved/abandoned 永不显示 stale。
+
 **严格字符串去重**：登记前扫描所有 `status="active"` 的 plan 桶，若存在 `content` 与新内容**完全字符串相等**的桶，直接返回原 ID 不重复创建（避免重复 `plan("还没回邮件")` 刷屏）。
 
 **自动结案机制**：每次 `hold()` 或 `grow()` 末尾 `asyncio.create_task(_check_plan_resolution())` —— 向量预筛（>0.7）→ LLM 双判 (`resolved && confidence >= 0.7`) → 写 `status="resolved"` + `resolution_reason` + `resolved_by`。任何异常都吞掉，不影响主流程。无 embedding 时整个机制跳过（保守，宁漏报不误报）。
@@ -430,7 +432,7 @@ feel 桶自身：
 | `/api/search?q=` | GET | 🔒 | 搜索 |
 | `/api/network` | GET | 🔒 | iter 1.7：默认按 `[[wikilink]]` 引用建图；`?mode=embedding` 走相似度兜底 |
 | `/api/plans` | GET | 🔒 | iter 1.7 §G：返回 active / resolved / abandoned 三组，含 change_log |
-| `/api/plans/{id}/action` | POST | 🔒 | iter 1.7 §G：看板操作（resolve / abandon / reopen / edit），自动追加 change_log |
+| `/api/plans/{id}/action` | POST | 🔒 | 看板操作（confirm / resolve / abandon / reopen / edit），自动追加 change_log；confirm 只刷新 active plan 的确认时间 |
 | `/api/version` | GET | 公开 | iter 1.7 §B：项目版本号（读 `<repo_root>/VERSION`） |
 | `/api/author` | GET | 公开 | iter 1.7 §H：静态作者note + 爱发电链接 |
 | `/static/{name}` | GET | 公开 | iter 1.7 §C：白名单静态资源（icon.svg / favicon.svg / manifest.json） |
@@ -1200,6 +1202,7 @@ Phase 47 后，`LegacyRuntime` 会暴露 `score_retrieval_bucket(...)` / `rank_r
 | `dont_surface` | bool | False | 主动遗忘：True 时无参 `breath()` 跳过该桶；带 `query`/`domain` 的 breath、`/api/buckets`、关键词搜索仍可达。`/api/bucket/{id}/forget` 切换 / `trace(dont_surface=1\|0)`。 | ❌ |
 | `first_of_kind` | bool | False | 自动检测：写入新桶时若其 `tags` 与全库已有 `tags` **完全无交集**则置 True。仅展示用，dashboard 旁亮 ✨。失败不阻塞写入。 | ❌ |
 | `weight` | float ∈ [0,1] | None（仅 plan 写） | plan 桶专有「承诺重量」。由 `plan(content, weight=0.7, ...)` 写入（hold 没有 `domain` 参数，不能用 `hold(domain=["plan"], ...)` 创建 plan）；或事后 `trace(weight=0.7)` 调整。dashboard 计划看板按 weight 倒序排 active 列。**与 importance 是两个轴**：importance 是事的客观重要度，weight 是这件事压在心头的主观重量。 | ❌ |
+| `last_confirmed_at` | ISO datetime | 新 plan 创建时间 | active plan 最近一次明确确认仍有效的时间；Dashboard「继续」、编辑 active plan 或 reopen 时刷新。stale 是读取时派生状态，不写回 metadata。 | ❌ |
 | `triggered_by` | str (bucket_id) | 不写 | feel/衍生桶的因果链入口：记下「我这条感受是被哪条记忆触发的」。1.9 会做 UI 联动。 | ❌ |
 | `anchor` | bool | 不写 (False) | **iter 2.0**：坐标系标记。True 时该桶**不参与**无参 `breath()` 浮现池——即使 pinned 也不浮现。但 `query` / `domain` / `importance_min` 命中时仍返回（检索 / 重要度模式不过滤 anchor；Feel 通道只看 type=feel，也不过滤）。硬上限 24（`BucketManager.ANCHOR_LIMIT`）：`set_anchor()` 入口与 `update(anchor=True)` 透传路径都会校验（False→True 切换计数，幂等重复设置不计），超过返回 `{ok:False, error}` / 端点返回 409。通过 `anchor()` MCP tool / `release()` MCP tool / `POST /api/bucket/{id}/anchor` 切换；**`trace` 不暴露该字段**。**不参与评分；与 pinned/dont_surface/weight 完全独立**。 | ❌ |
 | `source_tool` | str (`hold`/`grow`) | 不写 | **iter 2.0**：记录「这条桶是哪个工具创建的」。`hold` 路径（含 `feel=True` 子分支）写 `hold`；`grow`（含短路径与 digest 拆出来的每条）写 `grow`。**合并不会改这个字段**——保留原桶最初来源；合并触发方写到下面的 `last_merged_by`。dashboard 桶详情可按 source 筛选。letters/plans/anchor 等不写此字段（它们的 `type` 已经表明出处）。 | ❌ |
@@ -1395,6 +1398,7 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 | `surfacing.startup_breath_soft_tokens` | `3000` | 无参 `breath()` 的体积软参考（500-10000）；固定的最多 3 条近期交接与 1 条合格旧事联想不受其拦截 |
 | `surfacing.startup_breath_max_tokens` | `5000` | 无参 `breath()` 的基础记忆硬上限（500-10000）；自动精读与相关 feel 各另有 2000，默认总上限 9000 |
 | `surfacing.startup_breath_max_results` | `4` | 无参 `breath()` 最多选择 3 条最近正文 + 1 条较早未完正文（1-4；核心与 plan 不计入） |
+| `surfacing.plan_stale_after_days` | `30` | active plan 连续多少天未确认后在 breath/Dashboard 标成待确认（1-3650）；只提醒，绝不自动改 status |
 | `surfacing.feel_max_tokens` | `6000` | Dream 相关 feel 段的 token 预算；主动 Feel 通道使用调用时的 `max_tokens`，最多返回 5 条相关正文 |
 | `surfacing.sampling.enabled` | `false` | 浮现模式加权采样总开关；false 走原 Top-1 + shuffle |
 | `surfacing.sampling.top_k` | `5` | 候选池大小（按衰减分取前 k） |

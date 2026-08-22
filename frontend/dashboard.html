@@ -7695,6 +7695,13 @@ function _planCard(p) {
      '<span style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden;"><span style="display:block;width:' + Math.round(weight*100) + '%;height:100%;background:linear-gradient(90deg,var(--accent),#d97a55);"></span></span>' +
      '<span>' + (weight*100).toFixed(0) + '% · ' + weightAnchorLabel(weight) + '</span>' +
     '</div>') : '';
+  var reviewHtml = '';
+  if (p.status === 'active' && p.is_stale) {
+    var staleDays = Number.isFinite(Number(p.days_since_confirmation)) ? Number(p.days_since_confirmation) : '?';
+    reviewHtml = '<div style="margin-top:8px;padding:8px 10px;border-left:3px solid #c69a45;background:rgba(198,154,69,.10);font-size:12px;line-height:1.6;color:var(--text-dim);">' +
+      '<b style="color:#a87925;">待确认</b> · 已 ' + esc(staleDays) + ' 天未确认，这条计划仍然有效吗？' +
+      '</div>';
+  }
   var historyHtml = '';
   if (p.change_log && p.change_log.length) {
     historyHtml = '<details style="margin-top:6px;font-size:11px;color:var(--text-dim);"><summary style="cursor:pointer;">变更历史 (' + p.change_log.length + ')</summary><ul style="margin:6px 0 0 18px;line-height:1.7;">' +
@@ -7702,6 +7709,7 @@ function _planCard(p) {
         var t = (h.ts || '').replace('T',' ');
         if (h.action === 'status') return '<li>' + esc(t) + ' · status: ' + esc(h.from || '?') + ' → <b>' + esc(h.to || '?') + '</b></li>';
         if (h.action === 'edit') return '<li>' + esc(t) + ' · 内容编辑</li>';
+        if (h.action === 'confirmed') return '<li>' + esc(t) + ' · 已确认继续</li>';
         if (h.action === 'created') return '<li>' + esc(t) + ' · 创建（status=' + esc(h.to || 'active') + '）</li>';
         return '<li>' + esc(t) + ' · ' + esc(h.action) + '</li>';
       }).join('') + '</ul></details>';
@@ -7709,7 +7717,10 @@ function _planCard(p) {
   // Action buttons depend on current status
   var actions = '';
   if (p.status === 'active') {
-    actions = '<button class="icon-btn" data-plan-id="' + escAttr(p.id) + '" title="标为完成" onclick="planAction(this.dataset.planId,\'resolve\')"><i data-lucide="check-square"></i> 完成</button>' +
+    if (p.is_stale) {
+      actions += '<button class="icon-btn" data-plan-id="' + escAttr(p.id) + '" title="确认计划仍然有效" onclick="planAction(this.dataset.planId,\'confirm\')"><i data-lucide="refresh-cw"></i> 继续</button> ';
+    }
+    actions += '<button class="icon-btn" data-plan-id="' + escAttr(p.id) + '" title="标为完成" onclick="planAction(this.dataset.planId,\'resolve\')"><i data-lucide="check-square"></i> 完成</button>' +
               ' <button class="icon-btn" data-plan-id="' + escAttr(p.id) + '" title="放弃" onclick="planAction(this.dataset.planId,\'abandon\')"><i data-lucide="x-square"></i> 放弃</button>';
   } else {
     actions = '<button class="icon-btn" data-plan-id="' + escAttr(p.id) + '" title="重新激活" onclick="planAction(this.dataset.planId,\'reopen\')"><i data-lucide="rotate-ccw"></i> 重新激活</button>';
@@ -7721,6 +7732,7 @@ function _planCard(p) {
         '<div style="font-weight:500;color:var(--text);margin-bottom:4px;">' + name + '</div>' +
         '<div style="font-size:13px;color:var(--text-dim);line-height:1.7;white-space:pre-wrap;">' + content + '</div>' +
         weightHtml +
+        reviewHtml +
         '<div style="font-size:11px;color:var(--text-light);margin-top:6px;">创建于 ' + esc(created) + ' · id <code>' + esc(p.id) + '</code></div>' +
         historyHtml +
       '</div>' +
@@ -7738,9 +7750,10 @@ async function loadPlans() {
     if (!resp) return;
     const d = await resp.json();
     if (d.error) { board.innerHTML = '<div style="color:var(--negative)">' + esc(d.error) + '</div>'; return; }
-    stats.textContent = '共 ' + (d.total || 0) + ' 条 · 进行中 ' + d.active.length + ' / 已完成 ' + d.resolved.length + ' / 已放弃 ' + d.abandoned.length;
-    // iter 1.8: active 列按 weight desc 排序（同重量保持后端顺序，即最近更新在前）
+    stats.textContent = '共 ' + (d.total || 0) + ' 条 · 进行中 ' + d.active.length + ' / 待确认 ' + (d.stale_active || 0) + ' / 已完成 ' + d.resolved.length + ' / 已放弃 ' + d.abandoned.length;
+    // 待确认计划优先；其余 active 计划仍按 weight desc 排序。
     var activeSorted = (d.active || []).slice().sort(function(a, b) {
+      if (!!a.is_stale !== !!b.is_stale) return a.is_stale ? -1 : 1;
       var wa = (typeof a.weight === 'number') ? a.weight : -1;
       var wb = (typeof b.weight === 'number') ? b.weight : -1;
       return wb - wa;

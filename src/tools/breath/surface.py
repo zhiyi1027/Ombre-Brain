@@ -29,6 +29,7 @@ import time
 from datetime import datetime, timedelta
 
 from ombrebrain.policy.surfacing import SurfacePolicyVM
+from plan_review import plan_review_state, plan_stale_after_days
 from .. import _runtime as rt
 from utils import count_tokens_approx, parse_bool, parse_iso_datetime
 from ._verbatim import render_stored_bucket
@@ -88,6 +89,8 @@ async def surface_plans(max_tokens: int) -> str:
         return "读取 plan 失败。"
 
     plans = []
+    reference_time = datetime.now()
+    stale_after_days = plan_stale_after_days(getattr(rt, "config", {}))
     for bucket in all_buckets:
         meta = bucket.get("metadata") or {}
         if meta.get("type") != "plan" or meta.get("status", "active") != "active":
@@ -97,6 +100,11 @@ async def surface_plans(max_tokens: int) -> str:
         plans.append(bucket)
     plans.sort(
         key=lambda bucket: (
+            plan_review_state(
+                bucket,
+                reference_time=reference_time,
+                stale_after_days=stale_after_days,
+            )["is_stale"],
             float((bucket.get("metadata") or {}).get("weight") or 0.0),
             str((bucket.get("metadata") or {}).get("created") or ""),
             str(bucket.get("id") or ""),
@@ -117,13 +125,31 @@ async def surface_plans(max_tokens: int) -> str:
     for index, plan in enumerate(plans):
         meta = plan.get("metadata") or {}
         created = str(meta.get("created") or "")
+        review = plan_review_state(
+            plan,
+            reference_time=reference_time,
+            stale_after_days=stale_after_days,
+        )
+        review_label = ""
+        review_notice = ""
+        if review["is_stale"]:
+            days = int(review["days_since_confirmation"] or 0)
+            review_label = f" [待确认:已{days}天]"
+            review_notice = (
+                f"\n⚠ 这条计划已 {days} 天未确认，仍然有效吗？"
+                "可在 Dashboard 选择继续、完成或放弃；系统不会自动改状态。"
+            )
         rendered, entry_tokens = render_stored_bucket(
             plan,
             (
                 f"📋 [活动计划] [bucket_id:{plan['id']}] "
-                f"[weight:{float(meta.get('weight') or 0.0):.2f}] [{created}]"
+                f"[weight:{float(meta.get('weight') or 0.0):.2f}]"
+                f"{review_label} [{created}]"
             ),
         )
+        if review_notice:
+            rendered += review_notice
+            entry_tokens = count_tokens_approx(rendered)
         separator_tokens = count_tokens_approx("\n---\n") if rendered_plans else 0
         if used + separator_tokens + entry_tokens > max_tokens:
             omitted = len(plans) - index

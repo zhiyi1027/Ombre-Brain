@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import random
 
 from ombrebrain.policy.surfacing import SurfacePolicyVM
+from plan_review import plan_review_state, plan_stale_after_days
 
 from .. import _runtime as rt
 from utils import count_tokens_approx, parse_bool, parse_iso_datetime
@@ -282,8 +283,13 @@ def _select_memories(
     return selected[:max_results], len(normally_eligible_recent_ids)
 
 
-def _active_plans(all_buckets: list[dict]) -> tuple[list[dict], int]:
+def _active_plans(
+    all_buckets: list[dict],
+    *,
+    reference_time: datetime,
+) -> tuple[list[dict], int]:
     plans = []
+    stale_after_days = plan_stale_after_days(getattr(rt, "config", {}))
     for bucket in all_buckets:
         meta = bucket.get("metadata") or {}
         if meta.get("type") != "plan" or meta.get("status", "active") != "active":
@@ -293,6 +299,11 @@ def _active_plans(all_buckets: list[dict]) -> tuple[list[dict], int]:
         plans.append(bucket)
     plans.sort(
         key=lambda bucket: (
+            plan_review_state(
+                bucket,
+                reference_time=reference_time,
+                stale_after_days=stale_after_days,
+            )["is_stale"],
             _weight(bucket),
             _created_timestamp(bucket),
             str(bucket.get("id") or ""),
@@ -339,20 +350,43 @@ def _reflection_candidates(
     return candidates[:REFLECTION_LIMIT]
 
 
-def _render_plan(bucket: dict) -> str:
+def _render_plan(bucket: dict, *, reference_time: datetime) -> str:
     bucket_id = str(bucket.get("id") or "")
     weight = _weight(bucket)
     content = str(bucket.get("content") or "").strip() or "（计划正文为空）"
-    return f"📋 [活动计划] [bucket_id:{bucket_id}] [weight:{weight:.2f}] {content}"
+    review = plan_review_state(
+        bucket,
+        reference_time=reference_time,
+        stale_after_days=plan_stale_after_days(getattr(rt, "config", {})),
+    )
+    if not review["is_stale"]:
+        return f"📋 [活动计划] [bucket_id:{bucket_id}] [weight:{weight:.2f}] {content}"
+    days = int(review["days_since_confirmation"] or 0)
+    return (
+        f"📋 [活动计划] [bucket_id:{bucket_id}] [weight:{weight:.2f}] "
+        f"[待确认:已{days}天] {content}\n"
+        f"⚠ 这条计划已 {days} 天未确认，仍然有效吗？"
+        "可在 Dashboard 选择继续、完成或放弃；系统不会自动改状态。"
+    )
 
 
-def _render_plan_pointer(bucket: dict) -> str:
+def _render_plan_pointer(bucket: dict, *, reference_time: datetime) -> str:
     meta = bucket.get("metadata") or {}
     bucket_id = str(bucket.get("id") or "")
     weight = _weight(bucket)
     name = str(meta.get("name") or bucket_id)
+    review = plan_review_state(
+        bucket,
+        reference_time=reference_time,
+        stale_after_days=plan_stale_after_days(getattr(rt, "config", {})),
+    )
+    review_label = ""
+    if review["is_stale"]:
+        days = int(review["days_since_confirmation"] or 0)
+        review_label = f" [待确认:已{days}天]"
     return (
-        f"📋 [活动计划] [bucket_id:{bucket_id}] [weight:{weight:.2f}] "
+        f"📋 [活动计划] [bucket_id:{bucket_id}] [weight:{weight:.2f}]"
+        f"{review_label} "
         f"↗ [未展开] {name}（使用 breath_advanced(domain=\"plan\") 读取）"
     )
 
@@ -506,10 +540,13 @@ async def surface_startup(
             limit=hard_tokens,
         )
 
-    plans, total_plans = _active_plans(all_buckets)
+    plans, total_plans = _active_plans(
+        all_buckets,
+        reference_time=reference,
+    )
     expanded_plans = 0
     for bucket in plans:
-        rendered_plan = _render_plan(bucket)
+        rendered_plan = _render_plan(bucket, reference_time=reference)
         plan_section = "\n---\n".join([*plan_results, rendered_plan])
         if (
             count_tokens_approx(plan_section) <= PLAN_TOKEN_BUDGET
@@ -518,7 +555,7 @@ async def surface_startup(
             expanded_plans += 1
             continue
 
-        pointer = _render_plan_pointer(bucket)
+        pointer = _render_plan_pointer(bucket, reference_time=reference)
         pointer_section = "\n---\n".join([*plan_results, pointer])
         if count_tokens_approx(pointer_section) > PLAN_TOKEN_BUDGET:
             break

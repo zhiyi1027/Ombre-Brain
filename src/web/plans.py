@@ -4,7 +4,7 @@ web/plans.py — 计划看板（Plan kanban）
 ========================================
 
 - /api/plans：按状态分组的计划列表（active/resolved/abandoned），含 change_log
-- /api/plans/{bucket_id}/action：对计划执行状态流转 / 编辑
+- /api/plans/{bucket_id}/action：确认继续、状态流转或编辑
 
 对外暴露：register(mcp)。
 ========================================
@@ -13,6 +13,11 @@ web/plans.py — 计划看板（Plan kanban）
 from starlette.requests import Request
 from starlette.responses import Response
 
+from plan_review import (
+    confirmation_timestamp,
+    plan_review_state,
+    plan_stale_after_days,
+)
 from . import _shared as sh
 from tools._common import check_content_size
 
@@ -38,6 +43,7 @@ def register(mcp) -> None:
             return err
         try:
             all_buckets = await sh.bucket_mgr.list_all(include_archive=False)
+            stale_after_days = plan_stale_after_days(sh.config)
             # 三个空桶子，后面按 status 往里填
             # 类型标注 dict[str, list] 是 Python 3.9+ 语法，不要变运行 IDE 报错
             groups: dict[str, list] = {"active": [], "resolved": [], "abandoned": []}
@@ -51,13 +57,17 @@ def register(mcp) -> None:
                 # 未知状态一律当 active 处理，避免 KeyError
                 if st not in groups:
                     st = "active"
+                review = plan_review_state(
+                    b,
+                    stale_after_days=stale_after_days,
+                )
                 groups[st].append({
                     "id": b["id"],
                     "name": meta.get("name") or "",
                     "content": b.get("content", ""),
                     "status": st,
-                    "created_at": meta.get("created_at"),
-                    "updated_at": meta.get("updated_at"),
+                    "created_at": meta.get("created_at") or meta.get("created"),
+                    "updated_at": meta.get("updated_at") or meta.get("last_active"),
                     "related_bucket": meta.get("related_bucket"),
                     "change_log": meta.get("change_log") or [],
                     "tags": meta.get("tags") or [],
@@ -65,6 +75,7 @@ def register(mcp) -> None:
                     # iter 1.8: 承诺重量与「为什么」
                     "weight": float(meta.get("weight", 0.5)) if meta.get("weight") is not None else 0.5,
                     "why_remembered": meta.get("why_remembered", ""),
+                    **review,
                 })
             # 每组按 updated_at 倒序。lambda 是匿名函数；key 函数指定「拿什么排序」
             # `or .. or ""` 堆叠保底：缺字段也不会报 NoneType < str 错
@@ -84,12 +95,19 @@ def register(mcp) -> None:
                 key=lambda p: float(p.get("weight") or 0.5),
                 reverse=True,
             )
+            groups["active"].sort(
+                key=lambda p: bool(p.get("is_stale")),
+                reverse=True,
+            )
             for k in ("resolved", "abandoned"):
                 groups[k].sort(key=lambda p: p.get("updated_at") or p.get("created_at") or "", reverse=True)
             return JSONResponse({
                 "active": groups["active"],
                 "resolved": groups["resolved"],
                 "abandoned": groups["abandoned"],
+                "stale_active": sum(
+                    1 for plan in groups["active"] if plan.get("is_stale")
+                ),
                 # 生成器表达式：sum + len，不需要临时 list
                 "total": sum(len(v) for v in groups.values()),
             })
@@ -99,9 +117,9 @@ def register(mcp) -> None:
 
     @mcp.custom_route("/api/plans/{bucket_id}/action", methods=["POST"])
     async def api_plans_action(request: Request) -> Response:
-        """Frontend kanban actions: mark plan as resolved / abandoned / active, or edit content.
+        """Frontend actions: confirm, resolve, abandon, reopen, or edit a plan.
 
-        前端看板操作：勾选/打叉/重新激活，或编辑正文。
+        前端看板操作：确认继续、勾选/打叉/重新激活，或编辑正文。
         路由里的 {bucket_id} 会被 starlette 解析进 request.path_params。
         Body 示例：{"action": "resolve", "content": "..."} —— content 仅 edit 需要。
 
@@ -131,18 +149,30 @@ def register(mcp) -> None:
                 return JSONResponse({"error": "bucket is not a plan"}, status_code=400)
 
             old_meta = bucket.get("metadata", {})
+            old_status = str(old_meta.get("status") or "active").strip().lower()
+            if old_status not in ("active", "resolved", "abandoned"):
+                old_status = "active"
             # 复制一份历史记录（避免 append 后意外修改原 bucket dict）
             history = list(old_meta.get("change_log") or [])
             from tools._common import append_plan_change_log
             updates: dict[str, object] = {}
 
-            if action in ("resolve", "abandon", "reopen"):
+            if action == "confirm":
+                if old_status != "active":
+                    return JSONResponse(
+                        {"error": "only active plans can be confirmed"},
+                        status_code=400,
+                    )
+                updates["last_confirmed_at"] = confirmation_timestamp()
+                history = append_plan_change_log(history, "confirmed")
+            elif action in ("resolve", "abandon", "reopen"):
                 # action 名 → 目标 status 名 的映射表，比三串 if/elif 清爽
                 new_status = {"resolve": "resolved", "abandon": "abandoned", "reopen": "active"}[action]
-                old_status = old_meta.get("status", "active")
                 # 同状态 noop：不记入历史，下面 updates 为空会走 noop 分支
                 if new_status != old_status:
                     updates["status"] = new_status
+                    if new_status == "active":
+                        updates["last_confirmed_at"] = confirmation_timestamp()
                     history = append_plan_change_log(
                         history, "status",
                         **{"from": old_status, "to": new_status},
@@ -156,6 +186,8 @@ def register(mcp) -> None:
                 if size_err:
                     return JSONResponse({"error": size_err}, status_code=400)
                 updates["content"] = new_content.strip()
+                if old_status == "active":
+                    updates["last_confirmed_at"] = confirmation_timestamp()
                 history = append_plan_change_log(history, "edit")
             else:
                 return JSONResponse({"error": f"unknown action: {action}"}, status_code=400)
