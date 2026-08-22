@@ -9,14 +9,43 @@ Returned bodies remain verbatim and are never truncated or summarized.
 
 from __future__ import annotations
 
+import math
 import re
 
 from .. import _runtime as rt
-from ..dream.feel_rank import rank_feels
+from ..dream.feel_rank import _content_tokens, rank_feels
 from ._verbatim import render_stored_bucket
 
 
 MAX_RELEVANT_FEELS = 5
+STARTUP_MAX_RELEVANT_FEELS = 3
+STARTUP_CANDIDATE_LIMIT = 12
+STARTUP_MAX_NEGATIVE_FEELS = 2
+STARTUP_NEGATIVE_VALENCE = 0.4
+STARTUP_THEME_VECTOR_THRESHOLD = 0.8
+STARTUP_THEME_KEYWORD_THRESHOLD = 0.6
+_THEME_STOPWORDS = {
+    "一个",
+    "一直",
+    "不过",
+    "不是",
+    "今天",
+    "什么",
+    "以后",
+    "但是",
+    "因为",
+    "宝宝",
+    "已经",
+    "感觉",
+    "时候",
+    "爸爸",
+    "真的",
+    "知知",
+    "自己",
+    "还是",
+    "这次",
+    "那个",
+}
 _SOURCE_ID_RE = re.compile(
     r"(?:bucket_id|source_bucket)\s*:\s*([A-Za-z0-9_.:-]+)",
     re.IGNORECASE,
@@ -47,6 +76,81 @@ def _reference_text(query: str) -> str:
 
 def _created(bucket: dict) -> str:
     return str((bucket.get("metadata") or {}).get("created") or "")
+
+
+def _valence(bucket: dict) -> float:
+    try:
+        value = float((bucket.get("metadata") or {}).get("valence", 0.5))
+    except (TypeError, ValueError, OverflowError):
+        return 0.5
+    return max(0.0, min(1.0, value))
+
+
+def _theme_keyword_similarity(left: dict, right: dict) -> float:
+    left_tokens = _content_tokens(str(left.get("content") or "")) - _THEME_STOPWORDS
+    right_tokens = _content_tokens(str(right.get("content") or "")) - _THEME_STOPWORDS
+    if not left_tokens or not right_tokens:
+        return 0.0
+    shared = left_tokens & right_tokens
+    # One generic shared word is too weak to call two first-person feelings the
+    # same theme when semantic vectors are unavailable.
+    if len(shared) < 2:
+        return 0.0
+    return len(shared) / min(len(left_tokens), len(right_tokens))
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    if not left or len(left) != len(right):
+        return 0.0
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = math.sqrt(sum(value * value for value in left))
+    right_norm = math.sqrt(sum(value * value for value in right))
+    if left_norm == 0.0 or right_norm == 0.0:
+        return 0.0
+    return dot / (left_norm * right_norm)
+
+
+async def _stored_embeddings(candidates: list[dict]) -> dict[str, list[float]]:
+    engine = getattr(rt, "embedding_engine", None)
+    get_embedding = getattr(engine, "get_embedding", None)
+    if not engine or not getattr(engine, "enabled", False) or not callable(get_embedding):
+        return {}
+    embeddings: dict[str, list[float]] = {}
+    for feel in candidates:
+        bucket_id = str(feel.get("id") or "")
+        if not bucket_id or bucket_id in embeddings:
+            continue
+        try:
+            vector = await get_embedding(bucket_id)
+            if vector:
+                embeddings[bucket_id] = vector
+        except Exception as exc:
+            rt.logger.warning(
+                "startup feel diversity could not read stored embedding for %s: %s: %s",
+                bucket_id,
+                type(exc).__name__,
+                exc,
+            )
+    return embeddings
+
+
+def _same_theme(
+    candidate: dict,
+    selected: dict,
+    embeddings: dict[str, list[float]],
+) -> bool:
+    candidate_vector = embeddings.get(str(candidate.get("id") or ""))
+    selected_vector = embeddings.get(str(selected.get("id") or ""))
+    if candidate_vector and selected_vector:
+        if (
+            _cosine_similarity(candidate_vector, selected_vector)
+            >= STARTUP_THEME_VECTOR_THRESHOLD
+        ):
+            return True
+    return (
+        _theme_keyword_similarity(candidate, selected)
+        >= STARTUP_THEME_KEYWORD_THRESHOLD
+    )
 
 
 def _literal_matches(feels: list[dict], query: str) -> list[dict]:
@@ -114,6 +218,78 @@ async def select_relevant_feels(
                 (feel, "context_relevance") for feel, _score in ranked
             )
     return selected, vector_ok
+
+
+async def select_startup_feels(
+    feels: list[dict],
+    *,
+    source_ids: set[str],
+    reference_text: str,
+) -> tuple[list[tuple[dict, str]], bool, dict[str, int]]:
+    """Pick a small, relevant and non-saturating feel set for one-button Breath.
+
+    Explicit feel search keeps its five-result contract. Startup instead scans
+    a wider relevant pool, returns at most three whole bodies, suppresses near-
+    duplicate themes, and never lets more than two clearly negative feelings
+    occupy the briefing. Missing diversity leaves slots empty; no unrelated
+    positive feeling is added merely to balance the tone.
+    """
+
+    normalized_sources = {
+        str(source_id or "").strip()
+        for source_id in source_ids
+        if str(source_id or "").strip()
+    }
+    direct = [
+        feel
+        for feel in feels
+        if str((feel.get("metadata") or {}).get("triggered_by") or "")
+        in normalized_sources
+    ]
+    direct.sort(key=_created, reverse=True)
+    direct_ids = {str(feel.get("id") or "") for feel in direct}
+
+    reference = str(reference_text or "").strip()
+    ranked: list[tuple[dict, float]] = []
+    vector_ok = True
+    if reference:
+        remaining = [
+            feel
+            for feel in feels
+            if str(feel.get("id") or "") not in direct_ids
+        ]
+        if remaining:
+            ranked, vector_ok = await rank_feels(
+                remaining,
+                reference,
+                max_feels=STARTUP_CANDIDATE_LIMIT,
+            )
+
+    candidates: list[tuple[dict, str]] = [
+        (feel, "direct_source")
+        for feel in direct[:STARTUP_CANDIDATE_LIMIT]
+    ]
+    candidates.extend((feel, "context_relevance") for feel, _score in ranked)
+    embeddings = await _stored_embeddings([feel for feel, _reason in candidates])
+
+    selected: list[tuple[dict, str]] = []
+    negative_count = 0
+    diagnostics = {"same_theme": 0, "negative_saturation": 0}
+    for feel, reason in candidates:
+        if any(_same_theme(feel, kept, embeddings) for kept, _ in selected):
+            diagnostics["same_theme"] += 1
+            continue
+        is_negative = _valence(feel) < STARTUP_NEGATIVE_VALENCE
+        if is_negative and negative_count >= STARTUP_MAX_NEGATIVE_FEELS:
+            diagnostics["negative_saturation"] += 1
+            continue
+        selected.append((feel, reason))
+        if is_negative:
+            negative_count += 1
+        if len(selected) >= STARTUP_MAX_RELEVANT_FEELS:
+            break
+
+    return selected, vector_ok, diagnostics
 
 
 async def surface_feels(

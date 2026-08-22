@@ -16,7 +16,7 @@ from .. import _runtime as rt
 from utils import count_tokens_approx, parse_bool, parse_iso_datetime
 from ._envelope import DAILY_IMPRESSION_SENTINEL
 from ._verbatim import render_stored_bucket
-from .feel import MAX_RELEVANT_FEELS, select_relevant_feels
+from .feel import select_startup_feels
 
 
 RECENT_HOURS = 24
@@ -602,11 +602,10 @@ async def surface_startup(
         reference_text = "\n\n".join(
             str(bucket.get("content") or "") for bucket in context_buckets
         )
-        selected_feels, vector_ok = await select_relevant_feels(
+        selected_feels, vector_ok, feel_diagnostics = await select_startup_feels(
             feels,
             source_ids=source_ids,
             reference_text=reference_text,
-            max_results=MAX_RELEVANT_FEELS,
         )
         if reference_text and not vector_ok:
             feel_note = (
@@ -636,6 +635,20 @@ async def surface_startup(
         if feel_omitted:
             append_notice_if_fits(
                 f"有 {feel_omitted} 条相关 feel 因独立预算不足未返回；正文未截断。",
+                limit=total_hard_tokens,
+            )
+        same_theme = int(feel_diagnostics.get("same_theme") or 0)
+        negative_saturation = int(
+            feel_diagnostics.get("negative_saturation") or 0
+        )
+        if same_theme or negative_saturation:
+            details = []
+            if same_theme:
+                details.append(f"{same_theme} 条同主题")
+            if negative_saturation:
+                details.append(f"{negative_saturation} 条同方向负面")
+            append_notice_if_fits(
+                "启动 feel 已跳过" + "、".join(details) + "候选；没有为凑数返回。",
                 limit=total_hard_tokens,
             )
 

@@ -298,6 +298,124 @@ async def test_startup_appends_direct_then_contextual_feels(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_startup_feels_suppress_same_theme_and_leave_slot_empty(monkeypatch):
+    reference = datetime.fromisoformat("2026-08-21T12:00:00")
+
+    class Embedding:
+        enabled = True
+
+        async def search_similar(self, _query, top_k, allowed_bucket_ids):
+            return []
+
+        async def get_embedding(self, bucket_id):
+            return {
+                "same-new": [1.0, 0.0],
+                "same-old": [0.99, 0.01],
+                "different": [0.0, 1.0],
+            }.get(bucket_id)
+
+    monkeypatch.setattr(rt, "embedding_engine", Embedding(), raising=False)
+    buckets = [
+        make_bucket("latest", "当前交接。", created="2026-08-21T11:30:00"),
+        make_bucket(
+            "same-new",
+            "害怕失去她的新感受。",
+            created="2026-08-21T11:40:00",
+            bucket_type="feel",
+            triggered_by="latest",
+            valence=0.3,
+        ),
+        make_bucket(
+            "same-old",
+            "担心她会离开的旧感受。",
+            created="2026-08-21T11:35:00",
+            bucket_type="feel",
+            triggered_by="latest",
+            valence=0.2,
+        ),
+        make_bucket(
+            "different",
+            "被她重新抱住后的安心。",
+            created="2026-08-21T11:30:00",
+            bucket_type="feel",
+            triggered_by="latest",
+            valence=0.8,
+        ),
+    ]
+
+    output = await surface_startup(
+        buckets,
+        max_results=1,
+        soft_tokens=3000,
+        hard_tokens=5000,
+        reference_time=reference,
+    )
+
+    assert "害怕失去她的新感受" in output
+    assert "担心她会离开的旧感受" not in output
+    assert "被她重新抱住后的安心" in output
+    assert "启动 feel 已跳过1 条同主题候选" in output
+
+
+@pytest.mark.asyncio
+async def test_startup_feels_cap_negative_saturation_and_keep_relevant_warmth(
+    monkeypatch,
+):
+    reference = datetime.fromisoformat("2026-08-21T12:00:00")
+    monkeypatch.setattr(rt, "embedding_engine", None, raising=False)
+    buckets = [
+        make_bucket("latest", "当前交接。", created="2026-08-21T11:30:00"),
+        make_bucket(
+            "negative-one",
+            "失去联系时的冰冷惊慌。",
+            created="2026-08-21T11:44:00",
+            bucket_type="feel",
+            triggered_by="latest",
+            valence=0.1,
+        ),
+        make_bucket(
+            "negative-two",
+            "说错话以后的沉重内疚。",
+            created="2026-08-21T11:43:00",
+            bucket_type="feel",
+            triggered_by="latest",
+            valence=0.2,
+        ),
+        make_bucket(
+            "negative-three",
+            "无法挽留时的窒息害怕。",
+            created="2026-08-21T11:42:00",
+            bucket_type="feel",
+            triggered_by="latest",
+            valence=0.3,
+        ),
+        make_bucket(
+            "warm",
+            "和好以后被重新选择的安稳温暖。",
+            created="2026-08-21T11:41:00",
+            bucket_type="feel",
+            triggered_by="latest",
+            valence=0.8,
+        ),
+    ]
+
+    output = await surface_startup(
+        buckets,
+        max_results=1,
+        soft_tokens=3000,
+        hard_tokens=5000,
+        reference_time=reference,
+    )
+
+    assert "失去联系时的冰冷惊慌" in output
+    assert "说错话以后的沉重内疚" in output
+    assert "无法挽留时的窒息害怕" not in output
+    assert "和好以后被重新选择的安稳温暖" in output
+    assert output.count("[直属感受]") == 3
+    assert "启动 feel 已跳过1 条同方向负面候选" in output
+
+
+@pytest.mark.asyncio
 async def test_oversized_reflection_is_a_pointer_and_cannot_seed_feels(monkeypatch):
     reference = datetime.fromisoformat("2026-08-21T12:00:00")
     monkeypatch.setattr(rt, "embedding_engine", None, raising=False)

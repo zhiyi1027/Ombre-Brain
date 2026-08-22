@@ -550,7 +550,7 @@ async def breath(
     tags: Optional[str] = "",
     catalog: Optional[bool] = False,
 ) -> str:
-    """无参数一键睁眼:完整返回短核心、昨日印象、最近24小时交接、最多一条合格旧事联想和预算内的活动计划；再自动精读最近48小时中尚未消化且未在前述正文出现的最多2桶，并根据本轮完整读过的普通记忆附上最多5条相关feel（直属source_bucket优先，再按语义+关键词补足）。startup_breath_soft_tokens只作为基础记忆体积参考，固定槽不受其拦截；startup_breath_max_tokens是基础记忆硬上限，自动精读与相关feel各有2000 token独立预算，所有正文整桶返回、绝不截断。0参数是刻意设计——一次调用即可完成启动，不必再固定调用dream目录、精读和feel通道。主动深挖仍用dream()/breath_search()，高级过滤用breath_advanced(...)。"""
+    """无参数一键睁眼:完整返回短核心、昨日印象、最近24小时交接、最多一条合格旧事联想和预算内的活动计划；再自动精读最近48小时中尚未消化且未在前述正文出现的最多2桶，并根据本轮完整读过的普通记忆附上最多3条相关且不重复的feel（直属source_bucket优先，再按语义+关键词补足；明显负面最多2条，无不同且仍相关的候选就少返回）。startup_breath_soft_tokens只作为基础记忆体积参考，固定槽不受其拦截；startup_breath_max_tokens是基础记忆硬上限，自动精读与相关feel各有2000 token独立预算，所有正文整桶返回、绝不截断。0参数是刻意设计——一次调用即可完成启动，不必再固定调用dream目录、精读和feel通道。主动深挖仍用dream()/breath_search()，高级过滤用breath_advanced(...)。"""
     return await _with_notice(
         _t_breath.dispatch_public(
             query=query, max_tokens=max_tokens, domain=domain,
