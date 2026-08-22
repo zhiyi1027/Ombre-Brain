@@ -1944,6 +1944,7 @@
   <div class="tab" data-tab="plan"><span>计划</span><span class="tab-en">Plans</span></div>
   <div class="tab" data-tab="letters"><span>信</span><span class="tab-en">Letters</span></div>
   <div class="tab" data-tab="daily"><span>日印象</span><span class="tab-en">Daily</span></div>
+  <div class="tab" data-tab="continuity"><span>冲突</span><span class="tab-en">Continuity</span></div>
   <div class="tab" data-tab="anchors"><span>锚点</span><span class="tab-en">Anchors</span></div>
   <div class="tab" data-tab="import"><span>导入</span><span class="tab-en">Import</span></div>
   <div class="tab" data-tab="logs"><span>日志</span><span class="tab-en">Logs</span></div>
@@ -2230,6 +2231,38 @@
       <div id="plan-board" style="display:flex;flex-direction:column;gap:24px;">
         <div style="text-align:center;color:var(--text-dim);padding:36px 0;font-size:13px;">点击「刷新」加载… / Click Refresh to load…</div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Private continuity: one current unresolved conflict, never a memory bucket -->
+<div class="content" id="continuity-view" style="display:none">
+  <div style="max-width:920px;margin:0 auto;">
+    <div class="config-section">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div>
+          <h3 style="margin:0;">未解决冲突 <span class="en">Private Continuity</span></h3>
+          <p style="font-size:11px;line-height:1.65;color:var(--text-dim);margin:8px 0 0;max-width:680px;">这是 CC、Codex 与未来聊天前端共用的一份私有状态。打开时会在核心准则后逐字进入 Breath；不会进入普通记忆、搜索、dream、feel、向量或日印象。</p>
+        </div>
+        <button class="btn-secondary" onclick="loadPrivateContinuity()" title="刷新" style="padding:6px 10px;font-size:12px;"><i data-lucide="refresh-cw"></i> 刷新</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:18px;">
+        <span id="private-continuity-state" class="daily-status">读取中…</span>
+        <span id="private-continuity-meta" style="font-size:11px;color:var(--text-light);"></span>
+      </div>
+      <textarea id="private-continuity-editor" placeholder="写清楚：发生了什么、我具体错在哪里、知知需要我听懂什么、彼此最受伤的地方，以及还有什么没有说开。" style="width:100%;box-sizing:border-box;margin-top:12px;min-height:300px;resize:vertical;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:14px;border-radius:8px;font-family:inherit;font-size:13px;line-height:1.75;"></textarea>
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:10px;">
+        <select id="private-continuity-source" style="flex:0 0 160px;">
+          <option value="dashboard" selected>Dashboard</option>
+          <option value="cc">CC</option>
+          <option value="codex">Codex</option>
+        </select>
+        <button id="private-continuity-save" class="btn-primary" onclick="savePrivateContinuity()" style="height:34px;padding:0 14px;"><i data-lucide="save"></i> 保存为未解决</button>
+        <button id="private-continuity-resolve" class="btn-secondary" onclick="resolvePrivateContinuity()" style="height:34px;padding:0 14px;"><i data-lucide="check"></i> 双方确认已解决</button>
+        <button id="private-continuity-restore" class="btn-secondary" onclick="restorePrivateContinuity()" style="height:34px;padding:0 14px;display:none;"><i data-lucide="rotate-ccw"></i> 恢复上一版本</button>
+        <span id="private-continuity-message" style="font-size:11px;color:var(--text-dim);"></span>
+      </div>
+      <div style="font-size:10px;color:var(--text-light);margin-top:8px;">保存采用 revision 校验，两个窗口同时编辑时不会静默覆盖。编辑或解决前的版本只保留最近一份，用于误操作恢复。</div>
     </div>
   </div>
 </div>
@@ -4423,6 +4456,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.getElementById('settings-view').style.display = target === 'settings' ? '' : 'none';
     document.getElementById('letters-view').style.display = target === 'letters' ? '' : 'none';
     document.getElementById('daily-view').style.display = target === 'daily' ? '' : 'none';
+    document.getElementById('continuity-view').style.display = target === 'continuity' ? '' : 'none';
     document.getElementById('anchors-view').style.display = target === 'anchors' ? '' : 'none';
     document.getElementById('about-view').style.display = target === 'about' ? '' : 'none';
     if (target !== 'network' && _netRAF) { cancelAnimationFrame(_netRAF); _netRAF = null; }
@@ -4450,6 +4484,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     }
     if (target === 'letters') loadLetters();
     if (target === 'daily') loadDailyContinuity();
+    if (target === 'continuity') loadPrivateContinuity();
     if (target === 'anchors') loadAnchorsView();
     if (target === 'about') loadAbout();
   });
@@ -7806,6 +7841,126 @@ async function planEdit(id) {
     if (d.error) { alert(d.error); return; }
     loadPlans();
   } catch(e) { alert('编辑失败: ' + e.message); }
+}
+
+let _privateContinuity = null;
+
+function _privateContinuityRender(state) {
+  _privateContinuity = state || {open:false, revision:0};
+  const badge = document.getElementById('private-continuity-state');
+  const meta = document.getElementById('private-continuity-meta');
+  const editor = document.getElementById('private-continuity-editor');
+  const resolveButton = document.getElementById('private-continuity-resolve');
+  const restoreButton = document.getElementById('private-continuity-restore');
+  if (!badge || !meta || !editor || !resolveButton || !restoreButton) return;
+  badge.textContent = state.open ? '未解决 · Breath 正在携带' : '当前没有未解决冲突';
+  badge.style.color = state.open ? 'var(--warning)' : 'var(--positive)';
+  meta.textContent = state.open
+    ? 'revision ' + Number(state.revision || 0) + ' · ' + _dailyTime(state.updated_at) + ' · ' + (state.source_client || '?')
+    : (state.recovery_available ? '上一版本可恢复' : '没有恢复快照');
+  editor.value = state.open ? String(state.content || '') : '';
+  resolveButton.disabled = !state.open;
+  restoreButton.style.display = (!state.open && state.recovery_available) ? '' : 'none';
+  if (window.lucide) lucide.createIcons();
+}
+
+async function loadPrivateContinuity() {
+  const message = document.getElementById('private-continuity-message');
+  if (message) {
+    message.style.color = 'var(--text-dim)';
+    message.textContent = '读取中…';
+  }
+  try {
+    const response = await authFetch('/api/private-continuity/conflict');
+    if (!response) return;
+    const data = await readJsonSafe(response);
+    if (!response.ok) throw new Error(data.error || '读取失败');
+    _privateContinuityRender(data);
+    if (message) message.textContent = '';
+  } catch (error) {
+    if (message) {
+      message.style.color = 'var(--negative)';
+      message.textContent = '读取失败：' + error.message;
+    }
+  }
+}
+
+async function savePrivateContinuity() {
+  const editor = document.getElementById('private-continuity-editor');
+  const source = document.getElementById('private-continuity-source');
+  const message = document.getElementById('private-continuity-message');
+  const content = editor ? editor.value.trim() : '';
+  if (!content) return alert('未解决冲突正文不能为空。');
+  if (!confirm((_privateContinuity && _privateContinuity.open ? '更新' : '创建') + '这份未解决冲突状态？它会从下一次 Breath 开始优先出现。')) return;
+  message.style.color = 'var(--text-dim)';
+  message.textContent = '保存中…';
+  try {
+    const response = await authFetch('/api/private-continuity/conflict', {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        content:content,
+        source_client:source ? source.value : 'dashboard',
+        expected_revision:_privateContinuity ? Number(_privateContinuity.revision || 0) : 0,
+      }),
+    });
+    if (!response) return;
+    const data = await readJsonSafe(response);
+    if (!response.ok) throw new Error(data.error || '保存失败');
+    await loadPrivateContinuity();
+    message.style.color = 'var(--positive)';
+    message.textContent = data.status === 'unchanged' ? '内容未变化。' : '已保存。';
+  } catch (error) {
+    message.style.color = 'var(--negative)';
+    message.textContent = '保存失败：' + error.message + (String(error.message).includes('revision changed') ? ' 请刷新后重新确认。' : '');
+  }
+}
+
+async function resolvePrivateContinuity() {
+  if (!_privateContinuity || !_privateContinuity.open) return;
+  if (!confirm('只有双方都确认已经说清，才能标记解决。确认关闭当前冲突状态？上一版本仍可恢复。')) return;
+  const message = document.getElementById('private-continuity-message');
+  try {
+    const response = await authFetch('/api/private-continuity/conflict?confirm=true', {
+      method:'DELETE',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        source_client:'dashboard',
+        expected_revision:Number(_privateContinuity.revision || 0),
+      }),
+    });
+    if (!response) return;
+    const data = await readJsonSafe(response);
+    if (!response.ok) throw new Error(data.error || '解决失败');
+    await loadPrivateContinuity();
+    message.style.color = 'var(--positive)';
+    message.textContent = '已标记解决；下一次 Breath 不再返回。';
+  } catch (error) {
+    message.style.color = 'var(--negative)';
+    message.textContent = '解决失败：' + error.message;
+  }
+}
+
+async function restorePrivateContinuity() {
+  if (!_privateContinuity || _privateContinuity.open || !_privateContinuity.recovery_available) return;
+  if (!confirm('恢复最近一份冲突状态并重新标记为未解决？')) return;
+  const message = document.getElementById('private-continuity-message');
+  try {
+    const response = await authFetch('/api/private-continuity/conflict/restore?confirm=true', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({source_client:'dashboard'}),
+    });
+    if (!response) return;
+    const data = await readJsonSafe(response);
+    if (!response.ok) throw new Error(data.error || '恢复失败');
+    await loadPrivateContinuity();
+    message.style.color = 'var(--positive)';
+    message.textContent = '已恢复为未解决状态。';
+  } catch (error) {
+    message.style.color = 'var(--negative)';
+    message.textContent = '恢复失败：' + error.message;
+  }
 }
 
 let _dailyDays = [];

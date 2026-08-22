@@ -306,7 +306,7 @@ async def test_exact_simulation_reuses_default_surface_and_is_labeled(monkeypatc
     ]
     assert row["kind"] == "simulation"
     assert row["mode"] == "startup"
-    assert row["limits"]["max_tokens"] == 5500
+    assert row["limits"]["max_tokens"] == 7500
     assert row["output"] == ONE_BUTTON_OUTPUT
 
 

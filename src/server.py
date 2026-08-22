@@ -50,6 +50,7 @@ from embedding_outbox import EmbeddingOutbox
 from import_memory import ImportEngine
 from migrate_engine import MigrateEngine
 from daily_continuity import DailyContinuityService
+from private_continuity import PrivateContinuityService
 from utils import get_version, load_config, setup_logging
 
 # --- iter 2.1：MCP 工具实现已按代码路径拆分到 tools/ 子包 ---
@@ -226,6 +227,7 @@ daily_continuity = DailyContinuityService(
     dehydrator=dehydrator,
     logger=logger,
 )
+private_continuity = PrivateContinuityService(config)
 
 # --- GitHub Sync / GitHub 同步 ---
 from github_sync import GitHubSync  # type: ignore
@@ -365,6 +367,7 @@ _wsh.init_runtime(
     import_engine=import_engine,
     migrate_engine=migrate_engine,
     daily_continuity=daily_continuity,
+    private_continuity=private_continuity,
     github_sync_instance=github_sync_instance,
     restart_github_auto_task=_restart_github_auto_task,
 )
@@ -527,6 +530,7 @@ _tools_runtime.init(
     embedding_engine=embedding_engine,
     import_engine=import_engine,
     daily_continuity=daily_continuity,
+    private_continuity=private_continuity,
     logger=logger,
     fire_webhook=_fire_webhook,
     mark_op=_mark_op,

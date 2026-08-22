@@ -47,6 +47,7 @@ def record_run(record: dict) -> dict:
 
 _SECTION_HEADERS = {
     "=== 核心准则 ===": "core",
+    "=== 尚未解决的冲突 ===": "private_continuity",
     "=== 最近24小时 ===": "recent",
     "=== 自动精读 ===": "reflection",
     "=== 较早未完事项 ===": "unfinished",
@@ -113,6 +114,10 @@ def _parse_entries(output: str) -> list[dict]:
             continue
         is_bucket_header = (
             (section == "core" and stripped.startswith("📌 [核心准则]"))
+            or (
+                section == "private_continuity"
+                and stripped.startswith("⚠ [私有连续状态]")
+            )
             or (section == "recent" and stripped.startswith("🕒 ["))
             or (section == "reflection" and stripped.startswith("🔎 [自动精读]"))
             or (section == "unfinished" and stripped.startswith("🧭 [未完记忆]"))
@@ -133,6 +138,18 @@ def _parse_entries(output: str) -> list[dict]:
             or (section == "encounter" and stripped.startswith("✨ [偶遇]"))
         )
         if not is_bucket_header:
+            offset += len(line)
+            continue
+        if section == "private_continuity":
+            entries.append({
+                "bucket_id": "private_continuity:conflict",
+                "section": section,
+                "status": "pointer" if "↗ [未展开]" in stripped else "returned",
+                "reason": "unresolved_private_continuity",
+                "tokens": 0,
+                "score": None,
+                "_offset": offset,
+            })
             offset += len(line)
             continue
         match = _BUCKET_ID_RE.search(line)
