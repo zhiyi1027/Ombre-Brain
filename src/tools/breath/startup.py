@@ -26,6 +26,7 @@ REFLECTION_HOURS = 48
 REFLECTION_LIMIT = 2
 REFLECTION_TOKEN_BUDGET = 2000
 STARTUP_FEEL_TOKEN_BUDGET = 2000
+PRIVATE_CONTINUITY_TOKEN_BUDGET = 2000
 PLAN_LIMIT = 5
 PLAN_TOKEN_BUDGET = 350
 OLDER_UNRESOLVED_POOL_LIMIT = 20
@@ -40,7 +41,12 @@ def startup_total_hard_tokens(base_hard_tokens: int) -> int:
     """Return the complete one-button envelope cap shown by Breath Trace."""
 
     base = max(500, int(base_hard_tokens or DEFAULT_HARD_TOKENS))
-    return base + REFLECTION_TOKEN_BUDGET + STARTUP_FEEL_TOKEN_BUDGET
+    return (
+        base
+        + PRIVATE_CONTINUITY_TOKEN_BUDGET
+        + REFLECTION_TOKEN_BUDGET
+        + STARTUP_FEEL_TOKEN_BUDGET
+    )
 
 
 def _created_datetime(bucket: dict) -> datetime | None:
@@ -411,6 +417,8 @@ async def surface_startup(
     exclude_older_id: str = "",
     daily_impression: str = "",
     daily_cited_bucket_ids: set[str] | None = None,
+    private_continuity: str = "",
+    continuity_tokens: int = PRIVATE_CONTINUITY_TOKEN_BUDGET,
     reflection_tokens: int = REFLECTION_TOKEN_BUDGET,
     feel_tokens: int = STARTUP_FEEL_TOKEN_BUDGET,
 ) -> str:
@@ -423,12 +431,15 @@ async def surface_startup(
     hard_tokens = max(500, int(hard_tokens or DEFAULT_HARD_TOKENS))
     soft_tokens = max(500, min(int(soft_tokens or DEFAULT_SOFT_TOKENS), hard_tokens))
     max_results = max(1, int(max_results or 1))
+    continuity_tokens = max(0, int(continuity_tokens or 0))
     reflection_tokens = max(0, int(reflection_tokens or 0))
     feel_tokens = max(0, int(feel_tokens or 0))
-    reflection_hard_tokens = hard_tokens + reflection_tokens
+    continuity_hard_tokens = hard_tokens + continuity_tokens
+    reflection_hard_tokens = continuity_hard_tokens + reflection_tokens
     total_hard_tokens = reflection_hard_tokens + feel_tokens
 
     core_results: list[str] = []
+    continuity_results: list[str] = []
     daily_results: list[str] = []
     recent_results: list[str] = []
     reflection_results: list[str] = []
@@ -439,6 +450,7 @@ async def surface_startup(
     pointers: list[str] = []
     notices: list[str] = [
         f"基础记忆软参考 {soft_tokens} token、硬上限 {hard_tokens} token；"
+        f"私有连续状态另有 {continuity_tokens} token，"
         f"自动精读另有 {reflection_tokens} token，相关 feel 另有 {feel_tokens} token；"
         f"总硬上限 {total_hard_tokens} token。"
         "最多三条近期交接与一条合格旧事联想均整桶尝试；"
@@ -448,10 +460,15 @@ async def surface_startup(
     def compose() -> str:
         parts = [
             "=== 一键睁眼 ===\n"
-            "一次返回核心、日印象、近期交接、自动精读、旧事联想、计划与相关 feel。"
+            "一次返回核心、私有连续状态、日印象、近期交接、自动精读、旧事联想、计划与相关 feel。"
         ]
         if core_results:
             parts.append("=== 核心准则 ===\n" + "\n---\n".join(core_results))
+        if continuity_results:
+            parts.append(
+                "=== 尚未解决的冲突 ===\n"
+                + "\n---\n".join(continuity_results)
+            )
         if daily_results:
             parts.append(
                 DAILY_IMPRESSION_SENTINEL + "\n" + "\n---\n".join(daily_results)
@@ -598,6 +615,22 @@ async def surface_startup(
             reason="hard_limit",
         )
         append_if_fits(pointers, pointer, limit=hard_tokens)
+
+    continuity_text = str(private_continuity or "").strip()
+    if continuity_text and continuity_tokens > 0:
+        if not append_extension_if_fits(
+            continuity_results,
+            continuity_text,
+            section_limit=continuity_tokens,
+            total_limit=continuity_hard_tokens,
+        ):
+            append_extension_if_fits(
+                continuity_results,
+                "⚠ [私有连续状态] ↗ [未展开] 正文超过启动预算；"
+                "请立即在 Dashboard 的「冲突」页面读取，不能把未展开当作结案。",
+                section_limit=continuity_tokens,
+                total_limit=continuity_hard_tokens,
+            )
 
     reflection_candidates = _reflection_candidates(
         all_buckets,

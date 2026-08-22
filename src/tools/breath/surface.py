@@ -198,6 +198,13 @@ async def surface_default(
     if startup:
         daily_impression = ""
         daily_cited_bucket_ids: set[str] = set()
+        private_continuity = ""
+        private_service = getattr(rt, "private_continuity", None)
+        if private_service is not None and getattr(private_service, "enabled", False):
+            try:
+                private_continuity = private_service.read_for_breath()
+            except Exception as exc:
+                rt.logger.warning("Private startup continuity unavailable: %s", exc)
         service = getattr(rt, "daily_continuity", None)
         if service is not None and getattr(service, "enabled", False):
             try:
@@ -224,6 +231,7 @@ async def surface_default(
             exclude_older_id=_last_startup_unfinished_id(),
             daily_impression=daily_impression,
             daily_cited_bucket_ids=daily_cited_bucket_ids,
+            private_continuity=private_continuity,
         )
 
     # --- pinned/protected 桶置顶（排除 letter 桶：letter 的 importance=10 不代表核心准则）---

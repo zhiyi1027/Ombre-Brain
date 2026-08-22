@@ -34,6 +34,7 @@ from . import config_api
 from . import onboarding
 from . import v3_debug
 from . import daily_continuity
+from . import private_continuity
 
 
 _WEB_MODULES = (
@@ -57,6 +58,7 @@ _WEB_MODULES = (
     ("web.onboarding", onboarding.register),
     ("web.v3_debug", v3_debug.register),
     ("web.daily_continuity", daily_continuity.register),
+    ("web.private_continuity", private_continuity.register),
 )
 
 

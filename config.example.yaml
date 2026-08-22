@@ -135,6 +135,15 @@ daily_continuity:
   max_impression_edit_chars: 20000
   # token: ""  # Prefer OMBRE_DAILY_NOTE_TOKEN; falls back to OMBRE_HOOK_TOKEN.
 
+# --- Private continuity / 私有连续状态 -------------------------------
+# 单一未解决冲突的跨客户端交接状态。独立于普通记忆桶，不参与搜索、dream、
+# feel、向量、衰减或日印象；打开时由 breath 在核心准则之后逐字返回。
+private_continuity:
+  enabled: true
+  max_content_chars: 12000
+  max_breath_tokens: 1800
+  # token: ""  # Prefer OMBRE_PRIVATE_CONTINUITY_TOKEN; then daily-note/hook token.
+
 # --- Decay parameters / 记忆衰减参数 ---
 # Simulates Ebbinghaus forgetting curve, auto-archives inactive memories
 # 模拟艾宾浩斯遗忘曲线，自动归档不活跃的记忆

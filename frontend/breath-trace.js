@@ -11,6 +11,7 @@
   function reasonLabel(value) {
     return ({
       core_always_surface: '核心准则',
+      unresolved_private_continuity: '未解决冲突',
       recent_latest: '最近一条',
       recent_important: '近期重要',
       daily_continuity: '昨日连续性',
@@ -27,7 +28,7 @@
   }
 
   function sectionLabel(value) {
-    return ({core: '核心', daily: '日印象', recent: '最近24h', reflection: '自动精读', unfinished: '未完', plan: '计划', feel: '相关 feel', deferred: '未展开', dynamic: '动态', passive: '久未浮现', encounter: '偶遇'})[value] || value || '其它';
+    return ({core: '核心', private_continuity: '私有连续状态', daily: '日印象', recent: '最近24h', reflection: '自动精读', unfinished: '未完', plan: '计划', feel: '相关 feel', deferred: '未展开', dynamic: '动态', passive: '久未浮现', encounter: '偶遇'})[value] || value || '其它';
   }
 
   function runHtml(run) {

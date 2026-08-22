@@ -33,6 +33,8 @@ services:
         generateValue: true
       - key: OMBRE_DAILY_NOTE_TOKEN
         sync: false          # Long random secret shared only with the note uploader
+      - key: OMBRE_PRIVATE_CONTINUITY_TOKEN
+        sync: false          # Optional dedicated secret; falls back to daily-note token
       - key: OMBRE_BUCKETS_DIR
         value: /opt/render/project/src/buckets
       - key: OMBRE_CONFIG_PATH
