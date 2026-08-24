@@ -223,7 +223,16 @@ def test_dashboard_crab_can_be_tickled_and_reacts_to_real_system_states():
     assert "drawHeadphones" in text
     assert "drawLaptop" in text
     assert "drawSparkles" in text
+    assert "drawMagnifier" in text
+    assert "drawCoffee" in text
+    assert "drawUmbrella" in text
+    assert "drawNightcap" in text
+    assert "drawAngry" in text
     assert "ambientMusic" in text
+    assert "ambientCoffee" in text
+    assert "ambientRain" in text
+    assert "setWeather" in text
+    assert "window.ObPet.setWeather(weather.desc)" in text
     assert "耳机戴好了。你选歌。" in text
     assert "['跳舞','耳机','听歌','music','dance']" in text
 

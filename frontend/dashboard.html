@@ -4504,6 +4504,8 @@ function doSearch() {
   const q = document.getElementById('search-input').value.trim();
   if (['螃蟹','小螃蟹','钳子','可恶的人类','crab'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('secret');
   if (['跳舞','耳机','听歌','music','dance'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('music');
+  if (['咖啡','coffee'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('coffee');
+  if (['下雨','雨伞','umbrella'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('rain');
   if (q) searchBuckets(q);
   else renderBuckets(filterBuckets(allBuckets));
 }
@@ -4800,6 +4802,8 @@ function _localBucketMatches(query) {
 }
 
 async function searchBuckets(query) {
+  var petShowcase = ['跳舞','耳机','听歌','music','dance','咖啡','coffee','下雨','雨伞','umbrella'];
+  if (window.ObPet && !petShowcase.includes(String(query || '').trim().toLowerCase())) window.ObPet.react('search');
   var seen = {}, merged = [];
   _localBucketMatches(query).forEach(function(b) { if (!seen[b.id]) { seen[b.id] = 1; merged.push(b); } });
   // 服务端语义搜索：补充本地字面没匹配到、但语义相关的桶（向量化未开启时会失败，自动退化为纯本地）
@@ -5836,7 +5840,7 @@ window.ObPet = (function () {
     'PPPPPPPPPPPPPPP.','..PPPPPPPPPPP...','..KKKKKKKKKKK...','................'];
   var SPR = 16, W = 64, H = 24, SCALE = 2;
   var host, cv, ctx, raf = null, t0 = 0;
-  var st = { stage:'tiny', count:0, x:24, dir:1, frame:0, growT:0, hopT:0, gestureT:0, blinkT:0, blinkAt:0, special:null, specialT:0, started:false, dragMoved:false, suppressClickUntil:0, drops:0, tickles:0, tickleTimer:null, idleTimer:null };
+  var st = { stage:'tiny', count:0, x:24, dir:1, frame:0, growT:0, hopT:0, gestureT:0, blinkT:0, blinkAt:0, special:null, specialT:0, weather:null, started:false, dragMoved:false, suppressClickUntil:0, drops:0, tickles:0, tickleTimer:null, idleTimer:null };
   var TICKLE_LINES = ['别碰我。','……你手痒是吧。','再碰试试。','钳你哦。','我记仇的。','你有正事吗。','……烦。','我是记忆系统不是宠物。','下次再碰我就把你的桶全归档。','别挠了，痒。'];
 
   function wakePet() {
@@ -6001,6 +6005,41 @@ window.ObPet = (function () {
     pixelRect(ox,oy,7,phase ? 1 : 2,1,1,pale,flip);
     if (phase) { pixelRect(ox,oy,6,1,3,1,gold,flip); pixelRect(ox,oy,7,0,1,3,gold,flip); }
   }
+  function drawMagnifier(ox, oy, flip, phase) {
+    var rim = '#4F5968', glass = '#A8DBE8';
+    pixelRect(ox,oy,11,5,4,1,rim,flip); pixelRect(ox,oy,11,9,4,1,rim,flip);
+    pixelRect(ox,oy,11,6,1,3,rim,flip); pixelRect(ox,oy,14,6,1,3,rim,flip);
+    pixelRect(ox,oy,12,6,2,3,glass,flip);
+    pixelRect(ox,oy,10,10,2,1,rim,flip); pixelRect(ox,oy,9,11,2,1,rim,flip);
+    if (phase) pixelRect(ox,oy,13,6,1,1,'#FFFFFF',flip);
+  }
+  function drawCoffee(ox, oy, flip, phase) {
+    var mug = '#F3E0BF', coffee = '#6C3F2A', steam = '#D8D4CD';
+    pixelRect(ox,oy,5,10,6,4,mug,flip); pixelRect(ox,oy,6,10,4,1,coffee,flip);
+    pixelRect(ox,oy,11,11,2,1,mug,flip); pixelRect(ox,oy,12,12,1,1,mug,flip);
+    pixelRect(ox,oy,phase ? 6 : 7,phase ? 6 : 7,1,2,steam,flip);
+    pixelRect(ox,oy,phase ? 9 : 8,phase ? 7 : 6,1,2,steam,flip);
+  }
+  function drawUmbrella(ox, oy, flip, phase) {
+    var blue = '#6F91C7', light = '#A9C2E6', rain = '#78A9D6';
+    pixelRect(ox,oy,5,1,6,1,light,flip); pixelRect(ox,oy,3,2,10,1,blue,flip);
+    pixelRect(ox,oy,2,3,12,2,blue,flip); pixelRect(ox,oy,8,5,1,7,'#343A45',flip);
+    pixelRect(ox,oy,8,11,2,1,'#343A45',flip);
+    pixelRect(ox,oy,phase ? 1 : 2,7,1,2,rain,flip);
+    pixelRect(ox,oy,phase ? 14 : 13,phase ? 9 : 6,1,2,rain,flip);
+  }
+  function drawNightcap(ox, oy, flip, phase) {
+    var cap = '#7A74B8', trim = '#DDD8F0', blanket = '#9EB8D8';
+    pixelRect(ox,oy,4,8,8,2,trim,flip); pixelRect(ox,oy,5,6,6,2,cap,flip);
+    pixelRect(ox,oy,9,5,3,1,cap,flip); pixelRect(ox,oy,11,4,2,1,cap,flip);
+    pixelRect(ox,oy,phase ? 12 : 13,phase ? 3 : 4,1,1,trim,flip);
+    pixelRect(ox,oy,2,12,11,2,blanket,flip);
+  }
+  function drawAngry(ox, oy, flip, phase) {
+    pixelRect(ox,oy,3,7,3,1,'#000000',flip); pixelRect(ox,oy,10,7,3,1,'#000000',flip);
+    pixelRect(ox,oy,7,phase ? 1 : 2,2,3,'#D85E45',flip);
+    pixelRect(ox,oy,8,phase ? 0 : 1,1,2,'#F1A43B',flip);
+  }
   function render(now) {
     raf = requestAnimationFrame(render);
     var dt = now - (t0 || now); t0 = now;
@@ -6037,6 +6076,7 @@ window.ObPet = (function () {
       if (st.growT <= 0) { st.stage = stageFor(st.count); st.x = 24; }
     } else if (isSleeping || isPlayDead) {            // 趴低、闭眼，脚收回去
       draw(SLEEP, spriteX, oy + 1, st.dir < 0);
+      if (isSleeping) drawNightcap(spriteX, oy + 1, st.dir < 0, Math.floor(now / 700) % 2);
     } else if (isGrabbed) {                           // 被抓起来时举钳、四脚乱蹬
       draw((Math.floor(now / 110) % 2) ? FLAIL1 : FLAIL2, spriteX, oy - 1, st.dir < 0);
     } else if (st.stage === 'tiny') {                 // 小小一只：轻晃
@@ -6047,8 +6087,12 @@ window.ObPet = (function () {
     } else {                                          // 大螃蟹：巡逻与停下呼吸交替
       st.frame += dt;
       var gesture = st.gestureT > 0 || isRaging;
-      var ambientMusic = !st.special && !gesture && Math.floor(now / 7000) % 7 === 6;
-      var special = st.special || (ambientMusic ? 'music' : null);
+      var ambientCycle = Math.floor(now / 7000) % 9;
+      var hour = new Date().getHours();
+      var ambientCoffee = !st.special && !gesture && hour >= 5 && hour < 11 && ambientCycle === 4;
+      var ambientRain = !st.special && !gesture && /雨|雪|雷/.test(st.weather || '') && ambientCycle === 6;
+      var ambientMusic = !st.special && !gesture && ambientCycle === 8;
+      var special = st.special || (ambientRain ? 'rain' : (ambientCoffee ? 'coffee' : (ambientMusic ? 'music' : null)));
       var walking = !gesture && !special && Math.floor(now / 6000) % 2 === 0;
       var step = Math.floor(st.frame / 150) % 2;
       if (walking) {
@@ -6068,6 +6112,18 @@ window.ObPet = (function () {
       } else if (special === 'celebrate') {
         draw(CLAWS_UP, px, py, facingLeft);
         drawSparkles(px, py, facingLeft, Math.floor(now / 180) % 2);
+      } else if (special === 'search') {
+        draw(st.blinkT > 0 ? GROWN_BLINK : GROWN1, px, py, facingLeft);
+        drawMagnifier(px, py, facingLeft, Math.floor(now / 350) % 2);
+      } else if (special === 'coffee') {
+        draw(st.blinkT > 0 ? GROWN_BLINK : GROWN1, px, py, facingLeft);
+        drawCoffee(px, py, facingLeft, Math.floor(now / 620) % 2);
+      } else if (special === 'rain') {
+        draw(st.blinkT > 0 ? GROWN_BLINK : GROWN1, px, py, facingLeft);
+        drawUmbrella(px, py, facingLeft, Math.floor(now / 430) % 2);
+      } else if (special === 'angry') {
+        draw(GROWN1, px, py, facingLeft);
+        drawAngry(px, py, facingLeft, Math.floor(now / 220) % 2);
       } else {
         var frame = gesture ? CLAWS_UP
           : (st.blinkT > 0 ? GROWN_BLINK : (walking && step ? GROWN2 : GROWN1));
@@ -6085,6 +6141,7 @@ window.ObPet = (function () {
     else setTip(s === 'tiny' ? '刚醒的小螃蟹 · 记点东西我就长胖' : (s === 'young' ? '长出钳子啦 · ' + n + ' 段记忆' : '守库小螃蟹 · ' + n + ' 段记忆'));
     start();
   }
+  function setWeather(desc) { st.weather = String(desc || ''); }
   function react(type) {
     ensure();
     wakePet();
@@ -6095,6 +6152,10 @@ window.ObPet = (function () {
       if (type === 'music') { st.special='music'; st.specialT=8000; }
       else if (type === 'embedding_rebuild') { st.special='coding'; st.specialT=5000; }
       else if (type === 'breath' || type === 'hold' || type === 'test_create') { st.special='celebrate'; st.specialT=1200; }
+      else if (type === 'search') { st.special='search'; st.specialT=2200; }
+      else if (type === 'coffee') { st.special='coffee'; st.specialT=7000; }
+      else if (type === 'rain') { st.special='rain'; st.specialT=7000; }
+      else if (type === 'rate_limit' || type === 'invalid_key' || type === 'connection_error') { st.special='angry'; st.specialT=3000; }
       var lines={
         forget:'我会替你放远一点。',test_create:'护目镜戴好，开始实验。',test_delete:'假的，清理完了。',protect:'这条不行。',forgive:'……算了，原谅你。',secret:'咔哒？你居然知道暗号。',
         rate_limit:'最近发现你有429的问题。不过那是你的问题，不是我的。我把钳子收好了，你也冷静一下。',
@@ -6112,14 +6173,17 @@ window.ObPet = (function () {
         host.classList.remove('tickled'); void host.offsetWidth; host.classList.add('tickled');
         setTimeout(function(){ host.classList.remove('tickled'); },700);
         st.tickleTimer=setTimeout(function(){st.tickles=0;},8000);
-      } else setTip(type === 'music' ? '耳机戴好了。你选歌。' : (lines[type] || (type === 'breath' ? 'breath～横着跳了一下' : (type === 'hold' ? '夹进记忆里啦 :)' : '戳我干嘛 :)'))));
+      } else {
+        var specialLines={music:'耳机戴好了。你选歌。',search:'我帮你找。别催。',coffee:'先喝一口，再守库。',rain:'下雨了。钳子不能淋湿。'};
+        setTip(specialLines[type] || lines[type] || (type === 'breath' ? 'breath～横着跳了一下' : (type === 'hold' ? '夹进记忆里啦 :)' : '戳我干嘛 :)')));
+      }
       host.classList.toggle('lab-mode',type==='test_create');
       if(type==='test_create') setTimeout(function(){host.classList.remove('lab-mode');},4000);
       if(type==='test_delete') setTimeout(function(){host.classList.remove('lab-mode');},1500);
     }
     start();
   }
-  return { setCount: setCount, react: react };
+  return { setCount: setCount, react: react, setWeather: setWeather };
 })();
 
 function petReactForApiProblem(message) {
@@ -6198,6 +6262,7 @@ function updatePet(total) { if (window.ObPet) ObPet.setCount(total || 0); }
           if (!j || !j.current) return;
           var w = wmo(j.current.weather_code); if (!w) return;
           weather = { emoji:w.emoji, desc:w.desc, temp:Math.round(j.current.temperature_2m) };
+          if (window.ObPet && window.ObPet.setWeather) window.ObPet.setWeather(w.desc);
         }).catch(function(){});
     } catch(e){}
   }
@@ -6223,6 +6288,7 @@ function updatePet(total) { if (window.ObPet) ObPet.setCount(total || 0); }
   function hook(){
     var host = document.getElementById('ob-pet');
     if (!host) { return setTimeout(hook, 1000); }   // 小螃蟹可能还没 ensure()，等一下
+    if (weather && window.ObPet && window.ObPet.setWeather) window.ObPet.setWeather(weather.desc);
     applyTint();
     host.addEventListener('mouseenter', function(){
       var tip = host.querySelector('.pet-tip');
