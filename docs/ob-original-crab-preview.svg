@@ -1,18 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="760" height="230" viewBox="0 0 760 230" role="img" aria-labelledby="title desc" shape-rendering="crispEdges" stroke="none">
   <title id="title">OB 点阵 Clawd 预览</title>
-  <desc id="desc">依次展示小型、成长型与横向走路的两帧 Clawd；宽方身体、方爪、竖眼、四条短腿和黑色地面影子。</desc>
+  <desc id="desc">依次展示初始、成长型与横向走路的两帧 Clawd；宽方身体、方爪、竖眼、四条短腿和黑色地面影子。</desc>
   <metadata>Base proportions adapted from xixicc186/clawd-emotes-skill, MIT License, Copyright 2026 xixicc186.</metadata>
   <rect width="760" height="230" fill="#F7F4EC"/>
 
   <g id="tiny" transform="translate(45 20) scale(10)">
-    <rect x="4" y="15" width="8" height="1" fill="#000"/>
+    <rect x="3" y="15" width="10" height="1" fill="#000"/>
     <g fill="#DE886D">
-      <rect x="4" y="7" width="8" height="6"/>
-      <rect x="2" y="9" width="2" height="2"/><rect x="12" y="9" width="2" height="2"/>
-      <rect x="5" y="13" width="1" height="2"/><rect x="7" y="13" width="1" height="2"/>
+      <rect x="3" y="6" width="10" height="7"/>
+      <rect x="1" y="9" width="2" height="2"/><rect x="13" y="9" width="2" height="2"/>
+      <rect x="4" y="13" width="1" height="2"/><rect x="6" y="13" width="1" height="2"/>
       <rect x="9" y="13" width="1" height="2"/><rect x="11" y="13" width="1" height="2"/>
     </g>
-    <g fill="#000"><rect x="6" y="8" width="1" height="2"/><rect x="9" y="8" width="1" height="2"/></g>
+    <g fill="#000"><rect x="5" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/></g>
   </g>
 
   <g id="young" transform="translate(225 20) scale(10)">
