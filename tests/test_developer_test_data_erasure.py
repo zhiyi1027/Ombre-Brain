@@ -214,12 +214,16 @@ def test_dashboard_crab_can_be_tickled_and_reacts_to_real_system_states():
     assert "正在忘记一些不重要的事" in text
 
 
-def test_dashboard_crab_sprites_are_original_inline_pixel_art():
+def test_dashboard_crab_sprites_use_attributed_inline_pixel_art():
     text = Path("frontend/dashboard.html").read_text(encoding="utf-8")
+    notice = Path("THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
 
-    assert "HTML5 Canvas 原创点阵小螃蟹" in text
-    assert "clawd-on-desk" not in text.lower()
+    assert "HTML5 Canvas 点阵 Clawd" in text
+    assert "xixicc186/clawd-emotes-skill" in text
+    assert "未嵌入 clawd-on-desk 的受限美术文件" in text
     assert "assets/gif/clawd" not in text.lower()
+    assert "xixicc186/clawd-emotes-skill" in notice
+    assert "License: MIT" in notice
 
     for name in ("TINY", "YOUNG", "GROWN1", "GROWN2"):
         match = re.search(rf"var {name} = \[(.*?)\];", text, re.S)
@@ -227,4 +231,4 @@ def test_dashboard_crab_sprites_are_original_inline_pixel_art():
         rows = re.findall(r"'([^']*)'", match.group(1))
         assert len(rows) == 16, f"{name} must contain 16 rows"
         assert all(len(row) == 16 for row in rows), f"{name} rows must be 16 pixels wide"
-        assert set("".join(rows)) <= set(".PKG"), f"{name} uses an unknown palette key"
+        assert set("".join(rows)) <= set(".PK"), f"{name} uses an unknown palette key"

@@ -1,25 +1,50 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="230" viewBox="0 0 760 230" role="img" aria-labelledby="title desc" shape-rendering="crispEdges">
-  <title id="title">OB 原创方块像素螃蟹预览</title>
-  <desc id="desc">依次展示小螃蟹、长出钳子的螃蟹，以及横向走路的两帧。</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="230" viewBox="0 0 760 230" role="img" aria-labelledby="title desc" shape-rendering="crispEdges" stroke="none">
+  <title id="title">OB 点阵 Clawd 预览</title>
+  <desc id="desc">依次展示小型、成长型与横向走路的两帧 Clawd；宽方身体、方爪、竖眼、四条短腿和黑色地面影子。</desc>
+  <metadata>Base proportions adapted from xixicc186/clawd-emotes-skill, MIT License, Copyright 2026 xixicc186.</metadata>
   <rect width="760" height="230" fill="#F7F4EC"/>
-  <g id="tiny">
-    <path fill="#D98770" d="M75 65h60v10h-60zM65 75h80v10h-80zM55 85h20v10h-20zM85 85h30v10h-30zM125 85h30v10h-30zM55 95h20v10h-20zM85 95h30v10h-30zM125 95h30v10h-30zM55 105h40v10h-40zM105 105h50v10h-50zM65 115h80v10h-80zM65 125h10v10h-10zM85 125h10v10h-10zM115 125h10v10h-10zM135 125h10v10h-10zM55 135h20v10h-20zM85 135h10v10h-10zM115 135h10v10h-10zM135 135h20v10h-20z"/>
-    <path fill="#2D2825" d="M75 85h10v10h-10zM115 85h10v10h-10zM75 95h10v10h-10zM115 95h10v10h-10z"/>
-    <path fill="#C79A45" d="M95 105h10v10h-10z"/>
+
+  <g id="tiny" transform="translate(45 20) scale(10)">
+    <rect x="4" y="15" width="8" height="1" fill="#000"/>
+    <g fill="#DE886D">
+      <rect x="4" y="7" width="8" height="6"/>
+      <rect x="2" y="9" width="2" height="2"/><rect x="12" y="9" width="2" height="2"/>
+      <rect x="5" y="13" width="1" height="2"/><rect x="7" y="13" width="1" height="2"/>
+      <rect x="9" y="13" width="1" height="2"/><rect x="11" y="13" width="1" height="2"/>
+    </g>
+    <g fill="#000"><rect x="6" y="8" width="1" height="2"/><rect x="9" y="8" width="1" height="2"/></g>
   </g>
-  <g id="young">
-    <path fill="#D98770" d="M255 55h80v10h-80zM255 65h80v10h-80zM235 75h120v10h-120zM225 85h20v10h-20zM255 85h10v10h-10zM275 85h40v10h-40zM325 85h10v10h-10zM345 85h20v10h-20zM225 95h20v10h-20zM255 95h10v10h-10zM275 95h40v10h-40zM325 95h10v10h-10zM345 95h20v10h-20zM225 105h20v10h-20zM255 105h30v10h-30zM295 105h40v10h-40zM345 105h20v10h-20zM235 115h120v10h-120zM255 125h80v10h-80zM255 135h10v10h-10zM275 135h10v10h-10zM305 135h10v10h-10zM325 135h10v10h-10zM245 145h20v10h-20zM275 145h10v10h-10zM305 145h10v10h-10zM325 145h20v10h-20z"/>
-    <path fill="#2D2825" d="M265 85h10v10h-10zM315 85h10v10h-10zM265 95h10v10h-10zM315 95h10v10h-10z"/>
-    <path fill="#C79A45" d="M285 105h10v10h-10z"/>
+
+  <g id="young" transform="translate(225 20) scale(10)">
+    <rect x="3" y="15" width="10" height="1" fill="#000"/>
+    <g fill="#DE886D">
+      <rect x="3" y="6" width="10" height="7"/>
+      <rect x="1" y="9" width="2" height="2"/><rect x="13" y="9" width="2" height="2"/>
+      <rect x="4" y="13" width="1" height="2"/><rect x="6" y="13" width="1" height="2"/>
+      <rect x="9" y="13" width="1" height="2"/><rect x="11" y="13" width="1" height="2"/>
+    </g>
+    <g fill="#000"><rect x="5" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/></g>
   </g>
-  <g id="grown-1">
-    <path fill="#D98770" d="M445 55h80v10h-80zM445 65h80v10h-80zM425 75h120v10h-120zM405 85h30v10h-30zM445 85h10v10h-10zM465 85h40v10h-40zM515 85h10v10h-10zM535 85h30v10h-30zM405 95h30v10h-30zM445 95h10v10h-10zM465 95h40v10h-40zM515 95h10v10h-10zM535 95h30v10h-30zM405 105h30v10h-30zM445 105h30v10h-30zM485 105h40v10h-40zM535 105h30v10h-30zM425 115h120v10h-120zM445 125h80v10h-80zM445 135h10v10h-10zM465 135h10v10h-10zM495 135h10v10h-10zM515 135h10v10h-10zM445 145h10v10h-10zM465 145h10v10h-10zM495 145h10v10h-10zM515 145h10v10h-10zM435 155h20v10h-20zM465 155h10v10h-10zM495 155h10v10h-10zM515 155h20v10h-20z"/>
-    <path fill="#2D2825" d="M455 85h10v10h-10zM505 85h10v10h-10zM455 95h10v10h-10zM505 95h10v10h-10z"/>
-    <path fill="#C79A45" d="M475 105h10v10h-10z"/>
+
+  <g id="grown-1" transform="translate(405 20) scale(10)">
+    <rect x="3" y="15" width="9" height="1" fill="#000"/>
+    <g fill="#DE886D">
+      <rect x="2" y="6" width="11" height="7"/>
+      <rect x="0" y="9" width="2" height="2"/><rect x="13" y="9" width="2" height="2"/>
+      <rect x="3" y="13" width="1" height="2"/><rect x="5" y="13" width="1" height="2"/>
+      <rect x="9" y="13" width="1" height="2"/><rect x="11" y="13" width="1" height="2"/>
+    </g>
+    <g fill="#000"><rect x="4" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/></g>
   </g>
-  <g id="grown-2">
-    <path fill="#D98770" d="M635 55h80v10h-80zM635 65h80v10h-80zM615 75h120v10h-120zM595 85h30v10h-30zM635 85h10v10h-10zM655 85h40v10h-40zM705 85h10v10h-10zM725 85h30v10h-30zM595 95h30v10h-30zM635 95h10v10h-10zM655 95h40v10h-40zM705 95h10v10h-10zM725 95h30v10h-30zM595 105h30v10h-30zM635 105h30v10h-30zM675 105h40v10h-40zM725 105h30v10h-30zM615 115h120v10h-120zM635 125h80v10h-80zM625 135h10v10h-10zM655 135h10v10h-10zM685 135h10v10h-10zM715 135h10v10h-10zM625 145h10v10h-10zM655 145h10v10h-10zM685 145h10v10h-10zM715 145h10v10h-10zM615 155h20v10h-20zM655 155h10v10h-10zM685 155h10v10h-10zM715 155h20v10h-20z"/>
-    <path fill="#2D2825" d="M645 85h10v10h-10zM695 85h10v10h-10zM645 95h10v10h-10zM695 95h10v10h-10z"/>
-    <path fill="#C79A45" d="M665 105h10v10h-10z"/>
+
+  <g id="grown-2" transform="translate(595 20) scale(10)">
+    <rect x="3" y="15" width="9" height="1" fill="#000"/>
+    <g fill="#DE886D">
+      <rect x="2" y="6" width="11" height="7"/>
+      <rect x="0" y="9" width="2" height="2"/><rect x="13" y="9" width="2" height="2"/>
+      <rect x="4" y="13" width="1" height="2"/><rect x="6" y="13" width="1" height="2"/>
+      <rect x="8" y="13" width="1" height="2"/><rect x="10" y="13" width="1" height="2"/>
+    </g>
+    <g fill="#000"><rect x="4" y="8" width="1" height="2"/><rect x="10" y="8" width="1" height="2"/></g>
   </g>
 </svg>

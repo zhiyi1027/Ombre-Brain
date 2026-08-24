@@ -5773,36 +5773,36 @@ function feelFace(v, a) {
 }
 
 // ============================================================
-// 像素电子宠物 · ObPet（HTML5 Canvas 原创点阵小螃蟹）
-//   字符→颜色：. 透明 / P 暖珊瑚 / K 方眼睛 / G 记忆金像素
+// 像素电子宠物 · ObPet（HTML5 Canvas 点阵 Clawd）
+//   基础比例改编自 xixicc186/clawd-emotes-skill 的 MIT 开放几何（© 2026 xixicc186）
+//   https://github.com/xixicc186/clawd-emotes-skill
+//   未嵌入 clawd-on-desk 的受限美术文件。
+//   字符→颜色：. 透明 / P Clawd 珊瑚色 / K 方眼睛与地面影子
 //   三态：tiny 小小一只 → young 长出钳子 → grown 横着巡逻
-//   极简、纯色、无描边；记忆越多只会长胖。所有像素均为 OB 原创。
+//   极简、纯色、无描边；保持宽方身体、方爪、竖眼、四条短腿的标准轮廓。
 // ============================================================
 window.ObPet = (function () {
-  var PAL = { '.':null, P:'#D98770', K:'#2D2825', G:'#C79A45' };
+  var PAL = { '.':null, P:'#DE886D', K:'#000000' };
   var TINY = [
-    '................','................','................','.....PPPPPP.....',
-    '....PPPPPPPP....','...PPKPPPKPPP...','...PPKPPPKPPP...','...PPPPGPPPPP...',
-    '....PPPPPPPP....','....P.P..P.P....','...PP.P..P.PP...','................',
-    '................','................','................','................'];
+    '................','................','................','................',
+    '................','................','................','....PPPPPPPP....',
+    '....PPKPPKPP....','..PPPPKPPKPPPP..','..PPPPPPPPPPPP..','....PPPPPPPP....',
+    '....PPPPPPPP....','.....P.P.P.P....','.....P.P.P.P....','....KKKKKKKK....'];
   var YOUNG = [
-    '................','................','....PPPPPPPP....','....PPPPPPPP....',
-    '..PPPPPPPPPPPP..','.PP.PKPPPPKP.PP.','.PP.PKPPPPKP.PP.',
-    '.PP.PPPGPPPP.PP.','..PPPPPPPPPPPP..','....PPPPPPPP....',
-    '....P.P..P.P....','...PP.P..P.PP...','................','................',
-    '................','................'];
+    '................','................','................','................',
+    '................','................','...PPPPPPPPPP...','...PPPPPPPPPP...',
+    '...PPKPPPPKPP...','.PPPPKPPPPKPPPP.','.PPPPPPPPPPPPPP.','...PPPPPPPPPP...',
+    '...PPPPPPPPPP...','....P.P..P.P....','....P.P..P.P....','...KKKKKKKKKK...'];
   var GROWN1 = [
-    '................','................','....PPPPPPPP....','....PPPPPPPP....',
-    '..PPPPPPPPPPPP..','PPP.PKPPPPKP.PPP','PPP.PKPPPPKP.PPP',
-    'PPP.PPPGPPPP.PPP','..PPPPPPPPPPPP..','....PPPPPPPP....',
-    '....P.P..P.P....','....P.P..P.P....','...PP.P..P.PP...','................',
-    '................','................'];
+    '................','................','................','................',
+    '................','................','..PPPPPPPPPPP...','..PPPPPPPPPPP...',
+    '..PPKPPPPPKPP...','PPPPKPPPPPKPPPP.','PPPPPPPPPPPPPPP.','..PPPPPPPPPPP...',
+    '..PPPPPPPPPPP...','...P.P...P.P....','...P.P...P.P....','...KKKKKKKKK....'];
   var GROWN2 = [
-    '................','................','....PPPPPPPP....','....PPPPPPPP....',
-    '..PPPPPPPPPPPP..','PPP.PKPPPPKP.PPP','PPP.PKPPPPKP.PPP',
-    'PPP.PPPGPPPP.PPP','..PPPPPPPPPPPP..','....PPPPPPPP....',
-    '...P..P..P..P...','...P..P..P..P...','..PP..P..P..PP..','................',
-    '................','................'];
+    '................','................','................','................',
+    '................','................','..PPPPPPPPPPP...','..PPPPPPPPPPP...',
+    '..PPKPPPPPKPP...','PPPPKPPPPPKPPPP.','PPPPPPPPPPPPPPP.','..PPPPPPPPPPP...',
+    '..PPPPPPPPPPP...','....P.P.P.P.....','....P.P.P.P.....','...KKKKKKKKK....'];
   var SPR = 16, W = 64, H = 24, SCALE = 2;
   var host, cv, ctx, raf = null, t0 = 0;
   var st = { stage:'tiny', count:0, x:24, dir:1, frame:0, growT:0, hopT:0, started:false, dragMoved:false, suppressClickUntil:0, drops:0, tickles:0, tickleTimer:null, idleTimer:null };
