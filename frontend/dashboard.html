@@ -5782,25 +5782,27 @@ window.ObPet = (function () {
   var PAL = { '.':null, P:'#D98770', K:'#2D2825', G:'#C79A45' };
   var TINY = [
     '................','................','................','.....PPPPPP.....',
-    '...PPPPPPPPPP...','..PPKPPPPPKPPP..','..PPKPPPPPKPPP..','...PPPPGPPPPP...',
-    '....PPPPPPPP....','...P.PPPPPP.P...','..P..PPPPPP..P..','.....P....P.....',
-    '....PP....PP....','................','................','................'];
+    '....PPPPPPPP....','...PPKPPPKPPP...','...PPKPPPKPPP...','...PPPPGPPPPP...',
+    '....PPPPPPPP....','....P.P..P.P....','...PP.P..P.PP...','................',
+    '................','................','................','................'];
   var YOUNG = [
-    '................','................','................','.....PPPPPP.....',
-    '...PPPPPPPPPP...','..PPPPGPPPPPPP..','.PPPKPPPPPKPPPP.',
-    '.PPPKPPPPPKPPPP.','..PPPPPPPPPPPP..','.P.PPPPPPPPPP.P.',
-    'P..PPPPPPPPPP..P','...PP..PP..PP...','..PP...PP...PP..','................',
+    '................','................','....PPPPPPPP....','....PPPPPPPP....',
+    '..PPPPPPPPPPPP..','.PP.PKPPPPKP.PP.','.PP.PKPPPPKP.PP.',
+    '.PP.PPPGPPPP.PP.','..PPPPPPPPPPPP..','....PPPPPPPP....',
+    '....P.P..P.P....','...PP.P..P.PP...','................','................',
     '................','................'];
   var GROWN1 = [
-    '................','................','.....PPPPPP.....','...PPPPPPPPPP...',
-    '..PPPPGPPPPPPP..','.PPPPPPPPPPPPPP.','PPPPKPPPPKPPPPPP','PPPPKPPPPKPPPPPP',
-    '.PPPPPPPPPPPPPP.','..PPPPPPPPPPPP..','PP.PPPPPPPPPP.PP','P..PPPPPPPPPP..P',
-    '...PP..PP..PP...','..PP...PP...PP..','................','................'];
+    '................','................','....PPPPPPPP....','....PPPPPPPP....',
+    '..PPPPPPPPPPPP..','PPP.PKPPPPKP.PPP','PPP.PKPPPPKP.PPP',
+    'PPP.PPPGPPPP.PPP','..PPPPPPPPPPPP..','....PPPPPPPP....',
+    '....P.P..P.P....','....P.P..P.P....','...PP.P..P.PP...','................',
+    '................','................'];
   var GROWN2 = [
-    '................','................','.....PPPPPP.....','...PPPPPPPPPP...',
-    '..PPPPGPPPPPPP..','.PPPPPPPPPPPPPP.','PPPPKPPPPKPPPPPP','PPPPKPPPPKPPPPPP',
-    '.PPPPPPPPPPPPPP.','..PPPPPPPPPPPP..','PP.PPPPPPPPPP.PP','P..PPPPPPPPPP..P',
-    '..PP...PP...PP..','...PP..PP..PP...','................','................'];
+    '................','................','....PPPPPPPP....','....PPPPPPPP....',
+    '..PPPPPPPPPPPP..','PPP.PKPPPPKP.PPP','PPP.PKPPPPKP.PPP',
+    'PPP.PPPGPPPP.PPP','..PPPPPPPPPPPP..','....PPPPPPPP....',
+    '...P..P..P..P...','...P..P..P..P...','..PP..P..P..PP..','................',
+    '................','................'];
   var SPR = 16, W = 64, H = 24, SCALE = 2;
   var host, cv, ctx, raf = null, t0 = 0;
   var st = { stage:'tiny', count:0, x:24, dir:1, frame:0, growT:0, hopT:0, started:false, dragMoved:false, suppressClickUntil:0, drops:0, tickles:0, tickleTimer:null, idleTimer:null };
