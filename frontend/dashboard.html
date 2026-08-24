@@ -6022,11 +6022,11 @@ window.ObPet = (function () {
   }
   function drawUmbrella(ox, oy, flip, phase) {
     var blue = '#6F91C7', light = '#A9C2E6', rain = '#78A9D6';
-    pixelRect(ox,oy,5,1,6,1,light,flip); pixelRect(ox,oy,3,2,10,1,blue,flip);
-    pixelRect(ox,oy,2,3,12,2,blue,flip); pixelRect(ox,oy,8,5,1,7,'#343A45',flip);
-    pixelRect(ox,oy,8,11,2,1,'#343A45',flip);
-    pixelRect(ox,oy,phase ? 1 : 2,7,1,2,rain,flip);
-    pixelRect(ox,oy,phase ? 14 : 13,phase ? 9 : 6,1,2,rain,flip);
+    pixelRect(ox,oy,5,0,6,1,light,flip); pixelRect(ox,oy,3,1,10,1,blue,flip);
+    pixelRect(ox,oy,2,2,12,2,blue,flip); pixelRect(ox,oy,13,4,1,8,'#343A45',flip);
+    pixelRect(ox,oy,11,11,3,1,'#343A45',flip); pixelRect(ox,oy,11,10,1,2,'#343A45',flip);
+    pixelRect(ox,oy,phase ? 0 : 1,phase ? 7 : 5,1,2,rain,flip);
+    pixelRect(ox,oy,phase ? 15 : 14,phase ? 5 : 8,1,2,rain,flip);
   }
   function drawNightcap(ox, oy, flip, phase) {
     var cap = '#7A74B8', trim = '#DDD8F0', blanket = '#9EB8D8';
