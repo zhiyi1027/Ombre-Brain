@@ -2404,10 +2404,16 @@ class BucketManager:
     # Multi-dimensional search (core feature)
     # 多维搜索（核心功能）
     #
-    # Strategy: domain pre-filter → weighted multi-dim ranking
-    # 策略：主题域预筛 → 多维加权精排
+    # Strategy: domain pre-filter → relevance gate → weighted ranking
+    # 策略：主题域预筛 → 相关性准入 → 多维加权精排
     #
-    # Ranking formula:
+    # Relevance gate (whether a bucket may enter search results):
+    #   lexical = topic + BM25; semantic has its own recall threshold.
+    #   Literal matches always enter.  Time/importance/emotion/touch NEVER
+    #   participate in this gate, so a fresh or important but irrelevant bucket
+    #   cannot be mistaken for a relevant result.
+    #
+    # Ranking formula (only after the relevance gate):
     #   total = topic(×w_topic) + emotion(×w_emotion)
     #           + time(×w_time) + importance(×w_importance)
     #
@@ -2579,17 +2585,23 @@ class BucketManager:
                 if literal_hit:
                     normalized = min(100.0, normalized + _LITERAL_MATCH_BONUS)
 
-                # Threshold check uses raw (pre-penalty) score so resolved buckets
-                # 阈值用原始分数判定，确保 resolved 桶在关键词命中时仍可被搜出
-                # remain reachable by keyword (penalty applied only to ranking).
-                text_match = normalized >= self.fuzzy_threshold or literal_hit
+                # --- Stage 1: relevance-only admission gate ---
+                # 只让 topic + BM25 决定文字通道是否相关；semantic 使用下面独立的
+                # 余弦门槛。time / importance / emotion / touch 只能在 Stage 2 给已经
+                # 相关的候选排序，不能再把一条“很新、很重要但答非所问”的桶抬进门。
+                bm25_relevance = bm25_scores.get(bucket["id"], 0.0)
+                # topic 与 BM25 是两种独立的文字证据。取强者作为准入分，避免一条
+                # 明确的 BM25 命中被另一条弱通道平均稀释；权重仍只用于后面的排序。
+                lexical_relevance = max(topic_score, bm25_relevance) * 100
+                text_match = lexical_relevance >= self.fuzzy_threshold or literal_hit
                 semantic_match = (
                     semantic_score is not None
                     and semantic_score >= self.vector_recall_threshold
                 )
                 if text_match or semantic_match:
-                    # Resolved buckets get ranking penalty (but still reachable by keyword)
-                    # 已解决的桶仅在排序时降权
+                    # --- Stage 2: rank admitted candidates with memory priors ---
+                    # Resolved / historical buckets stay explicitly searchable; their
+                    # penalties affect ordering only, never admission.
                     if meta.get("resolved", False):
                         normalized *= _RESOLVED_RANK_PENALTY
                     if str(meta.get("superseded_by") or "").strip():
