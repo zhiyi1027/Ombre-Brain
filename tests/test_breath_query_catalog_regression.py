@@ -113,7 +113,6 @@ async def test_precise_query_applies_max_results_before_unrelated_core_can_take_
     )
     manager = RankedBucketManager([target, unrelated_core, trailing])
     _install_runtime(monkeypatch, manager)
-    monkeypatch.setattr("tools.breath.search.random.random", lambda: 1.0)
 
     output = await dispatch(query=QUERY, max_results=1, max_tokens=6000)
     await asyncio.sleep(0)

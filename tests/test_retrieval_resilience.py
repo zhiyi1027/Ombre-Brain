@@ -78,7 +78,6 @@ async def test_dynamic_memory_remains_readable_without_summary_provider(
         FailingDehydrator(),
         DisabledEmbedding(),
     )
-    monkeypatch.setattr("tools.breath.search.random.random", lambda: 1.0)
 
     result = await run_search("cedar notebook")
 
@@ -98,7 +97,6 @@ async def test_vector_provider_failure_falls_back_to_keyword_search(
     )
     embedding = StrictEmbedding(error=TimeoutError("provider timeout"))
     install_runtime(bucket_mgr, decay_eng, EchoDehydrator(), embedding)
-    monkeypatch.setattr("tools.breath.search.random.random", lambda: 1.0)
 
     result = await run_search("Project Halcyon")
 
@@ -118,7 +116,6 @@ async def test_semantic_only_candidate_is_recalled_with_one_vector_query(
     )
     embedding = StrictEmbedding(pairs=[(bucket_id, 0.91)])
     install_runtime(bucket_mgr, decay_eng, EchoDehydrator(), embedding)
-    monkeypatch.setattr("tools.breath.search.random.random", lambda: 1.0)
 
     result = await run_search("entirely different query terms")
 
@@ -142,7 +139,6 @@ async def test_semantic_candidate_cannot_bypass_domain_filter(
     )
     embedding = StrictEmbedding(pairs=[(blocked_id, 0.99)])
     install_runtime(bucket_mgr, decay_eng, EchoDehydrator(), embedding)
-    monkeypatch.setattr("tools.breath.search.random.random", lambda: 1.0)
 
     result = await run_search("quartz marker", domain="work")
 

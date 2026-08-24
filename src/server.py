@@ -71,6 +71,7 @@ from tools import i as _t_i
 config = load_config()
 setup_logging(config.get("log_level", "INFO"))
 logger = logging.getLogger("ombre_brain")
+_BREATH_SEARCH_DEFAULT_MAX_RESULTS = 5
 
 # --- Project version (read from <repo_root>/VERSION) / 项目版本号 ---
 # get_version() 汇总读文件 + fallback 逻辑。
@@ -603,16 +604,27 @@ async def breath_search(
     max_results: Optional[int] = 0,
     quotes: Optional[bool] = False,
 ) -> str:
-    """按关键词/语义检索记忆桶,融合关键词/BM25+语义检索,向量不可用时明确提示并退回关键词检索。命中后逐字返回桶内当前 content，不调用 LLM 摘要/改写。domain 逗号分隔,按主题域预筛。max_results=返回条数上限(默认 config.surfacing.breath_max_results,fallback 20,最大 50)。需要 tags/importance_min/valence/arousal/max_tokens/catalog 等更多过滤维度用 breath_advanced(...)。quotes=True 只在已经命中一条记忆后附上当初主动保留的原话；默认不返回，也不能用于列出全部引语。"""
+    """按关键词/语义检索记忆桶,融合关键词/BM25+语义检索,向量不可用时明确提示并退回关键词检索。命中后逐字返回桶内当前 content，不调用 LLM 摘要/改写。domain 逗号分隔,按主题域预筛。max_results=返回条数上限(默认 5,最大 50)；需要更多结果或 tags/importance_min/valence/arousal/max_tokens/catalog 等过滤维度时用 breath_advanced(...)。quotes=True 只在已经命中一条记忆后附上当初主动保留的原话；默认不返回，也不能用于列出全部引语。"""
+    # 普通搜索会把完整桶正文放进模型上下文，因此采用小而稳定的独立默认值。
+    # breath_advanced 仍保留 config.surfacing.breath_max_results（默认 20），
+    # 需要深挖时由调用方明确选择，而不是一次普通关键词查询就灌入整页正文。
+    effective_max_results = (
+        max_results
+        if max_results is not None and max_results > 0
+        else _BREATH_SEARCH_DEFAULT_MAX_RESULTS
+    )
     return await _with_notice(
         _t_breath.dispatch(
-            query=query, domain=domain, max_results=max_results, quotes=quotes
+            query=query,
+            domain=domain,
+            max_results=effective_max_results,
+            quotes=quotes,
         ),
         op="breath_search",
         args={
             "query": query,
             "domain": domain,
-            "max_results": max_results,
+            "max_results": effective_max_results,
             "quotes": bool(quotes),
         },
     )

@@ -138,10 +138,6 @@ async def test_search_breath_returns_raw_content_without_dehydration(
     )
     install_runtime(bucket_mgr, decay_eng, FailingDehydrator())
 
-    import tools.breath.search as search_mod
-
-    monkeypatch.setattr(search_mod.random, "random", lambda: 1.0)
-
     result = await surface_search(
         query="Candlelit protocol",
         max_results=10,
@@ -162,10 +158,6 @@ async def test_search_breath_returns_raw_content_without_dehydration(
 async def test_search_breath_filters_terminal_states_but_keeps_dont_surface(decay_eng, monkeypatch):
     bucket_mgr = SearchPolicyBucketManager()
     install_search_runtime(bucket_mgr, decay_eng, EchoDehydrator())
-
-    import tools.breath.search as search_mod
-
-    monkeypatch.setattr(search_mod.random, "random", lambda: 1.0)
 
     result = await surface_search(
         query="query",
