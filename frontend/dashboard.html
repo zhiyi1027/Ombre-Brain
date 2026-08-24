@@ -1375,7 +1375,7 @@
   #anchor-counter.full i { color: var(--negative) !important; opacity: 0.95; filter: drop-shadow(0 1px 1px rgba(120,40,25,0.4)); }
   #anchor-counter.full #anchor-counter-text { color: var(--negative); font-weight: 600; }
 
-  /* —— ⑨ 原创像素小螃蟹：固定在右下角，随记忆数量探出贝壳、长大 —— */
+  /* —— ⑨ 原创像素小螃蟹：固定在右下角，随记忆数量悄悄长胖 —— */
   #ob-pet {
     position: fixed; right: 18px; bottom: 16px; z-index: 60;
     width: 46px; height: 46px; cursor: pointer;
@@ -5774,46 +5774,36 @@ function feelFace(v, a) {
 
 // ============================================================
 // 像素电子宠物 · ObPet（HTML5 Canvas 原创点阵小螃蟹）
-//   字符→颜色：. 透明 / C 珊瑚红 / c 深珊瑚 / H 暖高光 / W 眼白
-//   K 豆豆眼 / S 贝壳 / s 壳影 / G 记忆金扣
-//   三态：shell 空贝壳（轻晃）→ young 探头小蟹 → grown 背着记忆横着巡逻
-//   记忆越多越大；Hold / Breath 事件触发探头或开心跳。所有像素均为 OB 原创。
+//   字符→颜色：. 透明 / P 暖珊瑚 / K 方眼睛 / G 记忆金像素
+//   三态：tiny 小小一只 → young 长出钳子 → grown 横着巡逻
+//   极简、纯色、无描边；记忆越多只会长胖。所有像素均为 OB 原创。
 // ============================================================
 window.ObPet = (function () {
-  var PAL = { '.':null, C:'#D96B57', c:'#9F433A', H:'#F3A07D', W:'#FFF8E9', K:'#332923', S:'#E7D7B8', s:'#B9A47F', G:'#C99A45' };
-  var SHELL = [
-    '................','................','......ssss......','....ssSSSSss....',
-    '...sSSSSSSSSs...','..sSSSSSSSSSSs..','..sSSSGSSSSSSs..','.sSSSSSSSSSSSSs.',
-    '.sSSGSSSSSSGSSs.','.sSSSSSSSSSSSSs.','..sSSSSSSSSSSs..','...sSSSSSSSSs...',
-    '....ssSSSSss....','......ssss......','................','................'];
-  var SHELL_PEEK = [
-    '................','.....C....C.....','.....W....W.....','.....K....K.....',
-    '...cCCCCCCCCc...','..cCHCCCCCHCCc..','..cCCCCCCCCCCc..','...sSSSSSSSSs...',
-    '..sSSSGSSSSSSs..','.sSSSSSSSSSSSSs.','..sSSSSSSSSSSs..','...sSSSSSSSSs...',
-    '....ssSSSSss....','......ssss......','................','................'];
+  var PAL = { '.':null, P:'#D98770', K:'#2D2825', G:'#C79A45' };
+  var TINY = [
+    '................','................','................','.....PPPPPP.....',
+    '...PPPPPPPPPP...','..PPKPPPPPKPPP..','..PPKPPPPPKPPP..','...PPPPGPPPPP...',
+    '....PPPPPPPP....','...P.PPPPPP.P...','..P..PPPPPP..P..','.....P....P.....',
+    '....PP....PP....','................','................','................'];
   var YOUNG = [
-    '................','................','.....C....C.....','.....W....W.....',
-    '.....K....K.....','.cCCc.CCCC.cCCc.','cCCCCcCHHCcCCCCC','.cCCcCCCCCCcCCc.',
-    '...CCWCCCCWCC...','...CCKCCCCKCC...','....CCCCCCCC....','..cCCcCCCCcCCc..',
-    '.cCC..CCCC..CCc.','cCC...CCCC...CCc','.c............c.','................'];
-  var YOUNG_BLINK = [
-    '................','................','.....C....C.....','.....W....W.....',
-    '.....c....c.....','.cCCc.CCCC.cCCc.','cCCCCcCHHCcCCCCC','.cCCcCCCCCCcCCc.',
-    '...CCCCCCCCCC...','...CCcCCCCcCC...','....CCCCCCCC....','..cCCcCCCCcCCc..',
-    '.cCC..CCCC..CCc.','cCC...CCCC...CCc','.c............c.','................'];
+    '................','................','................','.....PPPPPP.....',
+    '...PPPPPPPPPP...','..PPPPGPPPPPPP..','.PPPKPPPPPKPPPP.',
+    '.PPPKPPPPPKPPPP.','..PPPPPPPPPPPP..','.P.PPPPPPPPPP.P.',
+    'P..PPPPPPPPPP..P','...PP..PP..PP...','..PP...PP...PP..','................',
+    '................','................'];
   var GROWN1 = [
-    '................','....C......C....','....W......W....','....K......K....',
-    '.cCCc.CCCC.cCCc.','cCCCCcCHHCcCCCCC','.cCCcCCCCCCcCCc.','..CCCCCCCCCCCC..',
-    '..CCHCCCCCHCCC..','...CCCCGGCCCC...','..cCCCCGGCCCCc..','.cCCcCCCCCCcCCc.',
-    'cCCC..CCCC..CCCC','.CC...CCCC...CC.','c.c..........c.c','................'];
+    '................','................','.....PPPPPP.....','...PPPPPPPPPP...',
+    '..PPPPGPPPPPPP..','.PPPPPPPPPPPPPP.','PPPPKPPPPKPPPPPP','PPPPKPPPPKPPPPPP',
+    '.PPPPPPPPPPPPPP.','..PPPPPPPPPPPP..','PP.PPPPPPPPPP.PP','P..PPPPPPPPPP..P',
+    '...PP..PP..PP...','..PP...PP...PP..','................','................'];
   var GROWN2 = [
-    '................','....C......C....','....W......W....','....K......K....',
-    '.cCCc.CCCC.cCCc.','cCCCCcCHHCcCCCCC','.cCCcCCCCCCcCCc.','..CCCCCCCCCCCC..',
-    '..CCHCCCCCHCCC..','...CCCCGGCCCC...','..cCCCCGGCCCCc..','.cCCcCCCCCCcCCc.',
-    'cCCC..CCCC..CCCC','..CC..CCCC..CC..','.c..c......c..c.','................'];
+    '................','................','.....PPPPPP.....','...PPPPPPPPPP...',
+    '..PPPPGPPPPPPP..','.PPPPPPPPPPPPPP.','PPPPKPPPPKPPPPPP','PPPPKPPPPKPPPPPP',
+    '.PPPPPPPPPPPPPP.','..PPPPPPPPPPPP..','PP.PPPPPPPPPP.PP','P..PPPPPPPPPP..P',
+    '..PP...PP...PP..','...PP..PP..PP...','................','................'];
   var SPR = 16, W = 64, H = 24, SCALE = 2;
   var host, cv, ctx, raf = null, t0 = 0;
-  var st = { stage:'shell', count:0, x:24, dir:1, frame:0, blinkT:0, emergeT:0, hopT:0, started:false, dragMoved:false, suppressClickUntil:0, drops:0, tickles:0, tickleTimer:null, idleTimer:null };
+  var st = { stage:'tiny', count:0, x:24, dir:1, frame:0, growT:0, hopT:0, started:false, dragMoved:false, suppressClickUntil:0, drops:0, tickles:0, tickleTimer:null, idleTimer:null };
   var TICKLE_LINES = ['别碰我。','……你手痒是吧。','再碰试试。','钳你哦。','我记仇的。','你有正事吗。','……烦。','我是记忆系统不是宠物。','下次再碰我就把你的桶全归档。','别挠了，痒。'];
 
   function wakePet() {
@@ -5940,7 +5930,7 @@ window.ObPet = (function () {
     }
   }
   function setTip(s) { var t = host && host.querySelector('.pet-tip'); if (t) t.textContent = s; }
-  function stageFor(n) { return n < 1 ? 'shell' : (n < 25 ? 'young' : 'grown'); }
+  function stageFor(n) { return n < 1 ? 'tiny' : (n < 25 ? 'young' : 'grown'); }
   function draw(frame, ox, oy, flip) {
     for (var y = 0; y < frame.length; y++) { var row = frame[y];
       for (var x = 0; x < row.length; x++) { var col = PAL[row[x]]; if (!col) continue;
@@ -5952,19 +5942,17 @@ window.ObPet = (function () {
     var dt = now - (t0 || now); t0 = now;
     ctx.clearRect(0, 0, W, H);
     var oy = H - SPR;
-    if (st.emergeT > 0) {                             // 从贝壳里探头的过场
-      st.emergeT -= dt;
+    if (st.growT > 0) {                               // 小蟹长出钳子的过场
+      st.growT -= dt;
       var shake = (Math.floor(now / 70) % 2) ? 1 : -1;
-      if (st.emergeT > 600) draw(SHELL, 24 + shake, oy, false);
-      else if (st.emergeT > 250) draw(SHELL_PEEK, 24 + shake, oy, false);
+      if (st.growT > 500) draw(TINY, 24 + shake, oy, false);
       else draw(YOUNG, 24, oy, false);
-      if (st.emergeT <= 0) { st.stage = stageFor(st.count); st.x = 24; }
-    } else if (st.stage === 'shell') {                // 空壳：轻晃
-      draw(SHELL, 24 + Math.round(Math.sin(now / 420)), oy, false);
-    } else if (st.stage === 'young') {                // 小蟹：眨眼 + 微微点头
-      st.blinkT += dt;
+      if (st.growT <= 0) { st.stage = stageFor(st.count); st.x = 24; }
+    } else if (st.stage === 'tiny') {                 // 小小一只：轻晃
+      draw(TINY, 24 + Math.round(Math.sin(now / 420)), oy, false);
+    } else if (st.stage === 'young') {                // 小蟹：微微点头
       var bob = (Math.floor(now / 320) % 2) ? 0 : -1;
-      draw((st.blinkT % 3200) < 150 ? YOUNG_BLINK : YOUNG, 24, oy + bob, false);
+      draw(YOUNG, 24, oy + bob, false);
     } else {                                          // 大螃蟹：横着巡逻
       var hop = 0;
       if (st.hopT > 0) { st.hopT -= dt; hop = Math.round(Math.sin((1 - st.hopT / 300) * Math.PI) * -3); }
@@ -5977,17 +5965,17 @@ window.ObPet = (function () {
   function start() { if (!raf) { t0 = 0; raf = requestAnimationFrame(render); } }
   function setCount(n) {
     ensure(); n = n || 0; var prev = st.stage, oldCount=st.count, wasStarted=st.started; st.count = n; var s = stageFor(n);
-    if (st.started && prev === 'shell' && s !== 'shell') st.emergeT = 1000; // 首次探头过场
+    if (st.started && prev === 'tiny' && s !== 'tiny') st.growT = 800; // 首次长出钳子的过场
     else if (!st.started) st.stage = s;
     st.started = true;
     if (wasStarted && n > oldCount && oldCount > 0) { st.hopT=300; setTip('这条我记住了。'); }
-    else setTip(s === 'shell' ? '一枚空壳 · 记点东西我就探头' : (s === 'young' ? '探头啦 · ' + n + ' 段记忆' : '守库小螃蟹 · ' + n + ' 段记忆'));
+    else setTip(s === 'tiny' ? '刚醒的小螃蟹 · 记点东西我就长胖' : (s === 'young' ? '长出钳子啦 · ' + n + ' 段记忆' : '守库小螃蟹 · ' + n + ' 段记忆'));
     start();
   }
   function react(type) {
     ensure();
     wakePet();
-    if (st.stage === 'shell' && st.emergeT <= 0) { st.emergeT = 1000; setTip('沙沙——从贝壳里探头！'); }
+    if (st.stage === 'tiny' && st.growT <= 0) { st.growT = 800; setTip('咔哒——钳子长出来了！'); }
     else {
       st.hopT = 300;
       var lines={

@@ -221,10 +221,10 @@ def test_dashboard_crab_sprites_are_original_inline_pixel_art():
     assert "clawd-on-desk" not in text.lower()
     assert "assets/gif/clawd" not in text.lower()
 
-    for name in ("SHELL", "SHELL_PEEK", "YOUNG", "YOUNG_BLINK", "GROWN1", "GROWN2"):
+    for name in ("TINY", "YOUNG", "GROWN1", "GROWN2"):
         match = re.search(rf"var {name} = \[(.*?)\];", text, re.S)
         assert match, f"missing sprite {name}"
         rows = re.findall(r"'([^']*)'", match.group(1))
         assert len(rows) == 16, f"{name} must contain 16 rows"
         assert all(len(row) == 16 for row in rows), f"{name} rows must be 16 pixels wide"
-        assert set("".join(rows)) <= set(".CcHWKSsG"), f"{name} uses an unknown palette key"
+        assert set("".join(rows)) <= set(".PKG"), f"{name} uses an unknown palette key"
