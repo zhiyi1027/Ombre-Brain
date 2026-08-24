@@ -187,6 +187,7 @@ def test_dashboard_crab_is_draggable_and_remembers_a_safe_position():
     assert "你怎么还没睡？" in text
     assert "天旋地转……你礼貌吗？" in text
     assert "play-dead" in text
+    assert "if (!host.classList.contains('play-dead')) wakePet();" in text
     assert "sleeping" in text
     assert "我会替你放远一点。" in text
     assert "护目镜戴好，开始实验。" in text
@@ -212,6 +213,13 @@ def test_dashboard_crab_can_be_tickled_and_reacts_to_real_system_states():
     assert "这里什么都没有" in text
     assert "找不到我自己" in text
     assert "正在忘记一些不重要的事" in text
+    assert "GROWN_BLINK" in text
+    assert "CLAWS_UP" in text
+    assert "FLAIL1" in text and "FLAIL2" in text
+    assert "SLEEP" in text
+    assert "isGrabbed" in text
+    assert "isSleeping" in text
+    assert "gestureT" in text
 
 
 def test_dashboard_crab_sprites_use_attributed_inline_pixel_art():
@@ -225,7 +233,10 @@ def test_dashboard_crab_sprites_use_attributed_inline_pixel_art():
     assert "xixicc186/clawd-emotes-skill" in notice
     assert "License: MIT" in notice
 
-    for name in ("TINY", "YOUNG", "GROWN1", "GROWN2"):
+    for name in (
+        "TINY", "YOUNG", "GROWN1", "GROWN2", "YOUNG_BLINK",
+        "GROWN_BLINK", "CLAWS_UP", "FLAIL1", "FLAIL2", "SLEEP",
+    ):
         match = re.search(rf"var {name} = \[(.*?)\];", text, re.S)
         assert match, f"missing sprite {name}"
         rows = re.findall(r"'([^']*)'", match.group(1))
