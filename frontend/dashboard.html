@@ -4505,7 +4505,7 @@ function doSearch() {
   if (['螃蟹','小螃蟹','钳子','可恶的人类','crab'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('secret');
   if (['跳舞','耳机','听歌','music','dance'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('music');
   if (['咖啡','coffee'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('coffee');
-  if (['下雨','雨伞','umbrella'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('rain');
+  if (['下雨','雨天','rain'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('rain');
   if (q) searchBuckets(q);
   else renderBuckets(filterBuckets(allBuckets));
 }
@@ -4802,7 +4802,7 @@ function _localBucketMatches(query) {
 }
 
 async function searchBuckets(query) {
-  var petShowcase = ['跳舞','耳机','听歌','music','dance','咖啡','coffee','下雨','雨伞','umbrella'];
+  var petShowcase = ['跳舞','耳机','听歌','music','dance','咖啡','coffee','下雨','雨天','rain'];
   if (window.ObPet && !petShowcase.includes(String(query || '').trim().toLowerCase())) window.ObPet.react('search');
   var seen = {}, merged = [];
   _localBucketMatches(query).forEach(function(b) { if (!seen[b.id]) { seen[b.id] = 1; merged.push(b); } });
@@ -6020,13 +6020,15 @@ window.ObPet = (function () {
     pixelRect(ox,oy,phase ? 6 : 7,phase ? 6 : 7,1,2,steam,flip);
     pixelRect(ox,oy,phase ? 9 : 8,phase ? 7 : 6,1,2,steam,flip);
   }
-  function drawUmbrella(ox, oy, flip, phase) {
-    var blue = '#6F91C7', light = '#A9C2E6', rain = '#78A9D6';
-    pixelRect(ox,oy,5,0,6,1,light,flip); pixelRect(ox,oy,3,1,10,1,blue,flip);
-    pixelRect(ox,oy,2,2,12,2,blue,flip); pixelRect(ox,oy,13,4,1,8,'#343A45',flip);
-    pixelRect(ox,oy,11,11,3,1,'#343A45',flip); pixelRect(ox,oy,11,10,1,2,'#343A45',flip);
+  function drawRainCloud(ox, oy, flip, phase) {
+    var cloud = '#8298B4', light = '#B7C5D7', rain = '#78A9D6', puddle = '#83B7D8';
+    pixelRect(ox,oy,4,0,4,1,light,flip); pixelRect(ox,oy,9,0,3,1,light,flip);
+    pixelRect(ox,oy,2,1,12,1,cloud,flip); pixelRect(ox,oy,1,2,14,1,cloud,flip);
+    pixelRect(ox,oy,phase ? 4 : 11,phase ? 4 : 5,1,1,rain,flip);
     pixelRect(ox,oy,phase ? 0 : 1,phase ? 7 : 5,1,2,rain,flip);
     pixelRect(ox,oy,phase ? 15 : 14,phase ? 5 : 8,1,2,rain,flip);
+    pixelRect(ox,oy,phase ? 2 : 13,phase ? 10 : 6,1,1,rain,flip);
+    pixelRect(ox,oy,3,15,9,1,puddle,flip);
   }
   function drawNightcap(ox, oy, flip, phase) {
     var cap = '#7A74B8', trim = '#DDD8F0', blanket = '#9EB8D8';
@@ -6120,7 +6122,7 @@ window.ObPet = (function () {
         drawCoffee(px, py, facingLeft, Math.floor(now / 620) % 2);
       } else if (special === 'rain') {
         draw(st.blinkT > 0 ? GROWN_BLINK : GROWN1, px, py, facingLeft);
-        drawUmbrella(px, py, facingLeft, Math.floor(now / 430) % 2);
+        drawRainCloud(px, py, facingLeft, Math.floor(now / 430) % 2);
       } else if (special === 'angry') {
         draw(GROWN1, px, py, facingLeft);
         drawAngry(px, py, facingLeft, Math.floor(now / 220) % 2);

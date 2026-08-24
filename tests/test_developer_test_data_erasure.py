@@ -225,7 +225,7 @@ def test_dashboard_crab_can_be_tickled_and_reacts_to_real_system_states():
     assert "drawSparkles" in text
     assert "drawMagnifier" in text
     assert "drawCoffee" in text
-    assert "drawUmbrella" in text
+    assert "drawRainCloud" in text
     assert "drawNightcap" in text
     assert "drawAngry" in text
     assert "ambientMusic" in text
