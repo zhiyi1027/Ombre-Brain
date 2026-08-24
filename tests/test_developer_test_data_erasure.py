@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -169,20 +170,24 @@ def test_developer_only_hard_delete_button_has_no_inline_display_override():
     )
 
 
-def test_dashboard_chick_is_draggable_and_remembers_a_safe_position():
+def test_dashboard_crab_is_draggable_and_remembers_a_safe_position():
     text = Path("frontend/dashboard.html").read_text(encoding="utf-8")
     assert "installPetDrag" in text
     assert "setPointerCapture" in text
+    assert 'id = \'ob-pet\'' in text
+    assert "ombrePetPosition" in text
+    # Existing users keep the position previously saved by the chick build.
     assert "ombreChickPosition" in text
     assert "clampPetPosition" in text
     assert "可恶的人类！" in text
     assert "touch-action: none" in text
     assert "dropRemark" in text
     assert "这位置以前是我的。" in text
-    assert "你找什么？我帮你啄。" in text
+    assert "你找什么？我帮你扒拉。" in text
     assert "你怎么还没睡？" in text
     assert "天旋地转……你礼貌吗？" in text
     assert "play-dead" in text
+    assert "if (!host.classList.contains('play-dead')) wakePet();" in text
     assert "sleeping" in text
     assert "我会替你放远一点。" in text
     assert "护目镜戴好，开始实验。" in text
@@ -191,7 +196,7 @@ def test_dashboard_chick_is_draggable_and_remembers_a_safe_position():
     assert "……算了，原谅你。" in text
 
 
-def test_dashboard_chick_can_be_tickled_and_reacts_to_real_system_states():
+def test_dashboard_crab_can_be_tickled_and_reacts_to_real_system_states():
     text = Path("frontend/dashboard.html").read_text(encoding="utf-8")
 
     assert "TICKLE_LINES" in text
@@ -200,11 +205,56 @@ def test_dashboard_chick_can_be_tickled_and_reacts_to_real_system_states():
     assert "别碰我。" in text
     assert "下次再碰我就把你的桶全归档。" in text
     assert "别挠了，痒。" in text
-    assert "chickReactForApiProblem" in text
+    assert "petReactForApiProblem" in text
     assert "最近发现你有429的问题" in text
     assert "你的key坏了" in text
-    assert "你喂了我一段话但我没消化成功" in text
+    assert "你递来一段话，可我没夹稳" in text
     assert "正在重新理解所有的记忆" in text
     assert "这里什么都没有" in text
     assert "找不到我自己" in text
     assert "正在忘记一些不重要的事" in text
+    assert "GROWN_BLINK" in text
+    assert "CLAWS_UP" in text
+    assert "FLAIL1" in text and "FLAIL2" in text
+    assert "SLEEP" in text
+    assert "isGrabbed" in text
+    assert "isSleeping" in text
+    assert "gestureT" in text
+    assert "drawHeadphones" in text
+    assert "drawLaptop" in text
+    assert "drawSparkles" in text
+    assert "drawMagnifier" in text
+    assert "drawCoffee" in text
+    assert "drawRainCloud" in text
+    assert "drawNightcap" in text
+    assert "drawAngry" in text
+    assert "ambientMusic" in text
+    assert "ambientCoffee" in text
+    assert "ambientRain" in text
+    assert "setWeather" in text
+    assert "window.ObPet.setWeather(weather.desc)" in text
+    assert "耳机戴好了。你选歌。" in text
+    assert "['跳舞','耳机','听歌','music','dance']" in text
+
+
+def test_dashboard_crab_sprites_use_attributed_inline_pixel_art():
+    text = Path("frontend/dashboard.html").read_text(encoding="utf-8")
+    notice = Path("THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+
+    assert "HTML5 Canvas 点阵 Clawd" in text
+    assert "xixicc186/clawd-emotes-skill" in text
+    assert "未嵌入 clawd-on-desk 的受限美术文件" in text
+    assert "assets/gif/clawd" not in text.lower()
+    assert "xixicc186/clawd-emotes-skill" in notice
+    assert "License: MIT" in notice
+
+    for name in (
+        "TINY", "YOUNG", "GROWN1", "GROWN2", "YOUNG_BLINK",
+        "GROWN_BLINK", "CLAWS_UP", "FLAIL1", "FLAIL2", "SLEEP",
+    ):
+        match = re.search(rf"var {name} = \[(.*?)\];", text, re.S)
+        assert match, f"missing sprite {name}"
+        rows = re.findall(r"'([^']*)'", match.group(1))
+        assert len(rows) == 16, f"{name} must contain 16 rows"
+        assert all(len(row) == 16 for row in rows), f"{name} rows must be 16 pixels wide"
+        assert set("".join(rows)) <= set(".PK"), f"{name} uses an unknown palette key"

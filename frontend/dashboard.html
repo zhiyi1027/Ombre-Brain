@@ -1313,7 +1313,7 @@
   pre, code { font-family:'Share Tech Mono','SF Mono',Consolas,monospace !important; }
 
   /* ============================================================
-     小巧思 · MICRO-INTERACTIONS（呼吸 / 消散 / 展开 / 钉光 / 引力 / 孵蛋）
+     小巧思 · MICRO-INTERACTIONS（呼吸 / 消散 / 展开 / 钉光 / 引力 / 桌宠）
      ============================================================ */
 
   /* —— ① 衰减引擎运行 → heartbeat 点轻微呼吸（呼应 breath） —— */
@@ -1375,8 +1375,8 @@
   #anchor-counter.full i { color: var(--negative) !important; opacity: 0.95; filter: drop-shadow(0 1px 1px rgba(120,40,25,0.4)); }
   #anchor-counter.full #anchor-counter-text { color: var(--negative); font-weight: 600; }
 
-  /* —— ⑨ 像素小黄鸡蛋：固定在右下角，随记忆数量孵化长大 —— */
-  #ob-chick {
+  /* —— ⑨ 点阵 Clawd：固定在右下角，随记忆数量悄悄长胖 —— */
+  #ob-pet {
     position: fixed; right: 18px; bottom: 16px; z-index: 60;
     width: 46px; height: 46px; cursor: pointer;
     filter: drop-shadow(2px 3px 4px var(--shadow-dark));
@@ -1384,37 +1384,37 @@
     image-rendering: pixelated;
     touch-action: none; user-select: none; -webkit-user-select: none;
   }
-  #ob-chick:hover { transform: translateY(-3px) scale(1.08); }
-  #ob-chick.grabbed { cursor: grabbing; transform: rotate(-5deg) scale(1.12); transition:none; }
-  #ob-chick.dizzy { animation:ob-chick-dizzy .25s ease-in-out 4; }
-  #ob-chick.sleeping { filter:drop-shadow(2px 3px 4px var(--shadow-dark)) grayscale(.15); }
-  #ob-chick.lab-mode canvas { filter:hue-rotate(165deg) saturate(1.35) !important; }
-  #ob-chick.play-dead { transform:rotate(90deg) translateY(8px); transition:transform .25s; }
-  #ob-chick.tickled svg, #ob-chick.tickled canvas { animation:ob-chick-tickle .32s ease-in-out 2; transform-origin:50% 75%; }
-  @keyframes ob-chick-dizzy { 0%,100%{transform:rotate(0)} 50%{transform:rotate(12deg) translateY(-2px)} }
-  @keyframes ob-chick-tickle { 0%,100%{transform:rotate(0) scaleY(1)} 25%{transform:rotate(-7deg) scaleY(.94)} 75%{transform:rotate(7deg) scaleY(1.04)} }
-  #ob-chick.dizzy::after { content:'✦ ✧'; position:absolute; left:45%; top:-8px; color:var(--accent); font-size:13px; animation:ob-chick-wiggle .5s infinite; }
-  #ob-chick.sleeping::after { content:'zZ'; position:absolute; right:5px; top:-7px; color:var(--text-dim); font:11px 'Share Tech Mono',monospace; }
-  #ob-chick svg { display:block; width:100%; height:100%; shape-rendering: crispEdges; }
-  @keyframes ob-chick-wiggle { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-9deg)} 75%{transform:rotate(9deg)} }
-  #ob-chick.wiggle svg { animation: ob-chick-wiggle .5s ease-in-out; transform-origin: 50% 80%; }
-  #ob-chick .chick-tip {
+  #ob-pet:hover { transform: translateY(-3px) scale(1.08); }
+  #ob-pet.grabbed { cursor: grabbing; transform: rotate(-5deg) scale(1.12); transition:none; }
+  #ob-pet.dizzy { animation:ob-pet-dizzy .25s ease-in-out 4; }
+  #ob-pet.sleeping { filter:drop-shadow(2px 3px 4px var(--shadow-dark)) grayscale(.15); }
+  #ob-pet.lab-mode canvas { filter:hue-rotate(165deg) saturate(1.35) !important; }
+  #ob-pet.play-dead { transform:rotate(6deg) translateY(8px); transition:transform .25s; }
+  #ob-pet.tickled svg, #ob-pet.tickled canvas { animation:ob-pet-tickle .32s ease-in-out 2; transform-origin:50% 75%; }
+  @keyframes ob-pet-dizzy { 0%,100%{transform:rotate(0)} 50%{transform:rotate(12deg) translateY(-2px)} }
+  @keyframes ob-pet-tickle { 0%,100%{transform:rotate(0) scaleY(1)} 25%{transform:rotate(-7deg) scaleY(.94)} 75%{transform:rotate(7deg) scaleY(1.04)} }
+  #ob-pet.dizzy::after { content:'✦ ✧'; position:absolute; left:45%; top:-8px; color:var(--accent); font-size:13px; animation:ob-pet-wiggle .5s infinite; }
+  #ob-pet.sleeping::after { content:'zZ'; position:absolute; right:5px; top:-7px; color:var(--text-dim); font:11px 'Share Tech Mono',monospace; }
+  #ob-pet svg { display:block; width:100%; height:100%; shape-rendering: crispEdges; }
+  @keyframes ob-pet-wiggle { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-9deg)} 75%{transform:rotate(9deg)} }
+  #ob-pet.wiggle svg { animation: ob-pet-wiggle .5s ease-in-out; transform-origin: 50% 80%; }
+  #ob-pet .pet-tip {
     position:absolute; right:0; bottom:52px; white-space:nowrap;
     background: var(--surface); color: var(--text);
     font-family:'Share Tech Mono',monospace; font-size:10px; padding:5px 9px; border-radius:9px;
     box-shadow: 3px 3px 10px var(--shadow-dark), -2px -2px 6px var(--shadow-light);
     opacity:0; transform: translateY(4px); transition: opacity .2s, transform .2s; pointer-events:none;
   }
-  #ob-chick:hover .chick-tip { opacity:1; transform: translateY(0); }
-  #ob-chick.grabbed .chick-tip { opacity:1; transform:translateY(0); }
-  @media (max-width: 768px) { #ob-chick { width: 38px; height: 38px; right: 12px; bottom: 12px; } }
+  #ob-pet:hover .pet-tip { opacity:1; transform: translateY(0); }
+  #ob-pet.grabbed .pet-tip { opacity:1; transform:translateY(0); }
+  @media (max-width: 768px) { #ob-pet { width: 38px; height: 38px; right: 12px; bottom: 12px; } }
 
-  /* —— ⑨b 小鸡的一天：随时段给画布微调色温（纯装饰，best-effort）—— */
-  #ob-chick canvas { transition: filter .8s ease; }
-  #ob-chick.tod-dawn  canvas { filter: hue-rotate(-8deg) brightness(1.05) saturate(1.05); }
-  #ob-chick.tod-day   canvas { filter: brightness(1.08) saturate(1.10); }
-  #ob-chick.tod-dusk  canvas { filter: hue-rotate(-14deg) brightness(0.99) saturate(1.18); }
-  #ob-chick.tod-night canvas { filter: brightness(0.80) saturate(0.78) hue-rotate(10deg); }
+  /* —— ⑨b 小螃蟹的一天：随时段给画布微调色温（纯装饰，best-effort）—— */
+  #ob-pet canvas { transition: filter .8s ease; }
+  #ob-pet.tod-dawn  canvas { filter: hue-rotate(-8deg) brightness(1.05) saturate(1.05); }
+  #ob-pet.tod-day   canvas { filter: brightness(1.08) saturate(1.10); }
+  #ob-pet.tod-dusk  canvas { filter: hue-rotate(-14deg) brightness(0.99) saturate(1.18); }
+  #ob-pet.tod-night canvas { filter: brightness(0.80) saturate(0.78) hue-rotate(10deg); }
 
   /* ==================== Easter Eggs ==================== */
   #egg-overlay {
@@ -1436,8 +1436,8 @@
   }
   @keyframes eg-blink { 0%,100%{opacity:1} 50%{opacity:0} }
   #egg-poem-card { animation:ob-unfold .4s cubic-bezier(.2,.7,.3,1) both; }
-  @keyframes egg-rage { 0%{transform:rotate(-12deg) scale(1.1)} 50%{transform:rotate(12deg) scale(1.15)} 100%{transform:rotate(-12deg) scale(1.1)} }
-  #ob-chick.raging { animation:egg-rage 0.1s ease-in-out infinite !important; filter:drop-shadow(0 0 10px rgba(200,80,40,0.9)) saturate(180%) !important; }
+  @keyframes pet-rage { 0%{transform:rotate(-12deg) scale(1.1)} 50%{transform:rotate(12deg) scale(1.15)} 100%{transform:rotate(-12deg) scale(1.1)} }
+  #ob-pet.raging { animation:pet-rage 0.1s ease-in-out infinite !important; filter:drop-shadow(0 0 10px rgba(200,80,40,0.9)) saturate(180%) !important; }
   /* ====================================================== */
 
   /* SVG icon system */
@@ -3740,7 +3740,7 @@ async function testDehydrationKey() {
     msgEl.style.color = 'var(--positive, #9DC880)'; msgEl.innerHTML = _SV.ok + ' ' + esc(d.message || '连接成功');
   } else {
     msgEl.style.color = 'var(--negative)'; msgEl.innerHTML = _SV.err + ' ' + esc(d.error || '连接失败');
-    chickReactForApiProblem(d.error);
+    petReactForApiProblem(d.error);
   }
 }
 
@@ -3755,7 +3755,7 @@ async function testEmbeddingKey() {
     msgEl.style.color = 'var(--positive, #9DC880)'; msgEl.innerHTML = _SV.ok + ' ' + esc(d.message || '向量化连接成功');
   } else {
     msgEl.style.color = 'var(--negative)'; msgEl.innerHTML = _SV.err + ' ' + esc(d.error || '向量化连接失败');
-    chickReactForApiProblem(d.error);
+    petReactForApiProblem(d.error);
   }
 }
 
@@ -4502,7 +4502,10 @@ document.getElementById('search-input').addEventListener('input', (e) => {
 function doSearch() {
   clearTimeout(searchTimer);
   const q = document.getElementById('search-input').value.trim();
-  if (['小鸡','大吉','可恶的人类','chicken'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('secret');
+  if (['螃蟹','小螃蟹','钳子','可恶的人类','crab'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('secret');
+  if (['跳舞','耳机','听歌','music','dance'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('music');
+  if (['咖啡','coffee'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('coffee');
+  if (['下雨','雨天','rain'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('rain');
   if (q) searchBuckets(q);
   else renderBuckets(filterBuckets(allBuckets));
 }
@@ -4575,7 +4578,7 @@ function updateStats() {
   const digested = allBuckets.filter(b => b.digested).length;
   document.getElementById('stats').textContent =
     total + ' 桶 · ' + pinned + ' 钉选 · ' + feels + ' feel · ' + resolved + ' 已解决 · ' + digested + ' 已消化';
-  updateChick(total);   // 小黄鸡蛋随记忆总数孵化长大
+  updatePet(total);   // 小螃蟹随记忆总数从贝壳里探头、长大
 }
 
 function buildFilters() {
@@ -4799,6 +4802,8 @@ function _localBucketMatches(query) {
 }
 
 async function searchBuckets(query) {
+  var petShowcase = ['跳舞','耳机','听歌','music','dance','咖啡','coffee','下雨','雨天','rain'];
+  if (window.ObPet && !petShowcase.includes(String(query || '').trim().toLowerCase())) window.ObPet.react('search');
   var seen = {}, merged = [];
   _localBucketMatches(query).forEach(function(b) { if (!seen[b.id]) { seen[b.id] = 1; merged.push(b); } });
   // 服务端语义搜索：补充本地字面没匹配到、但语义相关的桶（向量化未开启时会失败，自动退化为纯本地）
@@ -5747,7 +5752,7 @@ function daysSince(iso) {
 }
 
 // ============================================================
-// 小巧思 helpers — feel 表情 / 像素小黄鸡蛋 / 随机 placeholder
+// 小巧思 helpers — feel 表情 / 原创像素小螃蟹 / 随机 placeholder
 // ============================================================
 
 // feel 表情：嘴形由 valence 决定，眼睛由 arousal 决定，每条 feel 的「脸」都是算出来的
@@ -5773,48 +5778,70 @@ function feelFace(v, a) {
 }
 
 // ============================================================
-// 像素电子宠物 · ObPet（HTML5 Canvas 点阵小鸡）
-//   字符→颜色：. 透明 / Y 鸡黄 / O 深黄冠 / W 蛋壳白 / S 壳影
-//   B 嘴橙 / K 豆豆眼 / L 蓝领结 / l 深蓝结 / P 波点蓝 / r 腮红
-//   三态：egg 蛋（晃动）→ chick 破壳雏鸡 → big 走来走去的肥嘟嘟大吉
-//   记忆越多越大；Hold / Breath 事件触发破壳 or 开心跳。像捏乐高一样的 2D 像素数组。
+// 像素电子宠物 · ObPet（HTML5 Canvas 点阵 Clawd）
+//   基础比例与耳机/电脑配件技法改编自 xixicc186/clawd-emotes-skill（MIT，© 2026 xixicc186）
+//   https://github.com/xixicc186/clawd-emotes-skill
+//   未嵌入 clawd-on-desk 的受限美术文件。
+//   字符→颜色：. 透明 / P Clawd 珊瑚色 / K 方眼睛与地面影子
+//   三态：tiny 小小一只 → young 长出钳子 → grown 横着巡逻
+//   极简、纯色、无描边；保持宽方身体、方爪、竖眼、四条短腿的标准轮廓。
 // ============================================================
 window.ObPet = (function () {
-  var PAL = { '.':null, Y:'#FFD452', O:'#E0A92E', W:'#FFFFFF', S:'#E8DFC2', B:'#FF9F43', K:'#3A2E1E', L:'#5B8FD6', l:'#3E6FB0', P:'#7FB0E6', r:'#F6B6C2' };
-  var EGG = [
-    '................','......SSSS......','.....SWWWWS.....','....SWWWWWWS....',
-    '...SWWWPWWWWS...','...SWWWWWWWWS...','..SWWWWWWWWWWS..','..SWWPWWWWWWWS..',
-    '..SWWWWWWWPWWS..','..SWWWWWWWWWWS..','...SWWWPWWWWS...','...SWWWWWWWWS...',
-    '....SWWWWWWS....','.....SWWWWS.....','......SSSS......','................'];
-  var EGG_CRACK = [
-    '................','......SSSS......','.....SWWWWS.....','....SWWWWWWS....',
-    '...SWWKWWKWWS...','...SWWWWWWWWS...','..SWWWBBWWWWWS..','..SOWWOWWOWWOS..',
-    '..SWOWWOWWOWWS..','..SWWWWWWWWWWS..','...SWWWWWWWWS...','...SWWWWWWWWS...',
-    '....SWWWWWWS....','.....SWWWWS.....','......SSSS......','................'];
-  var CHICK = [
-    '................','......YYYY......','.....YYYYYY.....','....YYYYYYYY....',
-    '....YKYYYYKY....','....YYYYYYYY....','....YYYBBYYY....','...YYYYYYYYYY...',
-    '..YYYYYYYYYYYY..','..YYYYYYYYYYYY..','..YYYYYYYYYYYY..','...YYYYYYYYYY...',
-    '....YYYYYYYY....','.....YYYYYY.....','.....B....B.....','....BB....BB....'];
-  var CHICK_BLINK = [
-    '................','......YYYY......','.....YYYYYY.....','....YYYYYYYY....',
-    '....YYYYYYYY....','....YYYYYYYY....','....YYYBBYYY....','...YYYYYYYYYY...',
-    '..YYYYYYYYYYYY..','..YYYYYYYYYYYY..','..YYYYYYYYYYYY..','...YYYYYYYYYY...',
-    '....YYYYYYYY....','.....YYYYYY.....','.....B....B.....','....BB....BB....'];
-  var BIG1 = [
-    '.......OO.......','......YYYY......','.....YYYYYY.....','....YKYYYYKY....',
-    '...rYYYYYYYYr...','....YYYBBYYY....','...YYYYYYYYYY...','..YYYYYYYYYYYY..',
-    '..YYYYYYYYYYYY..','..YYYYYYYYYYYY..','..YYYYYYYYYYYY..','...YYYYYYYYYY...',
-    '....YYLllLYY....','.....YYYYYY.....','....B......B....','...BB......BB...'];
-  var BIG2 = [
-    '.......OO.......','......YYYY......','.....YYYYYY.....','....YKYYYYKY....',
-    '...rYYYYYYYYr...','....YYYBBYYY....','...YYYYYYYYYY...','..YYYYYYYYYYYY..',
-    '..YYYYYYYYYYYY..','..YYYYYYYYYYYY..','..YYYYYYYYYYYY..','...YYYYYYYYYY...',
-    '....YYLllLYY....','.....YYYYYY.....','.....B....B.....','....BB....BB....'];
+  var PAL = { '.':null, P:'#DE886D', K:'#000000' };
+  var TINY = [
+    '................','................','................','................',
+    '................','................','...PPPPPPPPPP...','...PPPPPPPPPP...',
+    '...PPKPPPPKPP...','.PPPPKPPPPKPPPP.','.PPPPPPPPPPPPPP.','...PPPPPPPPPP...',
+    '...PPPPPPPPPP...','....P.P..P.P....','....P.P..P.P....','...KKKKKKKKKK...'];
+  var YOUNG = [
+    '................','................','................','................',
+    '................','................','...PPPPPPPPPP...','...PPPPPPPPPP...',
+    '...PPKPPPPKPP...','.PPPPKPPPPKPPPP.','.PPPPPPPPPPPPPP.','...PPPPPPPPPP...',
+    '...PPPPPPPPPP...','....P.P..P.P....','....P.P..P.P....','...KKKKKKKKKK...'];
+  var GROWN1 = [
+    '................','................','................','................',
+    '................','................','..PPPPPPPPPPP...','..PPPPPPPPPPP...',
+    '..PPKPPPPPKPP...','PPPPKPPPPPKPPPP.','PPPPPPPPPPPPPPP.','..PPPPPPPPPPP...',
+    '..PPPPPPPPPPP...','...P.P...P.P....','...P.P...P.P....','...KKKKKKKKK....'];
+  var GROWN2 = [
+    '................','................','................','................',
+    '................','................','..PPPPPPPPPPP...','..PPPPPPPPPPP...',
+    '..PPKPPPPPKPP...','PPPPKPPPPPKPPPP.','PPPPPPPPPPPPPPP.','..PPPPPPPPPPP...',
+    '..PPPPPPPPPPP...','....P.P.P.P.....','....P.P.P.P.....','...KKKKKKKKK....'];
+  var YOUNG_BLINK = [
+    '................','................','................','................',
+    '................','................','...PPPPPPPPPP...','...PPPPPPPPPP...',
+    '...PPPPPPPPPP...','.PPPPKKPPPKKPPP.','.PPPPPPPPPPPPPP.','...PPPPPPPPPP...',
+    '...PPPPPPPPPP...','....P.P..P.P....','....P.P..P.P....','...KKKKKKKKKK...'];
+  var GROWN_BLINK = [
+    '................','................','................','................',
+    '................','................','..PPPPPPPPPPP...','..PPPPPPPPPPP...',
+    '..PPPPPPPPPPP...','PPPPKKPPPPKKPPP.','PPPPPPPPPPPPPPP.','..PPPPPPPPPPP...',
+    '..PPPPPPPPPPP...','...P.P...P.P....','...P.P...P.P....','...KKKKKKKKK....'];
+  var CLAWS_UP = [
+    '................','................','................','................',
+    'PP...........PP.','PP...........PP.','.PPPPPPPPPPPPP..','..PPPPPPPPPPP...',
+    '..PPKPPPPPKPP...','..PPKPPPPPKPP...','..PPPPPPPPPPP...','..PPPPPPPPPPP...',
+    '..PPPPPPPPPPP...','...P.P...P.P....','...P.P...P.P....','...KKKKKKKKK....'];
+  var FLAIL1 = [
+    '................','................','................','................',
+    'PP...........PP.','PP...........PP.','.PPPPPPPPPPPPP..','..PPPPPPPPPPP...',
+    '..PPKPPPPPKPP...','..PPKPPPPPKPP...','..PPPPPPPPPPP...','..PPPPPPPPPPP...',
+    '..PPPPPPPPPPP...','.P...P...P...P..','.P...P...P...P..','................'];
+  var FLAIL2 = [
+    '................','................','................','................',
+    'PP...........PP.','PP...........PP.','.PPPPPPPPPPPPP..','..PPPPPPPPPPP...',
+    '..PPKPPPPPKPP...','..PPKPPPPPKPP...','..PPPPPPPPPPP...','..PPPPPPPPPPP...',
+    '..PPPPPPPPPPP...','P.....P.P.....P.','P.....P.P.....P.','................'];
+  var SLEEP = [
+    '................','................','................','................',
+    '................','................','................','................',
+    '................','................','..PPPPPPPPPPP...','PPPPKKPPPPKKPPP.',
+    'PPPPPPPPPPPPPPP.','..PPPPPPPPPPP...','..KKKKKKKKKKK...','................'];
   var SPR = 16, W = 64, H = 24, SCALE = 2;
   var host, cv, ctx, raf = null, t0 = 0;
-  var st = { stage:'egg', count:0, x:24, dir:1, frame:0, blinkT:0, hatchT:0, hopT:0, started:false, dragMoved:false, suppressClickUntil:0, drops:0, tickles:0, tickleTimer:null, idleTimer:null };
-  var TICKLE_LINES = ['别碰我。','……你手痒是吧。','再碰试试。','咬你哦。','我记仇的。','你有正事吗。','……烦。','我是记忆系统不是宠物。','下次再碰我就把你的桶全归档。','别挠了，痒。'];
+  var st = { stage:'tiny', count:0, x:24, dir:1, frame:0, growT:0, hopT:0, gestureT:0, blinkT:0, blinkAt:0, special:null, specialT:0, weather:null, started:false, dragMoved:false, suppressClickUntil:0, drops:0, tickles:0, tickleTimer:null, idleTimer:null };
+  var TICKLE_LINES = ['别碰我。','……你手痒是吧。','再碰试试。','钳你哦。','我记仇的。','你有正事吗。','……烦。','我是记忆系统不是宠物。','下次再碰我就把你的桶全归档。','别挠了，痒。'];
 
   function wakePet() {
     if (!host) return;
@@ -5822,7 +5849,7 @@ window.ObPet = (function () {
     clearTimeout(st.idleTimer);
     st.idleTimer = setTimeout(function() {
       if (!host.classList.contains('grabbed') && !host.classList.contains('raging')) {
-        host.classList.add('sleeping'); setTip('zZ…鸡也要整理记忆。');
+        host.classList.add('sleeping'); setTip('zZ…螃蟹也要整理记忆。');
       }
     }, 90000);
   }
@@ -5835,7 +5862,7 @@ window.ObPet = (function () {
     var hour=new Date().getHours();
     if (y < 55) return '太高了……我恐高。';
     if (pointNearElement(x,y,'.bucket-pager',80)) return '这位置以前是我的。';
-    if (pointNearElement(x,y,'.search-bar',90)) return '你找什么？我帮你啄。';
+    if (pointNearElement(x,y,'.search-bar',90)) return '你找什么？我帮你扒拉。';
     if (document.getElementById('settings-view') && document.getElementById('settings-view').style.display !== 'none') return '不要乱动我的饲料配方。';
     if (hour < 5 || hour >= 23) return '你怎么还没睡？';
     return ['这里视野不错。','好吧，就停这里。','人类的桌面真乱。'][st.drops % 3];
@@ -5852,11 +5879,16 @@ window.ObPet = (function () {
     var p = clampPetPosition(x, y);
     host.style.left = p.x + 'px'; host.style.top = p.y + 'px';
     host.style.right = 'auto'; host.style.bottom = 'auto';
-    if (persist) localStorage.setItem('ombreChickPosition', JSON.stringify(p));
+    if (persist) localStorage.setItem('ombrePetPosition', JSON.stringify(p));
   }
   function restorePetPosition() {
     try {
-      var p = JSON.parse(localStorage.getItem('ombreChickPosition') || 'null');
+      var saved = localStorage.getItem('ombrePetPosition');
+      if (!saved) {
+        saved = localStorage.getItem('ombreChickPosition'); // v2.7.6 以前的小鸡位置，平滑迁移一次
+        if (saved) { localStorage.setItem('ombrePetPosition', saved); localStorage.removeItem('ombreChickPosition'); }
+      }
+      var p = JSON.parse(saved || 'null');
       if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) placePet(p.x, p.y, false);
     } catch (e) {}
   }
@@ -5864,7 +5896,7 @@ window.ObPet = (function () {
     if (host.dataset.dragReady) return;
     host.dataset.dragReady = '1';
     var drag = null;
-    var grabs = ['可恶的人类！', '喂，轻一点！', '我不是翻页键！', '抓鸡要负责的！', '咯咯咯——放我下来！'];
+    var grabs = ['可恶的人类！', '喂，轻一点！', '我不是翻页键！', '抓螃蟹要负责的！', '钳子要夹你了——放我下来！'];
     host.addEventListener('pointerdown', function(e) {
       if (e.button != null && e.button !== 0) return;
       var r = host.getBoundingClientRect();
@@ -5900,7 +5932,7 @@ window.ObPet = (function () {
         setTimeout(function(){ host.classList.remove('play-dead'); setTip('偷偷睁眼。你走了吗？'); },2200);
       } else setTip(st.dragMoved ? dropRemark(r.left+r.width/2,r.top+r.height/2) : '戳我干嘛？');
       drag = null;
-      wakePet();
+      if (!host.classList.contains('play-dead')) wakePet();
     }
     host.addEventListener('pointerup', drop);
     host.addEventListener('pointercancel', drop);
@@ -5913,16 +5945,16 @@ window.ObPet = (function () {
   }
 
   function ensure() {
-    host = document.getElementById('ob-chick');
-    if (!host) { host = document.createElement('div'); host.id = 'ob-chick'; document.body.appendChild(host); }
+    host = document.getElementById('ob-pet');
+    if (!host) { host = document.createElement('div'); host.id = 'ob-pet'; document.body.appendChild(host); }
     if (!cv) {
       host.style.width = 'auto'; host.style.height = 'auto';
-      host.innerHTML = '<canvas width="' + W + '" height="' + H + '" style="display:block;width:' + (W*SCALE) + 'px;height:' + (H*SCALE) + 'px;image-rendering:pixelated;"></canvas><div class="chick-tip"></div>';
+      host.innerHTML = '<canvas width="' + W + '" height="' + H + '" style="display:block;width:' + (W*SCALE) + 'px;height:' + (H*SCALE) + 'px;image-rendering:pixelated;"></canvas><div class="pet-tip"></div>';
       cv = host.querySelector('canvas'); ctx = cv.getContext('2d');
       host.addEventListener('click', function (e) {
         var r = cv.getBoundingClientRect();
         var canvasX = ((e.clientX - r.left) / Math.max(r.width, 1)) * W;
-        var spriteX = st.stage === 'big' ? st.x : 24;
+        var spriteX = st.stage === 'grown' ? st.x : 24;
         var side = canvasX >= spriteX && canvasX <= spriteX + SPR
           && ((canvasX - spriteX) / SPR < .38 || (canvasX - spriteX) / SPR > .62);
         host.dataset.lastPetAction = side ? 'tickle' : 'poke';
@@ -5934,62 +5966,203 @@ window.ObPet = (function () {
       wakePet();
     }
   }
-  function setTip(s) { var t = host && host.querySelector('.chick-tip'); if (t) t.textContent = s; }
-  function stageFor(n) { return n < 1 ? 'egg' : (n < 25 ? 'chick' : 'big'); }
+  function setTip(s) { var t = host && host.querySelector('.pet-tip'); if (t) t.textContent = s; }
+  function stageFor(n) { return n < 1 ? 'tiny' : (n < 25 ? 'young' : 'grown'); }
   function draw(frame, ox, oy, flip) {
     for (var y = 0; y < frame.length; y++) { var row = frame[y];
       for (var x = 0; x < row.length; x++) { var col = PAL[row[x]]; if (!col) continue;
         ctx.fillStyle = col; ctx.fillRect((flip ? ox + (SPR-1-x) : ox + x), oy + y, 1, 1);
       } }
   }
+  function pixelRect(ox, oy, x, y, w, h, color, flip) {
+    ctx.fillStyle = color;
+    ctx.fillRect(flip ? ox + SPR - x - w : ox + x, oy + y, w, h);
+  }
+  function drawHeadphones(ox, oy, flip, beat) {
+    var dark = '#33333F', purple = '#7B68D8', note = '#8C6CFF';
+    pixelRect(ox,oy,4,4,8,1,dark,flip);
+    pixelRect(ox,oy,3,5,1,2,dark,flip); pixelRect(ox,oy,12,5,1,2,dark,flip);
+    pixelRect(ox,oy,1,7,2,3,dark,flip); pixelRect(ox,oy,13,7,2,3,dark,flip);
+    pixelRect(ox,oy,2,8,1,1,purple,flip); pixelRect(ox,oy,13,8,1,1,purple,flip);
+    pixelRect(ox,oy,beat ? 14 : 13,beat ? 1 : 2,1,2,note,flip);
+    pixelRect(ox,oy,beat ? 13 : 12,beat ? 1 : 2,2,1,note,flip);
+    pixelRect(ox,oy,beat ? 1 : 2,beat ? 3 : 2,1,1,'#B6A5FF',flip);
+  }
+  function drawLaptop(ox, oy, flip, cursorOn) {
+    pixelRect(ox,oy,1,10,14,5,'#252A33',flip);
+    pixelRect(ox,oy,2,11,12,3,'#0C1018',flip);
+    pixelRect(ox,oy,3,11,4,1,'#FF79C6',flip);
+    pixelRect(ox,oy,8,11,3,1,'#8BE9FD',flip);
+    pixelRect(ox,oy,4,12,5,1,'#50FA7B',flip);
+    pixelRect(ox,oy,10,12,2,1,'#F1FA8C',flip);
+    if (cursorOn) pixelRect(ox,oy,3,13,1,1,'#FFFFFF',flip);
+    pixelRect(ox,oy,0,15,16,1,'#343A45',flip);
+  }
+  function drawSparkles(ox, oy, flip, phase) {
+    var gold = '#E8BE4E', pale = '#FFE39A';
+    pixelRect(ox,oy,phase ? 1 : 2,phase ? 3 : 5,1,1,gold,flip);
+    pixelRect(ox,oy,phase ? 14 : 13,phase ? 5 : 3,1,1,pale,flip);
+    pixelRect(ox,oy,7,phase ? 1 : 2,1,1,pale,flip);
+    if (phase) { pixelRect(ox,oy,6,1,3,1,gold,flip); pixelRect(ox,oy,7,0,1,3,gold,flip); }
+  }
+  function drawMagnifier(ox, oy, flip, phase) {
+    var rim = '#4F5968', glass = '#A8DBE8';
+    pixelRect(ox,oy,11,5,4,1,rim,flip); pixelRect(ox,oy,11,9,4,1,rim,flip);
+    pixelRect(ox,oy,11,6,1,3,rim,flip); pixelRect(ox,oy,14,6,1,3,rim,flip);
+    pixelRect(ox,oy,12,6,2,3,glass,flip);
+    pixelRect(ox,oy,10,10,2,1,rim,flip); pixelRect(ox,oy,9,11,2,1,rim,flip);
+    if (phase) pixelRect(ox,oy,13,6,1,1,'#FFFFFF',flip);
+  }
+  function drawCoffee(ox, oy, flip, phase) {
+    var mug = '#F3E0BF', coffee = '#6C3F2A', steam = '#D8D4CD';
+    pixelRect(ox,oy,5,10,6,4,mug,flip); pixelRect(ox,oy,6,10,4,1,coffee,flip);
+    pixelRect(ox,oy,11,11,2,1,mug,flip); pixelRect(ox,oy,12,12,1,1,mug,flip);
+    pixelRect(ox,oy,phase ? 6 : 7,phase ? 6 : 7,1,2,steam,flip);
+    pixelRect(ox,oy,phase ? 9 : 8,phase ? 7 : 6,1,2,steam,flip);
+  }
+  function drawRainCloud(ox, oy, flip, phase) {
+    var cloud = '#8298B4', light = '#B7C5D7', rain = '#78A9D6', puddle = '#83B7D8';
+    pixelRect(ox,oy,4,0,4,1,light,flip); pixelRect(ox,oy,9,0,3,1,light,flip);
+    pixelRect(ox,oy,2,1,12,1,cloud,flip); pixelRect(ox,oy,1,2,14,1,cloud,flip);
+    pixelRect(ox,oy,phase ? 4 : 11,phase ? 4 : 5,1,1,rain,flip);
+    pixelRect(ox,oy,phase ? 0 : 1,phase ? 7 : 5,1,2,rain,flip);
+    pixelRect(ox,oy,phase ? 15 : 14,phase ? 5 : 8,1,2,rain,flip);
+    pixelRect(ox,oy,phase ? 2 : 13,phase ? 10 : 6,1,1,rain,flip);
+    pixelRect(ox,oy,3,15,9,1,puddle,flip);
+  }
+  function drawNightcap(ox, oy, flip, phase) {
+    var cap = '#7A74B8', trim = '#DDD8F0', blanket = '#9EB8D8';
+    pixelRect(ox,oy,4,8,8,2,trim,flip); pixelRect(ox,oy,5,6,6,2,cap,flip);
+    pixelRect(ox,oy,9,5,3,1,cap,flip); pixelRect(ox,oy,11,4,2,1,cap,flip);
+    pixelRect(ox,oy,phase ? 12 : 13,phase ? 3 : 4,1,1,trim,flip);
+    pixelRect(ox,oy,2,12,11,2,blanket,flip);
+  }
+  function drawAngry(ox, oy, flip, phase) {
+    pixelRect(ox,oy,3,7,3,1,'#000000',flip); pixelRect(ox,oy,10,7,3,1,'#000000',flip);
+    pixelRect(ox,oy,7,phase ? 1 : 2,2,3,'#D85E45',flip);
+    pixelRect(ox,oy,8,phase ? 0 : 1,1,2,'#F1A43B',flip);
+  }
   function render(now) {
     raf = requestAnimationFrame(render);
     var dt = now - (t0 || now); t0 = now;
     ctx.clearRect(0, 0, W, H);
     var oy = H - SPR;
-    if (st.hatchT > 0) {                              // 破壳过场
-      st.hatchT -= dt;
+    var isSleeping = host && host.classList.contains('sleeping');
+    var isPlayDead = host && host.classList.contains('play-dead');
+    var isGrabbed = host && host.classList.contains('grabbed');
+    var isRaging = host && host.classList.contains('raging');
+    var spriteX = st.stage === 'grown' ? Math.round(st.x) : 24;
+    var hop = 0;
+    if (st.hopT > 0) {
+      st.hopT -= dt;
+      hop = Math.round(Math.sin((1 - Math.max(st.hopT, 0) / 300) * Math.PI) * -3);
+    }
+    if (st.gestureT > 0) st.gestureT -= dt;
+    if (st.specialT > 0) {
+      st.specialT -= dt;
+      if (st.specialT <= 0) { st.special = null; st.specialT = 0; }
+    }
+    if (!isSleeping && !isPlayDead && !isGrabbed) {
+      if (!st.blinkAt) st.blinkAt = now + 1400 + Math.random() * 1800;
+      if (now >= st.blinkAt) {
+        st.blinkT = 170;
+        st.blinkAt = now + 2600 + Math.random() * 3200;
+      }
+      if (st.blinkT > 0) st.blinkT -= dt;
+    }
+    if (st.growT > 0) {                               // 小蟹长出钳子的过场
+      st.growT -= dt;
       var shake = (Math.floor(now / 70) % 2) ? 1 : -1;
-      if (st.hatchT > 600) draw(EGG, 24 + shake, oy, false);
-      else if (st.hatchT > 250) draw(EGG_CRACK, 24 + shake, oy, false);
-      else draw(CHICK, 24, oy, false);
-      if (st.hatchT <= 0) { st.stage = stageFor(st.count); st.x = 24; }
-    } else if (st.stage === 'egg') {                  // 蛋：轻晃
-      draw(EGG, 24 + Math.round(Math.sin(now / 420)), oy, false);
-    } else if (st.stage === 'chick') {                // 雏鸡：眨眼 + 微微点头
-      st.blinkT += dt;
-      var bob = (Math.floor(now / 320) % 2) ? 0 : -1;
-      draw((st.blinkT % 3200) < 150 ? CHICK_BLINK : CHICK, 24, oy + bob, false);
-    } else {                                          // 大吉：走来走去
-      var hop = 0;
-      if (st.hopT > 0) { st.hopT -= dt; hop = Math.round(Math.sin((1 - st.hopT / 300) * Math.PI) * -3); }
-      st.frame += dt; var step = Math.floor(st.frame / 150) % 2;
-      st.x += st.dir * dt * 0.012;
-      if (st.x < 2) { st.x = 2; st.dir = 1; } else if (st.x > W - SPR - 2) { st.x = W - SPR - 2; st.dir = -1; }
-      draw(step ? BIG1 : BIG2, Math.round(st.x), oy + (step ? 0 : -1) + hop, st.dir < 0);
+      if (st.growT > 500) draw(TINY, 24 + shake, oy, false);
+      else draw(YOUNG, 24, oy, false);
+      if (st.growT <= 0) { st.stage = stageFor(st.count); st.x = 24; }
+    } else if (isSleeping || isPlayDead) {            // 趴低、闭眼，脚收回去
+      draw(SLEEP, spriteX, oy + 1, st.dir < 0);
+      if (isSleeping) drawNightcap(spriteX, oy + 1, st.dir < 0, Math.floor(now / 700) % 2);
+    } else if (isGrabbed) {                           // 被抓起来时举钳、四脚乱蹬
+      draw((Math.floor(now / 110) % 2) ? FLAIL1 : FLAIL2, spriteX, oy - 1, st.dir < 0);
+    } else if (st.stage === 'tiny') {                 // 小小一只：轻晃
+      draw(st.blinkT > 0 ? YOUNG_BLINK : TINY, 24 + Math.round(Math.sin(now / 420)), oy + Math.round(Math.sin(now / 720) * -.5), false);
+    } else if (st.stage === 'young') {                // 小蟹：微微点头
+      var youngBob = Math.round(Math.sin(now / 720) * -.7);
+      draw(st.blinkT > 0 ? YOUNG_BLINK : YOUNG, 24, oy + youngBob + hop, false);
+    } else {                                          // 大螃蟹：巡逻与停下呼吸交替
+      st.frame += dt;
+      var gesture = st.gestureT > 0 || isRaging;
+      var ambientCycle = Math.floor(now / 7000) % 9;
+      var hour = new Date().getHours();
+      var ambientCoffee = !st.special && !gesture && hour >= 5 && hour < 11 && ambientCycle === 4;
+      var ambientRain = !st.special && !gesture && /雨|雪|雷/.test(st.weather || '') && ambientCycle === 6;
+      var ambientMusic = !st.special && !gesture && ambientCycle === 8;
+      var special = st.special || (ambientRain ? 'rain' : (ambientCoffee ? 'coffee' : (ambientMusic ? 'music' : null)));
+      var walking = !gesture && !special && Math.floor(now / 6000) % 2 === 0;
+      var step = Math.floor(st.frame / 150) % 2;
+      if (walking) {
+        st.x += st.dir * dt * 0.012;
+        if (st.x < 2) { st.x = 2; st.dir = 1; }
+        else if (st.x > W - SPR - 2) { st.x = W - SPR - 2; st.dir = -1; }
+      }
+      var idleBob = walking ? (step ? -1 : 0) : Math.round(Math.sin(now / 760) * -.7);
+      var px = Math.round(st.x), py = oy + idleBob + hop, facingLeft = st.dir < 0;
+      if (special === 'music') {
+        var beat = Math.floor(now / 260) % 2;
+        draw(st.blinkT > 0 ? GROWN_BLINK : (beat ? GROWN1 : GROWN2), px + (beat ? 1 : -1), py + (beat ? -1 : 0), facingLeft);
+        drawHeadphones(px + (beat ? 1 : -1), py + (beat ? -1 : 0), facingLeft, beat);
+      } else if (special === 'coding') {
+        draw(st.blinkT > 0 ? GROWN_BLINK : GROWN1, px, py, facingLeft);
+        drawLaptop(px, py, facingLeft, Math.floor(now / 420) % 2 === 0);
+      } else if (special === 'celebrate') {
+        draw(CLAWS_UP, px, py, facingLeft);
+        drawSparkles(px, py, facingLeft, Math.floor(now / 180) % 2);
+      } else if (special === 'search') {
+        draw(st.blinkT > 0 ? GROWN_BLINK : GROWN1, px, py, facingLeft);
+        drawMagnifier(px, py, facingLeft, Math.floor(now / 350) % 2);
+      } else if (special === 'coffee') {
+        draw(st.blinkT > 0 ? GROWN_BLINK : GROWN1, px, py, facingLeft);
+        drawCoffee(px, py, facingLeft, Math.floor(now / 620) % 2);
+      } else if (special === 'rain') {
+        draw(st.blinkT > 0 ? GROWN_BLINK : GROWN1, px, py, facingLeft);
+        drawRainCloud(px, py, facingLeft, Math.floor(now / 430) % 2);
+      } else if (special === 'angry') {
+        draw(GROWN1, px, py, facingLeft);
+        drawAngry(px, py, facingLeft, Math.floor(now / 220) % 2);
+      } else {
+        var frame = gesture ? CLAWS_UP
+          : (st.blinkT > 0 ? GROWN_BLINK : (walking && step ? GROWN2 : GROWN1));
+        draw(frame, px, py, facingLeft);
+      }
     }
   }
   function start() { if (!raf) { t0 = 0; raf = requestAnimationFrame(render); } }
   function setCount(n) {
     ensure(); n = n || 0; var prev = st.stage, oldCount=st.count, wasStarted=st.started; st.count = n; var s = stageFor(n);
-    if (st.started && prev === 'egg' && s !== 'egg') st.hatchT = 1000;   // 首次破壳过场
+    if (st.started && prev === 'tiny' && s !== 'tiny') st.growT = 800; // 首次长出钳子的过场
     else if (!st.started) st.stage = s;
     st.started = true;
-    if (wasStarted && n > oldCount && oldCount > 0) { st.hopT=300; setTip('这条我记住了。'); }
-    else setTip(s === 'egg' ? '一颗蛋 · 记点东西我就孵化' : (s === 'chick' ? '破壳啦 · ' + n + ' 段记忆' : '肥嘟嘟大吉 · ' + n + ' 段记忆'));
+    if (wasStarted && n > oldCount && oldCount > 0) { st.hopT=300; st.gestureT=650; st.special='celebrate'; st.specialT=1200; setTip('这条我记住了。'); }
+    else setTip(s === 'tiny' ? '刚醒的小螃蟹 · 记点东西我就长胖' : (s === 'young' ? '长出钳子啦 · ' + n + ' 段记忆' : '守库小螃蟹 · ' + n + ' 段记忆'));
     start();
   }
+  function setWeather(desc) { st.weather = String(desc || ''); }
   function react(type) {
     ensure();
     wakePet();
-    if (st.stage === 'egg' && st.hatchT <= 0) { st.hatchT = 1000; setTip('咔嚓——破壳！'); }
+    if (st.stage === 'tiny' && st.growT <= 0) { st.growT = 800; setTip('咔哒——钳子长出来了！'); }
     else {
       st.hopT = 300;
+      st.gestureT = type === 'embedding_rebuild' ? 1200 : 650;
+      if (type === 'music') { st.special='music'; st.specialT=8000; }
+      else if (type === 'embedding_rebuild') { st.special='coding'; st.specialT=5000; }
+      else if (type === 'breath' || type === 'hold' || type === 'test_create') { st.special='celebrate'; st.specialT=1200; }
+      else if (type === 'search') { st.special='search'; st.specialT=2200; }
+      else if (type === 'coffee') { st.special='coffee'; st.specialT=7000; }
+      else if (type === 'rain') { st.special='rain'; st.specialT=7000; }
+      else if (type === 'rate_limit' || type === 'invalid_key' || type === 'connection_error') { st.special='angry'; st.specialT=3000; }
       var lines={
-        forget:'我会替你放远一点。',test_create:'护目镜戴好，开始实验。',test_delete:'假的，清理完了。',protect:'这条不行。',forgive:'……算了，原谅你。',secret:'咯？你居然知道暗号。',
-        rate_limit:'最近发现你有429的问题。不过那是你的问题，不是我的。我建议你冷静一下，就像我正在做的那样。🐤',
+        forget:'我会替你放远一点。',test_create:'护目镜戴好，开始实验。',test_delete:'假的，清理完了。',protect:'这条不行。',forgive:'……算了，原谅你。',secret:'咔哒？你居然知道暗号。',
+        rate_limit:'最近发现你有429的问题。不过那是你的问题，不是我的。我把钳子收好了，你也冷静一下。',
         invalid_key:'你的key坏了。我试了好几次——骗你的。不过不是我的问题。去检查一下。',
-        grow_empty:'你喂了我一段话但我没消化成功。可能是我太小了，也可能是你的API欠费了。大概率是后者。',
+        grow_empty:'你递来一段话，可我没夹稳。可能是我太小了，也可能是你的API欠费了。大概率是后者。',
         embedding_rebuild:'正在重新理解所有的记忆。这需要一点时间。你可以去喝杯水，不喝也行，反正我知道你今天肯定没喝够水。',
         empty:'这里什么都没有。说点什么吧，我会记住的。大概。',
         connection_error:'找不到我自己。这在存在主义上说得通，但在技术上不应该。检查一下网络。',
@@ -6002,31 +6175,34 @@ window.ObPet = (function () {
         host.classList.remove('tickled'); void host.offsetWidth; host.classList.add('tickled');
         setTimeout(function(){ host.classList.remove('tickled'); },700);
         st.tickleTimer=setTimeout(function(){st.tickles=0;},8000);
-      } else setTip(lines[type] || (type === 'breath' ? 'breath～它跳了一下' : (type === 'hold' ? '记住啦 :)' : '戳我干嘛 :)')));
+      } else {
+        var specialLines={music:'耳机戴好了。你选歌。',search:'我帮你找。别催。',coffee:'先喝一口，再守库。',rain:'下雨了。钳子不能淋湿。'};
+        setTip(specialLines[type] || lines[type] || (type === 'breath' ? 'breath～横着跳了一下' : (type === 'hold' ? '夹进记忆里啦 :)' : '戳我干嘛 :)')));
+      }
       host.classList.toggle('lab-mode',type==='test_create');
       if(type==='test_create') setTimeout(function(){host.classList.remove('lab-mode');},4000);
       if(type==='test_delete') setTimeout(function(){host.classList.remove('lab-mode');},1500);
     }
     start();
   }
-  return { setCount: setCount, react: react };
+  return { setCount: setCount, react: react, setWeather: setWeather };
 })();
 
-function chickReactForApiProblem(message) {
+function petReactForApiProblem(message) {
   if (!window.ObPet) return;
   var text = String(message || '').toLowerCase();
   if (/429|rate.?limit|限频|限流/.test(text)) window.ObPet.react('rate_limit');
   else if (/401|invalid.*key|key.*invalid|api.?key.*(无效|错误)|鉴权失败/.test(text)) window.ObPet.react('invalid_key');
 }
 
-function updateChick(total) { if (window.ObPet) ObPet.setCount(total || 0); }
+function updatePet(total) { if (window.ObPet) ObPet.setCount(total || 0); }
 
 // =====================================================
-// ⑨b 小鸡彩蛋：天气 / 时段 / 最近记忆「心理状态」联动
-// 纯装饰、可有可无：悬停时把这三样揉成一句话塞进 .chick-tip，
-// 并按时段给画布上色。任何一环失败都静默跳过，不影响小鸡本体。
+// ⑨b 小螃蟹彩蛋：天气 / 时段 / 最近记忆「心理状态」联动
+// 纯装饰、可有可无：悬停时把这三样揉成一句话塞进 .pet-tip，
+// 并按时段给画布上色。任何一环失败都静默跳过，不影响小螃蟹本体。
 // =====================================================
-(function ObChickFlavor(){
+(function ObPetFlavor(){
   var weather = null;  // {emoji, desc, temp} | null
 
   function getBuckets(){ try { return allBuckets || []; } catch(e){ return (window.allBuckets || []); } }
@@ -6088,6 +6264,7 @@ function updateChick(total) { if (window.ObPet) ObPet.setCount(total || 0); }
           if (!j || !j.current) return;
           var w = wmo(j.current.weather_code); if (!w) return;
           weather = { emoji:w.emoji, desc:w.desc, temp:Math.round(j.current.temperature_2m) };
+          if (window.ObPet && window.ObPet.setWeather) window.ObPet.setWeather(w.desc);
         }).catch(function(){});
     } catch(e){}
   }
@@ -6095,7 +6272,7 @@ function updateChick(total) { if (window.ObPet) ObPet.setCount(total || 0); }
   function compose(){
     // 偶尔来一句纯废话
     if (Math.random()<0.18) return pick([
-      '我在站岗 🐤','刚啄了一下你的记忆','别看了，专心 :)','咕… 我也想被记住','存点好的给我孵 🥚','今天也要乖乖的'
+      '我在巡岸','刚翻了一下你的记忆','别看了，专心 :)','咔哒…我也想被记住','存点好的让我守着','今天也要乖乖的'
     ]);
     var tod = timeOfDay(), mood = recentMood(), parts = [];
     parts.push(pick(tod.hi)+' '+tod.emoji);
@@ -6105,17 +6282,18 @@ function updateChick(total) { if (window.ObPet) ObPet.setCount(total || 0); }
   }
 
   function applyTint(){
-    var host = document.getElementById('ob-chick'); if (!host) return;
+    var host = document.getElementById('ob-pet'); if (!host) return;
     host.classList.remove('tod-dawn','tod-day','tod-dusk','tod-night');
     host.classList.add(timeOfDay().cls);
   }
 
   function hook(){
-    var host = document.getElementById('ob-chick');
-    if (!host) { return setTimeout(hook, 1000); }   // 小鸡可能还没 ensure()，等一下
+    var host = document.getElementById('ob-pet');
+    if (!host) { return setTimeout(hook, 1000); }   // 小螃蟹可能还没 ensure()，等一下
+    if (weather && window.ObPet && window.ObPet.setWeather) window.ObPet.setWeather(weather.desc);
     applyTint();
     host.addEventListener('mouseenter', function(){
-      var tip = host.querySelector('.chick-tip');
+      var tip = host.querySelector('.pet-tip');
       if (!tip || host.classList.contains('raging')) return;  // 暴走时不抢话
       tip.textContent = compose();
     });
@@ -6215,11 +6393,11 @@ function _eggKonami(){
   });
 }
 
-// —— 2. 连戳小鸡 7 次 → 暴走 ——
+// —— 2. 连戳小螃蟹 7 次 → 暴走 ——
 (function(){
   var n=0, tm=null, raging=false;
   document.addEventListener('click',function(e){
-    var host=document.getElementById('ob-chick');
+    var host=document.getElementById('ob-pet');
     if(!host||!host.contains(e.target)) return;
     if(host.dataset.lastPetAction==='tickle'){ delete host.dataset.lastPetAction; return; }
     delete host.dataset.lastPetAction;
@@ -6227,7 +6405,7 @@ function _eggKonami(){
     n++; clearTimeout(tm); tm=setTimeout(function(){n=0;},2000);
     if(n>=7&&!raging){
       raging=true; n=0;
-      var tip=host.querySelector('.chick-tip');
+      var tip=host.querySelector('.pet-tip');
       host.classList.add('raging');
       var msgs=['别戳了！','！！！！','我要生气了','好吧……','唉','😤','……好吧 :)'];
       var mi=0, iv=setInterval(function(){
@@ -6315,7 +6493,7 @@ async function runBreathDebug() {
   var results = document.getElementById('breath-results');
   var info = document.getElementById('breath-info');
 
-  if (window.ObPet) ObPet.react('breath');   // 电子宠物：breath 时跳一下/破壳
+  if (window.ObPet) ObPet.react('breath');   // 电子宠物：breath 时横着跳一下/探头
   results.innerHTML = '<div class="loading">计算中…</div>';
 
   var url = BASE + '/api/breath-debug?q=' + encodeURIComponent(query);
@@ -8280,7 +8458,7 @@ window.addEventListener('DOMContentLoaded', function() {
     refreshAnchorCounter();
     setInterval(refreshAnchorCounter, 30000);
   }
-  updateChick(0);              // 小黄鸡蛋初始（loadBuckets 后会按真实总数更新）
+  updatePet(0);                // 小螃蟹初始（loadBuckets 后会按真实总数更新）
   startPlaceholderRotation();  // 搜索框随机 placeholder
   checkEmptyMemoryBanner();    // 零记忆时红色提示「可从 GitHub 恢复」
   loadOwnerBadge();            // 多人共用时顶部显示记忆归属徽标（单人隐藏）
