@@ -172,8 +172,10 @@ embedding:
   timeout_seconds: 120             # Embedding request timeout seconds / 向量化请求超时秒数
   # api_key: ""                   # Use OMBRE_EMBED_API_KEY / 使用 OMBRE_EMBED_API_KEY
 
-# --- Scoring weights / 检索权重参数 ---
-# total = topic(×4) + emotion(×2) + time(×1.5) + importance(×1)
+# --- Scoring weights / 检索排序权重参数 ---
+# 这些权重只给已经通过相关性门槛的桶排序；time / importance / emotion / touch
+# 不参与准入，不能让无关记忆仅凭“新或重要”进入搜索结果。
+# rank = topic(×4) + emotion(×2) + time(×1.5) + importance(×1) + ...
 scoring_weights:
   topic_relevance: 4.0
   emotion_resonance: 2.0
@@ -182,7 +184,9 @@ scoring_weights:
 
 # --- Fuzzy matching / 模糊匹配参数 ---
 matching:
-  fuzzy_threshold: 50             # Minimum match score (0-100) / 最低匹配分数
+  # 文字相关性准入门槛（topic 或 BM25，0-100）；不包含时间、重要度等排序先验。
+  # 启用两阶段检索后，该值不再表示多维总分；升级时请按“纯文字相关性”重新调参。
+  fuzzy_threshold: 50             # Lexical admission threshold / 文字相关性准入门槛
   # 纯语义候选进入结果池的最低余弦相似度（默认 0.55）。
   # 一条记忆哪怕一个关键词都不沾，只要语义相似度到这个数就能被检索到——
   # 「问我的工作」这类查询全靠它，因为"我的工作"四个字不会字面出现在记忆里。
