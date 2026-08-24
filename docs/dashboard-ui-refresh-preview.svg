@@ -18,9 +18,9 @@
       <circle cx="1" cy="1" r="0.45" fill="#776C61" opacity="0.08"/>
     </pattern>
     <style>
-      .ui { font-family: "RRPL"; }
+      .ui { font-family: "Noto Sans CJK SC"; }
       .mono { font-family: "DejaVu Sans Mono"; letter-spacing: 0.08em; }
-      .serif { font-family: "RRPL"; }
+      .serif { font-family: "Noto Sans CJK SC"; }
       .ink { fill: #2B2926; }
       .muted { fill: #756F66; }
       .faint { fill: #A09990; }
