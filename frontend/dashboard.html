@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="referrer" content="no-referrer">
 <title>Ombre Brain</title>
-<meta name="theme-color" content="#B85C3C">
+<meta name="theme-color" content="#D87358">
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="apple-touch-icon" href="/static/icon.svg">
 <link rel="manifest" href="/static/manifest.json">
@@ -1878,6 +1878,339 @@
     transition: opacity 0.3s;
   }
   .self-overlay.show { opacity: 1; pointer-events: auto; }
+
+  /* ============================================================
+     WARM CORAL UI REFRESH · 暖象牙白 + 珊瑚橙
+     保留完整信息架构，只收轻视觉重量并分别适配桌面与手机。
+     中文使用可读的 Noto Sans SC；等宽字体只留给品牌、数字和英文标签。
+     ============================================================ */
+  :root {
+    --bg: #F3EFE7;
+    --bg-gradient: #F3EFE7;
+    --surface: #FBF8F1;
+    --surface-solid: #F7F2E9;
+    --border: #DED6C9;
+    --border-strong: #CEC3B4;
+    --text: #2B2926;
+    --text-dim: #686159;
+    --text-light: #918A81;
+    --accent: #D87358;
+    --accent-light: #E7967F;
+    --accent-glow: rgba(216, 115, 88, 0.18);
+    --positive: #72947D;
+    --negative: #B85B4A;
+    --warning: #C6A35C;
+    --shadow-light: rgba(255, 253, 248, 0.88);
+    --shadow-dark: rgba(90, 76, 60, 0.16);
+    --shadow-dark-subtle: rgba(90, 76, 60, 0.09);
+    --lcd: #E7E8DC;
+    --lcd-text: #2B302A;
+    --lcd-dim: #687066;
+    --shell-radius: 22px;
+    --radius-inner: 16px;
+    --radius-control: 14px;
+  }
+
+  body {
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC',
+                 'Microsoft YaHei', system-ui, sans-serif;
+    line-height: 1.65;
+    letter-spacing: 0;
+    background:
+      radial-gradient(circle at 1px 1px, rgba(105, 91, 72, 0.035) 0.8px, transparent 1px) 0 0 / 6px 6px,
+      var(--bg);
+  }
+
+  .header {
+    display: grid;
+    grid-template-columns: auto auto minmax(260px, 1fr) auto;
+    grid-template-areas: 'brand meta search actions';
+    align-items: center;
+    gap: 14px 22px;
+    padding: 16px clamp(20px, 3vw, 44px);
+    background: rgba(251, 248, 241, 0.94);
+    border-bottom: 1px solid rgba(206, 195, 180, 0.72);
+    box-shadow: 0 8px 28px rgba(90, 76, 60, 0.07);
+  }
+  .header h1 { grid-area: brand; font-size: 21px; letter-spacing: 1.8px; white-space: nowrap; }
+  .header-meta { grid-area: meta; gap: 12px; min-width: 0; }
+  .search-bar { grid-area: search; width: min(100%, 520px); justify-self: end; margin-left: 0; }
+  .header-actions { grid-area: actions; margin-left: 0; }
+  .header .stats,
+  .header .version-badge,
+  #heartbeat-indicator,
+  #anchor-counter,
+  .pager-info,
+  .pager-input,
+  .bucket-row .score,
+  .bucket-row .time {
+    font-family: 'Share Tech Mono', ui-monospace, monospace;
+    letter-spacing: 0.04em;
+  }
+  .header button,
+  .search-bar input {
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: 0 4px 14px rgba(90, 76, 60, 0.07) !important;
+  }
+  .search-bar input {
+    min-height: 44px;
+    padding: 10px 16px !important;
+    font-size: 13px;
+  }
+  .search-bar input:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px var(--accent-glow) !important;
+  }
+  .header button:hover { color: var(--accent) !important; transform: translateY(-1px); }
+  .header button:active { transform: translateY(0); box-shadow: 0 1px 5px rgba(90, 76, 60, 0.10) !important; }
+  #btn-restart.restart-required {
+    background: #F9EAE5 !important;
+    border-color: #E8B5A8 !important;
+  }
+
+  .tabs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(94px, 1fr));
+    gap: 8px;
+    margin: 16px clamp(20px, 3vw, 44px) 8px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .tab {
+    min-width: 0;
+    padding: 10px 12px 8px;
+    border: 1px solid var(--border) !important;
+    border-radius: 15px;
+    background: rgba(251, 248, 241, 0.82);
+    box-shadow: 0 3px 12px rgba(90, 76, 60, 0.055);
+    color: var(--text-dim);
+  }
+  .tab > span:first-child {
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+  .tab .tab-en {
+    font-family: 'Share Tech Mono', ui-monospace, monospace;
+    font-size: 9px;
+    letter-spacing: 0.07em;
+  }
+  .tab:hover { transform: translateY(-1px); border-color: #D8B5AA !important; }
+  .tab.active {
+    color: #FFFDF9;
+    background: var(--accent);
+    border-color: var(--accent) !important;
+    transform: none;
+    box-shadow: 0 6px 18px rgba(180, 83, 58, 0.18);
+  }
+  .tab.active .tab-en { color: rgba(255, 253, 249, 0.76); }
+  .tab:active { transform: translateY(0); box-shadow: 0 2px 7px rgba(90, 76, 60, 0.10); }
+  .tab-spacer { display: none; }
+
+  .content {
+    width: min(100%, 1480px);
+    margin-inline: auto;
+    padding: 28px clamp(20px, 3vw, 44px) 52px;
+  }
+  .filters { gap: 8px; margin-bottom: 20px; }
+  .filter-btn,
+  .pager-btn,
+  .btn-secondary,
+  .settings-subtab,
+  .self-filter-btn {
+    background: var(--surface) !important;
+    color: var(--text-dim);
+    border: 1px solid var(--border) !important;
+    box-shadow: none !important;
+    border-radius: 999px !important;
+  }
+  .filter-btn:hover,
+  .pager-btn:hover:not(:disabled),
+  .btn-secondary:hover,
+  .settings-subtab:hover,
+  .self-filter-btn:hover { color: var(--accent); border-color: #D8B5AA !important; transform: none; }
+  .filter-btn.active,
+  .settings-subtab.active,
+  .self-filter-btn.active {
+    color: #FFFDF9 !important;
+    background: var(--accent) !important;
+    border-color: var(--accent) !important;
+  }
+
+  .bucket-bulkbar,
+  .bucket-row,
+  .config-section,
+  .breath-info,
+  .breath-flow,
+  .sub-card,
+  .self-entry {
+    background: var(--surface);
+    border: 1px solid var(--border) !important;
+    box-shadow: 0 5px 18px rgba(90, 76, 60, 0.06) !important;
+  }
+  .bucket-bulkbar { padding: 12px 14px; border-radius: 18px; }
+  .bucket-row { padding: 15px 18px; border-radius: 18px; }
+  .bucket-row:hover {
+    transform: translateY(-1px);
+    border-color: #D8B5AA !important;
+    box-shadow: 0 8px 24px rgba(90, 76, 60, 0.09) !important;
+  }
+  .bucket-row:active { transform: none; box-shadow: 0 2px 8px rgba(90, 76, 60, 0.07) !important; }
+  .domain-pill {
+    background: #F4EEE4;
+    border: 1px solid #E2D9CC;
+    box-shadow: none;
+  }
+  .config-section { border-radius: 22px; padding: 24px 26px; }
+  .config-section h3 {
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+  .sub-card { border-radius: 16px; }
+
+  input[type=text], input[type=password], input[type=number], input[type=date],
+  select, textarea, .config-row input, .config-row select,
+  .form-row input, .form-row select, .breath-controls input {
+    background: #FFFDF9 !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: none !important;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px var(--accent-glow) !important;
+  }
+  .btn-primary,
+  .breath-controls button {
+    background: var(--accent) !important;
+    color: #FFFDF9 !important;
+    border: 1px solid var(--accent) !important;
+    box-shadow: 0 6px 16px rgba(180, 83, 58, 0.18) !important;
+    text-shadow: none;
+  }
+  .btn-primary:hover, .breath-controls button:hover { transform: translateY(-1px); }
+  .btn-primary:active, .breath-controls button:active { transform: none; box-shadow: 0 2px 7px rgba(180, 83, 58, 0.16) !important; }
+
+  .daily-layout { grid-template-columns: minmax(240px, 310px) minmax(0, 1fr); gap: 20px; }
+  .daily-day-card {
+    padding: 12px 14px;
+    border-radius: 15px;
+    background: var(--surface);
+    border-color: var(--border);
+  }
+  .daily-day-card.active {
+    color: var(--text);
+    border-color: var(--accent);
+    background: #FCF0EB;
+    box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+  .daily-document {
+    padding: 18px;
+    border-radius: 16px;
+    background: #FFFDF9;
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+    font-size: 13px;
+    line-height: 1.8;
+  }
+  .detail-panel,
+  .self-panel {
+    background: var(--surface-solid);
+    box-shadow: -12px 0 40px rgba(72, 58, 43, 0.16);
+  }
+  .detail-panel h2,
+  .self-panel-title {
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;
+    font-style: normal;
+    color: var(--text);
+  }
+  .detail-content {
+    background: #FFFDF9;
+    border-radius: 16px;
+    box-shadow: none;
+  }
+  .self-fab {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: 0 7px 22px rgba(90, 76, 60, 0.14);
+  }
+
+  @media (max-width: 980px) {
+    .header {
+      grid-template-columns: auto 1fr auto;
+      grid-template-areas:
+        'brand meta actions'
+        'search search search';
+    }
+    .search-bar { width: 100%; max-width: none; }
+  }
+
+  @media (max-width: 768px) {
+    .header {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        'brand actions'
+        'meta meta'
+        'search search';
+      padding: 12px 14px 14px;
+      gap: 9px 10px;
+    }
+    .header h1 { font-size: 18px; }
+    .header h1 .ob-logo { width: 20px; height: 20px; }
+    .header-actions { gap: 5px; }
+    .header-actions button {
+      width: 34px !important;
+      min-width: 34px !important;
+      height: 34px !important;
+      padding: 0 !important;
+      justify-content: center;
+      overflow: hidden;
+      font-size: 0 !important;
+    }
+    .header-actions button [data-lucide],
+    .header-actions button svg { width: 15px; height: 15px; }
+    .header-meta { gap: 9px; font-size: 10px; }
+    .header .stats { flex-basis: 100%; font-size: 10.5px; }
+    .search-bar input { min-width: 0; font-size: 12px; }
+
+    .tabs {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin: 12px 12px 4px;
+      gap: 7px;
+    }
+    .tab {
+      max-width: none;
+      min-height: 52px;
+      padding: 8px 5px 6px;
+      font-size: 11px;
+    }
+    .tab .tab-en { font-size: 8px; }
+
+    .content { padding: 18px 12px 42px; }
+    .filters { gap: 6px; margin-bottom: 15px; }
+    .filter-btn { padding: 7px 12px; font-size: 11px; }
+    .bucket-viewbar { align-items: flex-start; }
+    #repair-digested-btn { margin-left: 0 !important; }
+    .bucket-bulkbar-actions { width: 100%; margin-left: 0; }
+    .bucket-row { padding: 13px 14px; border-radius: 16px; }
+    .bucket-row-bottom { padding-left: 31px; }
+    .config-section { padding: 20px 16px; border-radius: 18px; }
+    .daily-layout { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    .daily-day-list { max-height: 250px; }
+    .daily-document { padding: 15px; font-size: 13px; line-height: 1.75; }
+    .detail-panel { width: calc(100vw - 12px); right: 6px; top: 6px; height: calc(100vh - 12px); }
+    .self-panel { width: min(100vw, 460px); }
+  }
+
+  @media (max-width: 380px) {
+    .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .header-meta { row-gap: 5px; }
+  }
 </style>
 </head>
 <body>
