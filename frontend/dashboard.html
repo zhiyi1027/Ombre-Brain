@@ -4503,6 +4503,7 @@ function doSearch() {
   clearTimeout(searchTimer);
   const q = document.getElementById('search-input').value.trim();
   if (['螃蟹','小螃蟹','钳子','可恶的人类','crab'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('secret');
+  if (['跳舞','耳机','听歌','music','dance'].includes(q.toLowerCase()) && window.ObPet) ObPet.react('music');
   if (q) searchBuckets(q);
   else renderBuckets(filterBuckets(allBuckets));
 }
@@ -5774,7 +5775,7 @@ function feelFace(v, a) {
 
 // ============================================================
 // 像素电子宠物 · ObPet（HTML5 Canvas 点阵 Clawd）
-//   基础比例改编自 xixicc186/clawd-emotes-skill 的 MIT 开放几何（© 2026 xixicc186）
+//   基础比例与耳机/电脑配件技法改编自 xixicc186/clawd-emotes-skill（MIT，© 2026 xixicc186）
 //   https://github.com/xixicc186/clawd-emotes-skill
 //   未嵌入 clawd-on-desk 的受限美术文件。
 //   字符→颜色：. 透明 / P Clawd 珊瑚色 / K 方眼睛与地面影子
@@ -5835,7 +5836,7 @@ window.ObPet = (function () {
     'PPPPPPPPPPPPPPP.','..PPPPPPPPPPP...','..KKKKKKKKKKK...','................'];
   var SPR = 16, W = 64, H = 24, SCALE = 2;
   var host, cv, ctx, raf = null, t0 = 0;
-  var st = { stage:'tiny', count:0, x:24, dir:1, frame:0, growT:0, hopT:0, gestureT:0, blinkT:0, blinkAt:0, started:false, dragMoved:false, suppressClickUntil:0, drops:0, tickles:0, tickleTimer:null, idleTimer:null };
+  var st = { stage:'tiny', count:0, x:24, dir:1, frame:0, growT:0, hopT:0, gestureT:0, blinkT:0, blinkAt:0, special:null, specialT:0, started:false, dragMoved:false, suppressClickUntil:0, drops:0, tickles:0, tickleTimer:null, idleTimer:null };
   var TICKLE_LINES = ['别碰我。','……你手痒是吧。','再碰试试。','钳你哦。','我记仇的。','你有正事吗。','……烦。','我是记忆系统不是宠物。','下次再碰我就把你的桶全归档。','别挠了，痒。'];
 
   function wakePet() {
@@ -5969,6 +5970,37 @@ window.ObPet = (function () {
         ctx.fillStyle = col; ctx.fillRect((flip ? ox + (SPR-1-x) : ox + x), oy + y, 1, 1);
       } }
   }
+  function pixelRect(ox, oy, x, y, w, h, color, flip) {
+    ctx.fillStyle = color;
+    ctx.fillRect(flip ? ox + SPR - x - w : ox + x, oy + y, w, h);
+  }
+  function drawHeadphones(ox, oy, flip, beat) {
+    var dark = '#33333F', purple = '#7B68D8', note = '#8C6CFF';
+    pixelRect(ox,oy,4,4,8,1,dark,flip);
+    pixelRect(ox,oy,3,5,1,2,dark,flip); pixelRect(ox,oy,12,5,1,2,dark,flip);
+    pixelRect(ox,oy,1,7,2,3,dark,flip); pixelRect(ox,oy,13,7,2,3,dark,flip);
+    pixelRect(ox,oy,2,8,1,1,purple,flip); pixelRect(ox,oy,13,8,1,1,purple,flip);
+    pixelRect(ox,oy,beat ? 14 : 13,beat ? 1 : 2,1,2,note,flip);
+    pixelRect(ox,oy,beat ? 13 : 12,beat ? 1 : 2,2,1,note,flip);
+    pixelRect(ox,oy,beat ? 1 : 2,beat ? 3 : 2,1,1,'#B6A5FF',flip);
+  }
+  function drawLaptop(ox, oy, flip, cursorOn) {
+    pixelRect(ox,oy,1,10,14,5,'#252A33',flip);
+    pixelRect(ox,oy,2,11,12,3,'#0C1018',flip);
+    pixelRect(ox,oy,3,11,4,1,'#FF79C6',flip);
+    pixelRect(ox,oy,8,11,3,1,'#8BE9FD',flip);
+    pixelRect(ox,oy,4,12,5,1,'#50FA7B',flip);
+    pixelRect(ox,oy,10,12,2,1,'#F1FA8C',flip);
+    if (cursorOn) pixelRect(ox,oy,3,13,1,1,'#FFFFFF',flip);
+    pixelRect(ox,oy,0,15,16,1,'#343A45',flip);
+  }
+  function drawSparkles(ox, oy, flip, phase) {
+    var gold = '#E8BE4E', pale = '#FFE39A';
+    pixelRect(ox,oy,phase ? 1 : 2,phase ? 3 : 5,1,1,gold,flip);
+    pixelRect(ox,oy,phase ? 14 : 13,phase ? 5 : 3,1,1,pale,flip);
+    pixelRect(ox,oy,7,phase ? 1 : 2,1,1,pale,flip);
+    if (phase) { pixelRect(ox,oy,6,1,3,1,gold,flip); pixelRect(ox,oy,7,0,1,3,gold,flip); }
+  }
   function render(now) {
     raf = requestAnimationFrame(render);
     var dt = now - (t0 || now); t0 = now;
@@ -5985,6 +6017,10 @@ window.ObPet = (function () {
       hop = Math.round(Math.sin((1 - Math.max(st.hopT, 0) / 300) * Math.PI) * -3);
     }
     if (st.gestureT > 0) st.gestureT -= dt;
+    if (st.specialT > 0) {
+      st.specialT -= dt;
+      if (st.specialT <= 0) { st.special = null; st.specialT = 0; }
+    }
     if (!isSleeping && !isPlayDead && !isGrabbed) {
       if (!st.blinkAt) st.blinkAt = now + 1400 + Math.random() * 1800;
       if (now >= st.blinkAt) {
@@ -6011,17 +6047,32 @@ window.ObPet = (function () {
     } else {                                          // 大螃蟹：巡逻与停下呼吸交替
       st.frame += dt;
       var gesture = st.gestureT > 0 || isRaging;
-      var walking = !gesture && Math.floor(now / 6000) % 2 === 0;
+      var ambientMusic = !st.special && !gesture && Math.floor(now / 7000) % 7 === 6;
+      var special = st.special || (ambientMusic ? 'music' : null);
+      var walking = !gesture && !special && Math.floor(now / 6000) % 2 === 0;
       var step = Math.floor(st.frame / 150) % 2;
       if (walking) {
         st.x += st.dir * dt * 0.012;
         if (st.x < 2) { st.x = 2; st.dir = 1; }
         else if (st.x > W - SPR - 2) { st.x = W - SPR - 2; st.dir = -1; }
       }
-      var frame = gesture ? CLAWS_UP
-        : (st.blinkT > 0 ? GROWN_BLINK : (walking && step ? GROWN2 : GROWN1));
       var idleBob = walking ? (step ? -1 : 0) : Math.round(Math.sin(now / 760) * -.7);
-      draw(frame, Math.round(st.x), oy + idleBob + hop, st.dir < 0);
+      var px = Math.round(st.x), py = oy + idleBob + hop, facingLeft = st.dir < 0;
+      if (special === 'music') {
+        var beat = Math.floor(now / 260) % 2;
+        draw(st.blinkT > 0 ? GROWN_BLINK : (beat ? GROWN1 : GROWN2), px + (beat ? 1 : -1), py + (beat ? -1 : 0), facingLeft);
+        drawHeadphones(px + (beat ? 1 : -1), py + (beat ? -1 : 0), facingLeft, beat);
+      } else if (special === 'coding') {
+        draw(st.blinkT > 0 ? GROWN_BLINK : GROWN1, px, py, facingLeft);
+        drawLaptop(px, py, facingLeft, Math.floor(now / 420) % 2 === 0);
+      } else if (special === 'celebrate') {
+        draw(CLAWS_UP, px, py, facingLeft);
+        drawSparkles(px, py, facingLeft, Math.floor(now / 180) % 2);
+      } else {
+        var frame = gesture ? CLAWS_UP
+          : (st.blinkT > 0 ? GROWN_BLINK : (walking && step ? GROWN2 : GROWN1));
+        draw(frame, px, py, facingLeft);
+      }
     }
   }
   function start() { if (!raf) { t0 = 0; raf = requestAnimationFrame(render); } }
@@ -6030,7 +6081,7 @@ window.ObPet = (function () {
     if (st.started && prev === 'tiny' && s !== 'tiny') st.growT = 800; // 首次长出钳子的过场
     else if (!st.started) st.stage = s;
     st.started = true;
-    if (wasStarted && n > oldCount && oldCount > 0) { st.hopT=300; st.gestureT=650; setTip('这条我记住了。'); }
+    if (wasStarted && n > oldCount && oldCount > 0) { st.hopT=300; st.gestureT=650; st.special='celebrate'; st.specialT=1200; setTip('这条我记住了。'); }
     else setTip(s === 'tiny' ? '刚醒的小螃蟹 · 记点东西我就长胖' : (s === 'young' ? '长出钳子啦 · ' + n + ' 段记忆' : '守库小螃蟹 · ' + n + ' 段记忆'));
     start();
   }
@@ -6041,6 +6092,9 @@ window.ObPet = (function () {
     else {
       st.hopT = 300;
       st.gestureT = type === 'embedding_rebuild' ? 1200 : 650;
+      if (type === 'music') { st.special='music'; st.specialT=8000; }
+      else if (type === 'embedding_rebuild') { st.special='coding'; st.specialT=5000; }
+      else if (type === 'breath' || type === 'hold' || type === 'test_create') { st.special='celebrate'; st.specialT=1200; }
       var lines={
         forget:'我会替你放远一点。',test_create:'护目镜戴好，开始实验。',test_delete:'假的，清理完了。',protect:'这条不行。',forgive:'……算了，原谅你。',secret:'咔哒？你居然知道暗号。',
         rate_limit:'最近发现你有429的问题。不过那是你的问题，不是我的。我把钳子收好了，你也冷静一下。',
@@ -6058,7 +6112,7 @@ window.ObPet = (function () {
         host.classList.remove('tickled'); void host.offsetWidth; host.classList.add('tickled');
         setTimeout(function(){ host.classList.remove('tickled'); },700);
         st.tickleTimer=setTimeout(function(){st.tickles=0;},8000);
-      } else setTip(lines[type] || (type === 'breath' ? 'breath～横着跳了一下' : (type === 'hold' ? '夹进记忆里啦 :)' : '戳我干嘛 :)')));
+      } else setTip(type === 'music' ? '耳机戴好了。你选歌。' : (lines[type] || (type === 'breath' ? 'breath～横着跳了一下' : (type === 'hold' ? '夹进记忆里啦 :)' : '戳我干嘛 :)'))));
       host.classList.toggle('lab-mode',type==='test_create');
       if(type==='test_create') setTimeout(function(){host.classList.remove('lab-mode');},4000);
       if(type==='test_delete') setTimeout(function(){host.classList.remove('lab-mode');},1500);

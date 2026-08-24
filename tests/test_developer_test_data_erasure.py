@@ -220,6 +220,12 @@ def test_dashboard_crab_can_be_tickled_and_reacts_to_real_system_states():
     assert "isGrabbed" in text
     assert "isSleeping" in text
     assert "gestureT" in text
+    assert "drawHeadphones" in text
+    assert "drawLaptop" in text
+    assert "drawSparkles" in text
+    assert "ambientMusic" in text
+    assert "耳机戴好了。你选歌。" in text
+    assert "['跳舞','耳机','听歌','music','dance']" in text
 
 
 def test_dashboard_crab_sprites_use_attributed_inline_pixel_art():

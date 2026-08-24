@@ -2,8 +2,8 @@
 
 ## Clawd pixel geometry
 
-The base proportions used by the Dashboard's inline Canvas Clawd are adapted
-from `xixicc186/clawd-emotes-skill`:
+The base proportions and accessory techniques used by the Dashboard's inline
+Canvas Clawd are adapted from `xixicc186/clawd-emotes-skill`:
 
 - Source: https://github.com/xixicc186/clawd-emotes-skill
 - Copyright: © 2026 xixicc186
