@@ -9,10 +9,10 @@ tools/breath/search.py — 有 query 的检索模式
 关键行为：
 - domain/valence/arousal 作为过滤参数传给 bucket_mgr.search
 - embedding 未配置/未启用/调用失败时明确提示并继续关键词/BM25 检索
-- 向量通道阈值 sim>=0.65；domain/tags/type 过滤与关键词通道完全一致
+- 向量通道使用 matching.vector_recall_threshold（默认 0.55）；domain/tags/type 过滤与关键词通道完全一致
 - 命中正文不经过 LLM 摘要、改写或压缩，直接返回当前存储的 content
 - 命中后调 touch()，但不修改本次返回的正文或元数据
-- 检索结果 < 3 时 40% 概率从低权重旧桶里随机漂出 1-3 条「忽然想起来」
+- 显式搜索只返回相关命中，不混入随机旧桶；联想式旧事由 breath() 负责
 - 命中 0 条时回 webhook 报空，并给出可操作的引导文案
 
 不做什么（边界）：
@@ -26,7 +26,6 @@ tools/breath/search.py — 有 query 的检索模式
 """
 
 import asyncio
-import random
 
 from ombrebrain.policy.surfacing import SurfacePolicyVM
 from ombrebrain.storage.quote_store import quotes_from_metadata, render_quotes
@@ -51,10 +50,6 @@ def _bucket_has_tags(meta: dict, tag_filter: list) -> bool:
 
 def _can_surface_search(bucket: dict) -> bool:
     return _SURFACE_POLICY.evaluate_bucket(bucket, mode="search").allowed
-
-
-def _can_surface_spontaneous(bucket: dict) -> bool:
-    return _SURFACE_POLICY.evaluate_bucket(bucket, mode="spontaneous").allowed
 
 
 def _state_header(metadata: dict) -> str:
@@ -208,40 +203,6 @@ async def surface_search(
     # ripple=False 跳过读全库的时间涟漪。响应不再等这些写盘/涟漪。
     if touched_ids:
         asyncio.create_task(rt.bucket_mgr.touch_many(touched_ids, ripple=False))
-
-    # --- 检索结果 < 3 时 40% 概率随机浮现 ---
-    if not budget_blocked and len(matches) < min(3, max_results) and random.random() < 0.4:
-        try:
-            all_buckets = await rt.bucket_mgr.list_all(include_archive=False)
-            matched_ids = {b["id"] for b in matches}
-            low_weight = [
-                b for b in all_buckets
-                if b["id"] not in matched_ids
-                and _can_surface_spontaneous(b)
-                and b["metadata"].get("type") not in ("feel", "plan", "letter")
-                and rt.decay_engine.calculate_score(b["metadata"]) < 2.0
-            ]
-            if low_weight:
-                remaining_slots = max(0, max_results - len(matches))
-                drifted = random.sample(
-                    low_weight,
-                    min(random.randint(1, 3), len(low_weight), remaining_slots),
-                )
-                drift_results = []
-                for b in drifted:
-                    rendered, entry_tokens = render_stored_bucket(
-                        b,
-                        f"[surface_type: random] [bucket_id:{b['id']}]",
-                    )
-                    if token_used + entry_tokens > max_tokens:
-                        budget_blocked = True
-                        break
-                    drift_results.append(rendered)
-                    token_used += entry_tokens
-                if drift_results:
-                    results.append("--- 忽然想起来 ---\n" + "\n---\n".join(drift_results))
-        except Exception as e:
-            rt.logger.warning(f"Random surfacing failed / 随机浮现失败: {e}")
 
     if not results:
         if budget_blocked:

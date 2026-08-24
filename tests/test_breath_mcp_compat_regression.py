@@ -130,3 +130,40 @@ async def test_unknown_cached_breath_argument_is_rejected_instead_of_ignored():
 
     with pytest.raises(ToolError, match="extra_forbidden"):
         await tool.run({"query": QUERY, "max_result": 1})
+
+
+@pytest.mark.asyncio
+async def test_breath_search_defaults_to_five_full_buckets(monkeypatch):
+    import server
+
+    calls = []
+
+    async def fake_dispatch(**kwargs):
+        calls.append(kwargs)
+        return "search-dispatched"
+
+    monkeypatch.setattr(server._t_breath, "dispatch", fake_dispatch)
+    tool = server.mcp._tool_manager.get_tool("breath_search")
+
+    assert await tool.run({"query": QUERY}) == "search-dispatched"
+    assert calls[-1]["max_results"] == 5
+
+    assert await tool.run({"query": QUERY, "max_results": 2}) == "search-dispatched"
+    assert calls[-1]["max_results"] == 2
+
+
+@pytest.mark.asyncio
+async def test_breath_advanced_keeps_config_driven_result_default(monkeypatch):
+    import server
+
+    seen = {}
+
+    async def fake_dispatch(**kwargs):
+        seen.update(kwargs)
+        return "advanced-dispatched"
+
+    monkeypatch.setattr(server._t_breath, "dispatch", fake_dispatch)
+    tool = server.mcp._tool_manager.get_tool("breath_advanced")
+
+    assert await tool.run({"query": QUERY}) == "advanced-dispatched"
+    assert seen["max_results"] == 0

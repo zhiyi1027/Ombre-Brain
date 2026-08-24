@@ -107,7 +107,6 @@ async def test_query_single_bucket_returns_stored_content_exactly(bucket_mgr, mo
     bucket_id = await bucket_mgr.create(content=original, domain=["记忆"], importance=8)
     stored_before = (await bucket_mgr.get(bucket_id))["content"]
     dehydrator = _install_runtime(bucket_mgr)
-    monkeypatch.setattr("tools.breath.search.random.random", lambda: 1.0)
 
     output = await dispatch(
         query="第二场风暴 你只是claude",
@@ -163,7 +162,6 @@ async def test_query_multiple_buckets_return_each_body_exactly(bucket_mgr, monke
     ]
     stored = {bucket_id: (await bucket_mgr.get(bucket_id))["content"] for bucket_id in ids}
     dehydrator = _install_runtime(bucket_mgr)
-    monkeypatch.setattr("tools.breath.search.random.random", lambda: 1.0)
 
     output = await _search("群星校验词")
 
@@ -201,7 +199,6 @@ async def test_token_budget_omits_whole_bucket_instead_of_truncating(monkeypatch
     }
     manager = OrderedBucketManager([first, second])
     dehydrator = _install_runtime(manager)
-    monkeypatch.setattr("tools.breath.search.random.random", lambda: 1.0)
     _, first_cost = render_stored_bucket(first, "[bucket_id:first]")
 
     output = await _search("预算校验", max_tokens=first_cost)
@@ -213,6 +210,33 @@ async def test_token_budget_omits_whole_bucket_instead_of_truncating(monkeypatch
     assert "token 预算不足" in output
     assert manager.touched == ["first"]
     assert dehydrator.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_explicit_search_never_injects_random_old_memories(monkeypatch):
+    import random
+
+    old = {
+        "id": "unrelated-old",
+        "content": "这条旧事与查询没有关系。",
+        "metadata": {"type": "dynamic", "importance": 1, "domain": []},
+    }
+
+    class NoMatchManager(OrderedBucketManager):
+        async def search(self, query, **kwargs):
+            self.search_kwargs = dict(kwargs)
+            return []
+
+    manager = NoMatchManager([old])
+    _install_runtime(manager)
+    # 旧实现会在 random.random() < 0.4 时从 list_all() 塞入这条无关旧事。
+    monkeypatch.setattr(random, "random", lambda: 0.0)
+
+    output = await _search("完全不同的主题", max_results=5)
+
+    assert "没有匹配到" in output
+    assert "unrelated-old" not in output
+    assert old["content"] not in output
 
 
 @pytest.mark.asyncio
@@ -386,7 +410,6 @@ async def test_filters_and_importance_mode_remain_active(bucket_mgr, monkeypatch
         return await original_search(*args, **kwargs)
 
     monkeypatch.setattr(bucket_mgr, "search", recording_search)
-    monkeypatch.setattr("tools.breath.search.random.random", lambda: 1.0)
 
     query_output = await _search(
         "过滤校验词",

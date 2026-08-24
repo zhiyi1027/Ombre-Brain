@@ -258,7 +258,6 @@ async def test_superseded_memory_leaves_passive_surfaces_but_search_labels_it(
     ).reasons
     assert policy.evaluate_bucket(old_bucket, mode="search").allowed
 
-    monkeypatch.setattr("tools.breath.search.random.random", lambda: 1.0)
     output = await surface_search(
         query="猕猴桃项目",
         max_results=10,

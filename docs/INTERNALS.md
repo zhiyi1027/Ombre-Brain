@@ -288,7 +288,7 @@ feel 桶自身：
 1. **Feel 通道**（`domain="feel"` 或 `tags` 含 `"feel"`/`"__feel__"`，仅 `breath_advanced`）：必须带 query，不再按时间全量倾倒。query 中的 `bucket_id:<id>` / `source_bucket:<id>` 会先命中 `triggered_by` 直属 feel，再复用 Dream 的向量 0.7＋关键词 0.3 混合排序补足，阈值 0.5，最多 5 条。向量不可用时明确降级到关键词字面匹配；命中正文逐字返回，放不下整条省略，不截断或摘要。
 2. **重要度批量模式**（`importance_min >= 1`，仅 `breath_advanced`）：跳过语义搜索，按 importance 降序返回 ≤20 条；过滤 `feel/plan/letter` 与 `dont_surface=True`；**不过滤 anchor、不过滤 pinned**（设计：主动按 importance 检索时希望能找到所有重要桶）。
 3. **浮现模式**（无 `query`）：无参 `breath()` 启用 `startup=True`，转入独立的一键简报算法：钉选短核心逐字返回；若存在已生成的上一记忆日日印象，则在核心之后优先整张返回；最近 24 小时真正最新的一条固定入选，即使它已被标记 `digested`，因为“已消化”不能抹掉启动交接；随后最多 2 条近期正文按 importance、created、score 稳定排序，其中被昨日印象 `cited_source_ids` 引用过的桶降为候补但不删除。之后从 24 小时之外的被动联想候选池随机轮换最多一条未解决正文，并排除上次实际返回的旧桶以避免连续重复；候选必须满足 `activation_count==0 && importance>=8`，或 `importance>=9` 且至少 7 天未活跃。最多三条近期交接先于旧事联想，固定普通记忆槽不受软参考拦截；只有基础记忆硬上限能把整桶降为指针。active plan 先按是否待确认、再按 weight/created 稳定排序，在独立计划预算内逐字返回；待确认只是一条派生提醒，不自动修改 status。随后从最近 48 小时 `digested=false`、`resolved=false` 且尚未在本轮正文出现的普通桶中，按 importance、created、score 选择最多 2 条自动精读，使用独立 2000 token 预算；最后收集本轮实际完整返回的普通记忆 ID 与正文，直属 `source_bucket` feel 优先，再以 Dream 的向量 0.7＋关键词 0.3 排序扫描最多 12 条合格候选；启动最多返回 3 条，存量向量相似度≥0.8（无向量时用保守的关键词重合）视为同主题，只留排位最靠前的一条；`valence<0.4` 的明显负面 feel 最多 2 条。无合格的不同视角时留空，不降低相关门槛强行补正向内容。feel 仍有独立 2000 token 预算，三层正文均整桶返回，默认总上限为 5000＋2000＋2000＝9000。测试数据、anchor、dont_surface 与私有类型不会进入普通记忆池。日印象独立存储，不进入 BucketManager；可用 `breath_advanced(domain="daily_impression")` 显式读取。启动模式不追加完整浮现模式的额外久未浮现或 3% 偶遇，也不调用 `touch()`；`dream()` 仅在主动回顾时调用，不再是固定启动步骤。`breath_advanced(domain="plan")` 逐字返回全部 active plans；其它无 query 调用保留原完整模式：未解决桶按衰减分排序，支持加权采样或 Top-1 + shuffle，并可追加久未浮现与偶遇。
-4. **检索模式**（有 `query`；`breath_search()` 固定走这里）：每个 query 只生成一次查询向量，与 rapidfuzz/BM25 多维评分共同进入 `BucketManager.search()` → 过滤 `feel/plan/letter`，**pinned/permanent 仍可被检索命中（不过滤），命中后加 📌 前缀** → 纯语义候选相似度 `>=0.65` 标 `[语义关联]`，且不能绕过 domain/tags/type 过滤 → 命中时 `touch()` → 结果不足 3 条时 40% 概率随机漂浮 1~3 条低权重旧桶。embedding 不可用时明确提示后继续关键词/BM25；桶一旦命中，返回层直接使用当前存储的完整 `content`，不调用 dehydrate、不剥除 wikilink、不截断或改写。**不过滤 anchor**（设计：主动检索时希望能找到坐标系桶）。
+4. **检索模式**（有 `query`；`breath_search()` 固定走这里）：每个 query 只生成一次查询向量，与 rapidfuzz/BM25 共同进入 `BucketManager.search()` 的相关性门和二次排序 → 过滤 `feel/plan/letter`，**pinned/permanent 仍可被检索命中（不过滤），命中后加 📌 前缀** → 纯语义候选达到 `matching.vector_recall_threshold`（默认 `0.55`）时标 `[语义关联]`，且不能绕过 domain/tags/type 过滤 → 命中时 `touch()`。普通 `breath_search()` 默认最多返回 5 个完整桶；需要更深检索时用 `breath_advanced(..., max_results=...)`。显式搜索只返回相关命中，不再随机混入旧事；联想式旧事由无参 `breath()` 负责。embedding 不可用时明确提示后继续关键词/BM25；桶一旦命中，返回层直接使用当前存储的完整 `content`，不调用 dehydrate、不剥除 wikilink、不截断或改写。**不过滤 anchor**（设计：主动检索时希望能找到坐标系桶）。
 
 (实现注意：`tags="feel"` 在第一个分支被映射为 `domain="feel"` 后清出 tag_filter；其它 tag 走 AND 过滤；`max_tokens` 上限 20000，`max_results` 上限 50；`importance_min` 模式下硬上限 20 条不可调；浮现模式中钉选桶**不计入** `max_results` 上限。)
 
@@ -1380,7 +1380,7 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 | `decay.emotion_weights.base` | `1.0` | 情感权重基值 |
 | `decay.emotion_weights.arousal_boost` | `0.8` | arousal 加成系数 |
 | `matching.fuzzy_threshold` | `50` | 搜索分下限 |
-| `matching.max_results` | `5` | search() 默认上限（被 breath 覆盖为 20） |
+| `matching.max_results` | `5` | `BucketManager.search()` 自身的默认上限；上层工具可显式覆盖 |
 | `scoring_weights.topic_relevance` | `4.0` | topic 权重 |
 | `scoring_weights.emotion_resonance` | `2.0` | emotion 权重 |
 | `scoring_weights.time_proximity` | `1.5` | time 权重（B-06 修复值） |
@@ -1394,7 +1394,7 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 | `limits.max_management_request_bytes` | `4194304` | Dashboard/OAuth 普通写请求上限；导入上传使用独立上限；0 禁用 |
 | `bucket_type_defaults.{type}.{field}` | （空） | iter 1.9：按桶类型覆盖 importance/valence/arousal 默认值。例：`bucket_type_defaults.feel.importance: 5`。`bucket_manager.create()` 在不传入该字段时查此表 |
 | `surfacing.breath_max_tokens` | `10000` | `breath_advanced()` 完整浮现与主动检索的默认 max_tokens |
-| `surfacing.breath_max_results` | `20` | `breath_advanced()` 完整浮现与主动检索的默认 max_results |
+| `surfacing.breath_max_results` | `20` | `breath_advanced()` 完整浮现与深度检索的默认 max_results；普通 `breath_search()` 独立默认 5 |
 | `surfacing.startup_breath_soft_tokens` | `3000` | 无参 `breath()` 的体积软参考（500-10000）；固定的最多 3 条近期交接与 1 条合格旧事联想不受其拦截 |
 | `surfacing.startup_breath_max_tokens` | `5000` | 无参 `breath()` 的基础记忆硬上限（500-10000）；自动精读与相关 feel 各另有 2000，默认总上限 9000 |
 | `surfacing.startup_breath_max_results` | `4` | 无参 `breath()` 最多选择 3 条最近正文 + 1 条较早未完正文（1-4；核心与 plan 不计入） |
@@ -1504,7 +1504,7 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 | `breath` 检索 | `search` 异常 | 返回「检索过程出错，请稍后重试。」 |
 | `breath` 检索 | embedding 不可用 / 查询失败 | 明确附加「检索降级」提示，跳过向量通道，继续 rapidfuzz + BM25 |
 | `breath` 检索展示 | embedding 不可用 | 明确附加「检索降级」提示，使用关键词/BM25；命中正文仍逐字完整返回 |
-| `breath` 检索 | 结果 < 3 | 40% 概率随机漂浮 1~3 条低权重旧桶 |
+| `breath_search` 检索 | 所有结果规模 | 默认最多 5 个相关完整桶，不随机混入旧事 |
 | `hold` `analyze` 失败 | API 异常 | 正文逐字落盘，元数据使用本地中性默认值并明确提示；绝不压缩正文 |
 | `hold` 合并搜索失败 | search 异常 | 直接走新建路径 |
 | `hold` 合并融合失败 | merge 异常 | 直接走新建路径 |
