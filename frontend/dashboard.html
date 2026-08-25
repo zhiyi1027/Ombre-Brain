@@ -9,7 +9,7 @@
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="apple-touch-icon" href="/static/icon.svg">
 <link rel="manifest" href="/static/manifest.json">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500;600&family=Noto+Sans+SC:wght@400;500&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Share+Tech+Mono&family=VT323&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lucide@1.24.0/dist/umd/lucide.min.js"
         integrity="sha384-mooE85Luwgx+AyykX7e90VcN8/QCFTSIwPuHLmvcsLVoA0en7lKYb9XlOzn5G2co"
         crossorigin="anonymous" defer></script>
@@ -1895,10 +1895,11 @@
     --text-dim: #686159;
     --text-light: #918A81;
     --accent: #D87358;
+    --accent-strong: #B84F3A;
     --accent-light: #E7967F;
     --accent-glow: rgba(216, 115, 88, 0.18);
     --positive: #72947D;
-    --negative: #B85B4A;
+    --negative: #A83F50;
     --warning: #C6A35C;
     --shadow-light: rgba(255, 253, 248, 0.88);
     --shadow-dark: rgba(90, 76, 60, 0.16);
@@ -2002,8 +2003,8 @@
   .tab:hover { transform: translateY(-1px); border-color: #D8B5AA !important; }
   .tab.active {
     color: #FFFDF9;
-    background: var(--accent);
-    border-color: var(--accent) !important;
+    background: var(--accent-strong);
+    border-color: var(--accent-strong) !important;
     transform: none;
     box-shadow: 0 6px 18px rgba(180, 83, 58, 0.18);
   }
@@ -2037,8 +2038,8 @@
   .settings-subtab.active,
   .self-filter-btn.active {
     color: #FFFDF9 !important;
-    background: var(--accent) !important;
-    border-color: var(--accent) !important;
+    background: var(--accent-strong) !important;
+    border-color: var(--accent-strong) !important;
   }
 
   .bucket-bulkbar,
@@ -2088,9 +2089,9 @@
   }
   .btn-primary,
   .breath-controls button {
-    background: var(--accent) !important;
+    background: var(--accent-strong) !important;
     color: #FFFDF9 !important;
-    border: 1px solid var(--accent) !important;
+    border: 1px solid var(--accent-strong) !important;
     box-shadow: 0 6px 16px rgba(180, 83, 58, 0.18) !important;
     text-shadow: none;
   }
@@ -2121,7 +2122,13 @@
   .detail-panel,
   .self-panel {
     background: var(--surface-solid);
-    box-shadow: -12px 0 40px rgba(72, 58, 43, 0.16);
+    box-shadow: -12px 0 40px rgba(72, 58, 43, 0.16) !important;
+  }
+  .detail-panel .close-btn,
+  .self-panel-close {
+    background: transparent;
+    border: 1px solid transparent;
+    box-shadow: none !important;
   }
   .detail-panel h2,
   .self-panel-title {
@@ -2164,9 +2171,9 @@
     .header h1 .ob-logo { width: 20px; height: 20px; }
     .header-actions { gap: 5px; }
     .header-actions button {
-      width: 34px !important;
-      min-width: 34px !important;
-      height: 34px !important;
+      width: 44px !important;
+      min-width: 44px !important;
+      height: 44px !important;
       padding: 0 !important;
       justify-content: center;
       overflow: hidden;
@@ -2208,7 +2215,8 @@
   }
 
   @media (max-width: 380px) {
-    .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .tab { min-height: 48px; font-size: 10.5px; }
     .header-meta { row-gap: 5px; }
   }
 </style>
