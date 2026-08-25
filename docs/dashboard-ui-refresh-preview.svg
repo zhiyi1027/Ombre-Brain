@@ -1,0 +1,172 @@
+<svg width="430" height="1180" viewBox="0 0 430 1180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="page" x1="18" y1="0" x2="412" y2="1180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7F3EB"/>
+      <stop offset="1" stop-color="#EEE8DE"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="28" y1="226" x2="402" y2="424" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDF8"/>
+      <stop offset="1" stop-color="#F6E9E1"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="7" stdDeviation="13" flood-color="#6F6254" flood-opacity="0.10"/>
+    </filter>
+    <filter id="tiny" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#6F6254" flood-opacity="0.09"/>
+    </filter>
+    <pattern id="grain" width="6" height="6" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.45" fill="#776C61" opacity="0.08"/>
+    </pattern>
+    <style>
+      .ui { font-family: "Noto Sans CJK SC"; }
+      .mono { font-family: "DejaVu Sans Mono"; letter-spacing: 0.08em; }
+      .serif { font-family: "Noto Sans CJK SC"; }
+      .ink { fill: #2B2926; }
+      .muted { fill: #756F66; }
+      .faint { fill: #A09990; }
+    </style>
+  </defs>
+
+  <rect width="430" height="1180" fill="url(#page)"/>
+  <rect width="430" height="1180" fill="url(#grain)" opacity="0.55"/>
+
+  <!-- Compact mobile header -->
+  <g class="ui">
+    <rect x="20" y="24" width="36" height="36" rx="11" fill="#FFFDF8" stroke="#DED6C9"/>
+    <circle cx="38" cy="42" r="9" fill="#D87358"/>
+    <path d="M38 33V51" stroke="#2B2926" stroke-width="1.4" opacity="0.55"/>
+    <text x="68" y="43" class="mono ink" font-size="17" font-weight="700">OMBRE</text>
+    <text x="68" y="58" class="mono faint" font-size="8">PERSONAL MEMORY</text>
+
+    <rect x="276" y="27" width="64" height="31" rx="15.5" fill="#FFFDF8" stroke="#DED6C9"/>
+    <text x="308" y="47" text-anchor="middle" class="ui muted" font-size="12">反馈</text>
+    <rect x="348" y="27" width="62" height="31" rx="15.5" fill="#F9EAE5" stroke="#E5B3A5"/>
+    <circle cx="363" cy="42.5" r="3.5" fill="#D87358"/>
+    <text x="386" y="47" text-anchor="middle" class="ui" fill="#A64F3C" font-size="12">重启</text>
+  </g>
+
+  <!-- Title and status -->
+  <g class="ui">
+    <text x="20" y="99" class="mono ink" font-size="27" font-weight="700">BRAIN</text>
+    <text x="119" y="98" class="mono faint" font-size="11">V2.7.6</text>
+    <circle cx="24" cy="124" r="4.5" fill="#72947D"/>
+    <text x="36" y="128" class="ui muted" font-size="12">在线 · 衰减运行中</text>
+    <text x="397" y="128" text-anchor="end" class="mono muted" font-size="10">3 / 24 ANCHORS</text>
+  </g>
+
+  <!-- Crab assistant -->
+  <g transform="translate(324 76)" filter="url(#tiny)">
+    <rect x="0" y="0" width="82" height="35" rx="13" fill="#FFFDF8" stroke="#E3DACC"/>
+    <text x="41" y="22" text-anchor="middle" class="ui ink" font-size="11">今天也在。</text>
+  </g>
+  <g transform="translate(351 115)">
+    <rect x="8" y="7" width="29" height="22" rx="2" fill="#DE886D"/>
+    <rect x="2" y="11" width="7" height="6" fill="#DE886D"/>
+    <rect x="36" y="11" width="7" height="6" fill="#DE886D"/>
+    <rect x="5" y="4" width="6" height="7" fill="#DE886D"/>
+    <rect x="34" y="4" width="6" height="7" fill="#DE886D"/>
+    <rect x="14" y="14" width="3" height="5" fill="#2B2926"/>
+    <rect x="28" y="14" width="3" height="5" fill="#2B2926"/>
+    <rect x="12" y="28" width="4" height="8" fill="#DE886D"/>
+    <rect x="29" y="28" width="4" height="8" fill="#DE886D"/>
+    <rect x="9" y="36" width="28" height="3" fill="#2B2926"/>
+  </g>
+
+  <!-- Search -->
+  <g filter="url(#tiny)">
+    <rect x="20" y="164" width="390" height="52" rx="18" fill="#FFFDF9" stroke="#E2DACD"/>
+  </g>
+  <circle cx="382" cy="190" r="8" stroke="#756F66" stroke-width="1.7"/>
+  <path d="M388 196L394 202" stroke="#756F66" stroke-width="1.7" stroke-linecap="round"/>
+  <text x="38" y="195" class="ui faint" font-size="13">找找那个让我停下来的瞬间…</text>
+
+  <!-- Hero / breath -->
+  <g filter="url(#soft)">
+    <rect x="20" y="238" width="390" height="198" rx="26" fill="url(#hero)" stroke="#E2D9CC"/>
+  </g>
+  <rect x="37" y="258" width="74" height="23" rx="11.5" fill="#F5DED6"/>
+  <circle cx="50" cy="269.5" r="3.5" fill="#D87358"/>
+  <text x="60" y="273" class="mono" fill="#A64F3C" font-size="8.5">BREATH</text>
+  <text x="37" y="310" class="serif ink" font-size="22" font-weight="600">一次真正的睁眼</text>
+  <text x="37" y="338" class="ui muted" font-size="12.5">核心、昨日印象、最近发生的事，</text>
+  <text x="37" y="360" class="ui muted" font-size="12.5">还有偶尔自己浮上来的一点旧记忆。</text>
+  <rect x="37" y="384" width="122" height="34" rx="17" fill="#D87358"/>
+  <text x="98" y="405" text-anchor="middle" class="ui" fill="#FFFDF9" font-size="12" font-weight="600">看看会想起什么</text>
+  <text x="390" y="407" text-anchor="end" class="mono faint" font-size="8.5">ABOUT 3.2K TOKENS</text>
+
+  <!-- Metrics: quiet, not equal-weight cards -->
+  <g class="ui">
+    <text x="20" y="475" class="mono ink" font-size="10" font-weight="700">MEMORY AT A GLANCE</text>
+    <text x="410" y="475" text-anchor="end" class="ui faint" font-size="10">刚刚更新</text>
+    <rect x="20" y="489" width="390" height="72" rx="20" fill="#FBF8F1" stroke="#E1D8CB"/>
+    <line x1="118" y1="504" x2="118" y2="546" stroke="#E3DACE"/>
+    <line x1="216" y1="504" x2="216" y2="546" stroke="#E3DACE"/>
+    <line x1="314" y1="504" x2="314" y2="546" stroke="#E3DACE"/>
+    <text x="69" y="521" text-anchor="middle" class="mono ink" font-size="15" font-weight="700">1154</text>
+    <text x="69" y="543" text-anchor="middle" class="ui muted" font-size="10">记忆桶</text>
+    <text x="167" y="521" text-anchor="middle" class="mono ink" font-size="15" font-weight="700">150</text>
+    <text x="167" y="543" text-anchor="middle" class="ui muted" font-size="10">感受</text>
+    <text x="265" y="521" text-anchor="middle" class="mono ink" font-size="15" font-weight="700">233</text>
+    <text x="265" y="543" text-anchor="middle" class="ui muted" font-size="10">已解决</text>
+    <text x="363" y="521" text-anchor="middle" class="mono ink" font-size="15" font-weight="700">171</text>
+    <text x="363" y="543" text-anchor="middle" class="ui muted" font-size="10">已消化</text>
+  </g>
+
+  <!-- Navigation chips -->
+  <g class="ui">
+    <text x="20" y="600" class="mono ink" font-size="10" font-weight="700">EXPLORE</text>
+    <rect x="20" y="614" width="79" height="36" rx="15" fill="#D87358"/>
+    <text x="59.5" y="637" text-anchor="middle" fill="#FFFDF9" font-size="11">记忆桶</text>
+    <rect x="106" y="614" width="79" height="36" rx="15" fill="#FBF8F1" stroke="#DED5C8"/>
+    <text x="145.5" y="637" text-anchor="middle" class="muted" font-size="11">日印象</text>
+    <rect x="192" y="614" width="67" height="36" rx="15" fill="#FBF8F1" stroke="#DED5C8"/>
+    <text x="225.5" y="637" text-anchor="middle" class="muted" font-size="11">计划</text>
+    <rect x="266" y="614" width="67" height="36" rx="15" fill="#FBF8F1" stroke="#DED5C8"/>
+    <text x="299.5" y="637" text-anchor="middle" class="muted" font-size="11">信</text>
+    <rect x="340" y="614" width="70" height="36" rx="15" fill="#FBF8F1" stroke="#DED5C8"/>
+    <text x="375" y="637" text-anchor="middle" class="muted" font-size="11">更多 ·</text>
+  </g>
+
+  <!-- Action needed -->
+  <g filter="url(#tiny)">
+    <rect x="20" y="678" width="390" height="84" rx="20" fill="#FCF8EB" stroke="#DEC98D"/>
+  </g>
+  <rect x="20" y="678" width="4" height="84" rx="2" fill="#C6A35C"/>
+  <circle cx="42" cy="703" r="5" fill="#C6A35C"/>
+  <text x="56" y="707" class="ui ink" font-size="13" font-weight="600">1 项需要你看一眼</text>
+  <text x="42" y="735" class="ui muted" font-size="11">实际生效配置里有 2 个启动变量覆盖了保存设置</text>
+  <text x="390" y="737" text-anchor="end" class="ui" fill="#9A7831" font-size="11">查看 →</text>
+
+  <!-- Latest memory list -->
+  <g class="ui">
+    <text x="20" y="809" class="mono ink" font-size="10" font-weight="700">RECENTLY REMEMBERED</text>
+    <text x="410" y="809" text-anchor="end" class="ui" fill="#A64F3C" font-size="10">全部记忆 →</text>
+
+    <rect x="20" y="825" width="390" height="92" rx="20" fill="#FBF8F1" stroke="#E1D8CB"/>
+    <circle cx="42" cy="851" r="5" fill="#72947D"/>
+    <text x="56" y="855" class="ui ink" font-size="13" font-weight="600">小螃蟹终于变可爱了</text>
+    <text x="56" y="879" class="serif muted" font-size="11.5">她发来新的界面截图，珊瑚橙的小螃蟹站在状态栏里。</text>
+    <text x="390" y="901" text-anchor="end" class="mono faint" font-size="8">TODAY · 19:42</text>
+
+    <rect x="20" y="929" width="390" height="92" rx="20" fill="#FBF8F1" stroke="#E1D8CB"/>
+    <circle cx="42" cy="955" r="5" fill="#D87358"/>
+    <text x="56" y="959" class="ui ink" font-size="13" font-weight="600">搜索结果终于不再一口气倒出来</text>
+    <text x="56" y="983" class="serif muted" font-size="11.5">先判断相关，再排序；默认只返回五条完整记忆。</text>
+    <text x="390" y="1005" text-anchor="end" class="mono faint" font-size="8">TODAY · 18:16</text>
+
+    <rect x="20" y="1033" width="390" height="92" rx="20" fill="#FBF8F1" stroke="#E1D8CB"/>
+    <circle cx="42" cy="1059" r="5" fill="#C6A35C"/>
+    <text x="56" y="1063" class="ui ink" font-size="13" font-weight="600">昨日印象</text>
+    <text x="56" y="1087" class="serif muted" font-size="11.5">我记得争执怎样结束，也记得她重新靠近时说的话。</text>
+    <text x="390" y="1109" text-anchor="end" class="mono faint" font-size="8">2026-08-23</text>
+  </g>
+
+  <!-- Palette footer -->
+  <g class="ui">
+    <text x="20" y="1156" class="mono faint" font-size="8">WARM IVORY · CORAL · SAGE · HONEY</text>
+    <circle cx="349" cy="1153" r="5" fill="#F7F3EB" stroke="#CFC6B8"/>
+    <circle cx="365" cy="1153" r="5" fill="#D87358"/>
+    <circle cx="381" cy="1153" r="5" fill="#72947D"/>
+    <circle cx="397" cy="1153" r="5" fill="#C6A35C"/>
+  </g>
+</svg>
