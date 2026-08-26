@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -283,6 +284,12 @@ async def test_exact_simulation_reuses_default_surface_and_is_labeled(monkeypatc
     monkeypatch.setattr(rt, "decay_engine", NoopDecay())
     monkeypatch.setattr(
         rt,
+        "nightly_dreams",
+        SimpleNamespace(max_breath_tokens=600),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        rt,
         "config",
         {
             "surfacing": {
@@ -306,7 +313,7 @@ async def test_exact_simulation_reuses_default_surface_and_is_labeled(monkeypatc
     ]
     assert row["kind"] == "simulation"
     assert row["mode"] == "startup"
-    assert row["limits"]["max_tokens"] == 7500
+    assert row["limits"]["max_tokens"] == 8100
     assert row["output"] == ONE_BUTTON_OUTPUT
 
 
@@ -348,7 +355,7 @@ def test_dashboard_contract_separates_actual_trace_from_score_debug():
     web_init = open("src/web/__init__.py", encoding="utf-8").read()
     script = open("frontend/breath-trace.js", encoding="utf-8").read()
 
-    assert 'breath-trace.js?v={sh.version}' in dashboard_module
+    assert "breath-trace.js?v={sh.version}" in dashboard_module
     assert '"breath-trace.js": "text/javascript"' in dashboard_module
     assert '("web.breath_trace", breath_trace.register)' in web_init
     assert "/api/breath-runs?kind=actual" in script

@@ -135,6 +135,27 @@ daily_continuity:
   max_impression_edit_chars: 20000
   # token: ""  # Prefer OMBRE_DAILY_NOTE_TOKEN; falls back to OMBRE_HOOK_TOKEN.
 
+# --- Nightly dreams / 夜间梦境 --------------------------------------
+# 凌晨切日后从前一逻辑日的普通桶与 feel 里挑选最多 3 条近事，并可关联 1 条
+# 较远旧事，让压缩模型生成一场可缺席的梦。梦独立存储、只读展示，不进入
+# 普通搜索、向量索引、事实状态或日印象，也不会在 breath 时临时生成。
+nightly_dreams:
+  enabled: true
+  # timezone / cutoff_hour 默认继承 daily_continuity。
+  poll_seconds: 300
+  recall_probability: 0.70
+  max_recent_sources: 3
+  max_feel_sources: 1
+  old_echo_min_days: 7
+  source_cooldown_days: 7
+  max_input_chars: 16000
+  max_source_chars: 4000
+  max_output_tokens: 900
+  min_dream_chars: 240
+  max_dream_chars: 900
+  max_breath_tokens: 1200
+  old_echo_min_similarity: 0.42
+
 # --- Private continuity / 私有连续状态 -------------------------------
 # 单一未解决冲突的跨客户端交接状态。独立于普通记忆桶，不参与搜索、dream、
 # feel、向量、衰减或日印象；打开时由 breath 在核心准则之后逐字返回。

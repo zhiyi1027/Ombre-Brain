@@ -925,7 +925,7 @@ def test_dashboard_daily_continuity_cannot_expand_mobile_viewport():
     dashboard = (ROOT / "frontend" / "dashboard.html").read_text(encoding="utf-8")
 
     assert "grid-template-columns:minmax(0,1fr)" in dashboard
-    assert ".daily-layout > *, #daily-detail, #daily-view details { min-width:0" in dashboard
+    assert ".daily-layout > *, #daily-detail, #daily-view details, #dream-detail" in dashboard
     assert ".daily-day-preview" in dashboard
     assert "overflow-wrap:anywhere" in dashboard
     assert ".daily-evidence-sources .daily-status" in dashboard

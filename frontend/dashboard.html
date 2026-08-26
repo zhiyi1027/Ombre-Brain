@@ -917,7 +917,7 @@
   .tab-spacer { box-shadow: none; background: transparent; }
 
   .daily-layout { display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr);gap:16px;align-items:start;width:100%;min-width:0; }
-  .daily-layout > *, #daily-detail, #daily-view details { min-width:0;max-width:100%;box-sizing:border-box; }
+  .daily-layout > *, #daily-detail, #daily-view details, #dream-detail, #dream-view details { min-width:0;max-width:100%;box-sizing:border-box; }
   .daily-day-list { display:flex;flex-direction:column;gap:8px;max-height:68vh;overflow:auto;padding:2px;min-width:0;max-width:100%; }
   .daily-day-card { width:100%;min-width:0;max-width:100%;box-sizing:border-box;overflow:hidden;text-align:left;padding:11px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-solid);color:var(--text);cursor:pointer; }
   .daily-day-preview { display:block;width:100%;min-width:0;max-width:100%;font-size:11px;color:var(--text-dim);margin-top:7px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
@@ -2285,6 +2285,7 @@
   <div class="tab" data-tab="plan"><span>计划</span><span class="tab-en">Plans</span></div>
   <div class="tab" data-tab="letters"><span>信</span><span class="tab-en">Letters</span></div>
   <div class="tab" data-tab="daily"><span>日印象</span><span class="tab-en">Daily</span></div>
+  <div class="tab" data-tab="dream"><span>梦境</span><span class="tab-en">Dreams</span></div>
   <div class="tab" data-tab="continuity"><span>冲突</span><span class="tab-en">Continuity</span></div>
   <div class="tab" data-tab="anchors"><span>锚点</span><span class="tab-en">Anchors</span></div>
   <div class="tab" data-tab="import"><span>导入</span><span class="tab-en">Import</span></div>
@@ -2642,6 +2643,27 @@
     <div class="config-section" style="margin:0;min-height:420px;">
       <div id="daily-detail">
         <div class="loading" style="padding:42px 0;">从左侧选择一天，查看便签与日印象。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Nightly dreams: synthetic, derived, read-only artifacts -->
+<div class="content" id="dream-view" style="display:none">
+  <div class="daily-layout">
+    <div class="config-section" style="margin:0;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">
+        <h3 style="margin:0;">昨夜的梦 <span class="en">Nightly Dreams</span></h3>
+        <button class="btn-secondary" onclick="loadNightlyDreams()" title="刷新" style="padding:6px 10px;font-size:12px;"><i data-lucide="refresh-cw"></i></button>
+      </div>
+      <p style="font-size:11px;line-height:1.6;color:var(--text-dim);margin:0 0 12px;">凌晨后台从记忆碎片编织；可能没有梦。梦是合成内容，不会作为真实经历进入搜索或事实状态。</p>
+      <div id="dream-day-list" class="daily-day-list">
+        <div class="loading">点击刷新加载…</div>
+      </div>
+    </div>
+    <div class="config-section" style="margin:0;min-height:420px;">
+      <div id="dream-detail">
+        <div class="loading" style="padding:42px 0;">从左侧选择一夜，查看梦与来源。</div>
       </div>
     </div>
   </div>
@@ -4797,6 +4819,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.getElementById('settings-view').style.display = target === 'settings' ? '' : 'none';
     document.getElementById('letters-view').style.display = target === 'letters' ? '' : 'none';
     document.getElementById('daily-view').style.display = target === 'daily' ? '' : 'none';
+    document.getElementById('dream-view').style.display = target === 'dream' ? '' : 'none';
     document.getElementById('continuity-view').style.display = target === 'continuity' ? '' : 'none';
     document.getElementById('anchors-view').style.display = target === 'anchors' ? '' : 'none';
     document.getElementById('about-view').style.display = target === 'about' ? '' : 'none';
@@ -4825,6 +4848,7 @@ document.querySelectorAll('.tab').forEach(tab => {
     }
     if (target === 'letters') loadLetters();
     if (target === 'daily') loadDailyContinuity();
+    if (target === 'dream') loadNightlyDreams();
     if (target === 'continuity') loadPrivateContinuity();
     if (target === 'anchors') loadAnchorsView();
     if (target === 'about') loadAbout();
@@ -8480,6 +8504,107 @@ async function restorePrivateContinuity() {
     message.style.color = 'var(--negative)';
     message.textContent = '恢复失败：' + error.message;
   }
+}
+
+let _dreamDays = [];
+let _dreamSelectedDay = '';
+
+function _dreamStatusLabel(day) {
+  if (day.status === 'ready' && day.dreamed) return '记得一场梦';
+  const reasons = {
+    not_remembered: '今夜没记住',
+    insufficient_sources: '素材不足',
+    model_abstained: '没有成梦',
+    generation_invalid: '生成未成梦',
+  };
+  return reasons[day.skip_reason] || '今夜无梦';
+}
+
+function renderDreamDayList() {
+  const list = document.getElementById('dream-day-list');
+  if (!list) return;
+  if (!_dreamDays.length) {
+    list.innerHTML = '<div class="loading" style="padding:28px 0;">还没有夜间梦境记录。</div>';
+    return;
+  }
+  list.innerHTML = _dreamDays.map(function(day) {
+    const active = day.dream_day === _dreamSelectedDay ? ' active' : '';
+    const sourceCount = Number(day.source_count || 0);
+    return '<button type="button" class="daily-day-card' + active + '" data-day="' + escAttr(day.dream_day) + '" onclick="selectDreamDay(this.dataset.day)">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">' +
+        '<strong style="font-family:\'Share Tech Mono\',monospace;font-size:13px;">' + esc(day.dream_day) + '</strong>' +
+        '<span class="daily-status">' + esc(_dreamStatusLabel(day)) + '</span>' +
+      '</div>' +
+      '<div style="font-size:10px;color:var(--text-light);margin-top:6px;">' + sourceCount + ' 个记忆来源</div>' +
+    '</button>';
+  }).join('');
+}
+
+async function loadNightlyDreams(preferredDay) {
+  const list = document.getElementById('dream-day-list');
+  if (list) list.innerHTML = '<div class="loading" style="padding:28px 0;">加载中… / Loading…</div>';
+  try {
+    const response = await authFetch('/api/nightly-dreams?limit=31');
+    if (!response) return;
+    const data = await readJsonSafe(response);
+    if (!response.ok) throw new Error(data.error || '加载失败');
+    _dreamDays = data.days || [];
+    const wanted = preferredDay || _dreamSelectedDay;
+    _dreamSelectedDay = _dreamDays.some(function(day) { return day.dream_day === wanted; })
+      ? wanted
+      : (_dreamDays[0] ? _dreamDays[0].dream_day : '');
+    renderDreamDayList();
+    if (_dreamSelectedDay) await selectDreamDay(_dreamSelectedDay);
+    else document.getElementById('dream-detail').innerHTML = '<div class="loading" style="padding:42px 0;">还没有夜间梦境记录。</div>';
+    if (window.lucide) lucide.createIcons();
+  } catch (error) {
+    if (list) list.innerHTML = '<div style="color:var(--negative);padding:18px;">加载失败：' + esc(error.message) + '</div>';
+  }
+}
+
+async function selectDreamDay(dreamDay) {
+  _dreamSelectedDay = dreamDay;
+  renderDreamDayList();
+  const detail = document.getElementById('dream-detail');
+  detail.innerHTML = '<div class="loading" style="padding:42px 0;">正在读取 ' + esc(dreamDay) + '…</div>';
+  try {
+    const response = await authFetch('/api/nightly-dreams/' + encodeURIComponent(dreamDay));
+    if (!response) return;
+    const day = await readJsonSafe(response);
+    if (!response.ok) throw new Error(day.error || '读取失败');
+    renderDreamDetail(day);
+  } catch (error) {
+    detail.innerHTML = '<div style="color:var(--negative);padding:18px;">读取失败：' + esc(error.message) + '</div>';
+  }
+}
+
+function renderDreamDetail(day) {
+  const detail = document.getElementById('dream-detail');
+  const sourceHtml = (day.source_kinds || []).map(function(source) {
+    const label = (source.kind === 'old_echo' ? '远事 · ' : source.kind === 'feel' ? 'feel · ' : '近事 · ') +
+      (source.name || source.source_id || '未命名来源');
+    return '<button type="button" class="daily-status" data-bucket-id="' + escAttr(source.source_id || '') + '" ' +
+      'onclick="openImportedBucketEditor(this.dataset.bucketId)" title="打开来源记忆" ' +
+      'style="cursor:pointer;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left;">' + esc(label) + '</button>';
+  }).join(' ');
+  const ready = day.status === 'ready' && day.dreamed && day.dream;
+  const body = ready
+    ? '<pre class="daily-document" style="margin-top:16px;max-height:none;font-family:\'Noto Serif SC\',Georgia,serif;font-size:14px;line-height:1.95;">' + esc(day.dream) + '</pre>'
+    : '<div class="loading" style="padding:42px 0;">' + esc(_dreamStatusLabel(day)) + '。Breath 不会返回梦境段落。</div>';
+  detail.innerHTML =
+    '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">' +
+      '<div><h3 style="margin:0;">' + esc(day.dream_day) + ' <span class="en">Nightly Dream</span></h3>' +
+      '<div style="font-size:11px;color:var(--text-dim);margin-top:5px;">' + esc(_dreamStatusLabel(day)) +
+        (day.generated_at ? ' · ' + esc(_dailyTime(day.generated_at)) : '') +
+        (day.model ? ' · ' + esc(day.model) : '') + '</div></div>' +
+      '<span class="daily-status">合成内容 · 非事实</span>' +
+    '</div>' + body +
+    '<div style="height:1px;background:var(--border);margin:22px 0;"></div>' +
+    '<div><strong style="font-size:13px;">编织来源 <span class="en">Source Buckets · Read Only</span></strong>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">' + (sourceHtml || '<span class="loading">没有记录来源。</span>') + '</div>' +
+      '<div style="font-size:10px;color:var(--text-light);margin-top:10px;">来源只用于追溯；梦境不会反向改写这些记忆，也不进入搜索、向量化或事实链。</div>' +
+    '</div>';
+  if (window.lucide) lucide.createIcons();
 }
 
 let _dailyDays = [];

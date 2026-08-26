@@ -291,9 +291,7 @@ async def test_startup_appends_direct_then_contextual_feels(monkeypatch):
     assert "💗 [直属感受] [bucket_id:direct-feel]" in output
     assert "💭 [相关感受] [bucket_id:semantic-feel]" in output
     assert "无关感受" not in output
-    assert output.index("[bucket_id:direct-feel]") < output.index(
-        "[bucket_id:semantic-feel]"
-    )
+    assert output.index("[bucket_id:direct-feel]") < output.index("[bucket_id:semantic-feel]")
     assert count_tokens_approx(output) <= 9000
 
 
@@ -629,12 +627,20 @@ async def test_startup_surface_passes_daily_evidence_map_to_selector(monkeypatch
         def previous_cited_bucket_ids(self):
             return {"already-cited"}
 
+    class DreamService:
+        enabled = True
+        max_breath_tokens = 777
+
+        def read_previous(self):
+            return "=== 昨夜的梦 · 2026-08-20 ===\n我梦见一只橙色螃蟹。"
+
     async def fake_surface_startup(_buckets, **kwargs):
         captured.update(kwargs)
         return "startup"
 
     monkeypatch.setattr(rt, "bucket_mgr", StaticBuckets([]), raising=False)
     monkeypatch.setattr(rt, "daily_continuity", DailyService(), raising=False)
+    monkeypatch.setattr(rt, "nightly_dreams", DreamService(), raising=False)
     monkeypatch.setattr(rt, "config", {"surfacing": {}}, raising=False)
     monkeypatch.setattr(surface_module, "surface_startup", fake_surface_startup)
     monkeypatch.setattr(surface_module, "_last_startup_unfinished_id", lambda: "")
@@ -649,6 +655,44 @@ async def test_startup_surface_passes_daily_evidence_map_to_selector(monkeypatch
     assert output == "startup"
     assert captured["daily_impression"].startswith("=== 昨日印象")
     assert captured["daily_cited_bucket_ids"] == {"already-cited"}
+    assert captured["nightly_dream"].startswith("=== 昨夜的梦")
+    assert captured["dream_tokens"] == 777
+
+
+@pytest.mark.asyncio
+async def test_nightly_dream_follows_daily_impression_and_precedes_recent_memory():
+    reference = datetime.fromisoformat("2026-08-21T12:00:00")
+    buckets = [
+        make_bucket(
+            "core",
+            "核心正文",
+            created="2026-08-01T00:00:00",
+            bucket_type="permanent",
+            pinned=True,
+        ),
+        make_bucket(
+            "latest",
+            "今天最新记忆正文",
+            created="2026-08-21T11:00:00",
+        ),
+    ]
+
+    output = await surface_startup(
+        buckets,
+        max_results=4,
+        hard_tokens=5000,
+        soft_tokens=3000,
+        reference_time=reference,
+        daily_impression="=== 昨日印象 · 2026-08-20 ===\n昨日压缩正文",
+        nightly_dream="=== 昨夜的梦 · 2026-08-20 ===\n我梦见海上有一只橙色螃蟹。",
+        reflection_tokens=0,
+        feel_tokens=0,
+    )
+
+    assert output.index("核心正文") < output.index("昨日压缩正文")
+    assert output.index("昨日压缩正文") < output.index("我梦见海上")
+    assert output.index("我梦见海上") < output.index("今天最新记忆正文")
+    assert "昨夜梦境另有 1200 token" in output
 
 
 def test_older_unresolved_randomly_rotates_without_immediate_repeat(monkeypatch):
@@ -1051,9 +1095,7 @@ def test_public_breath_wrapper_enables_startup_without_changing_public_schema():
     server_source = Path("src/server.py").read_text(encoding="utf-8")
     breath_source = Path("src/tools/breath/__init__.py").read_text(encoding="utf-8")
 
-    breath_block = server_source.split("async def breath(", 1)[1].split(
-        "async def breath_search(", 1
-    )[0]
+    breath_block = server_source.split("async def breath(", 1)[1].split("async def breath_search(", 1)[0]
     assert "dispatch_public(" in breath_block
     assert '"properties": {}' in breath_block
     assert 'kwargs["startup"] = True' in breath_source

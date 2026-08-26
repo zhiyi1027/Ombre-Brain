@@ -498,6 +498,7 @@ class RuntimeLifecycle:
     decay_engine: Any = None
     embedding_outbox: Any = None
     daily_continuity: Any = None
+    nightly_dreams: Any = None
     ensure_ollama_child: AsyncCallback | None = None
     stop_ollama_child: AsyncCallback | None = None
     load_tunnel_config: Callable[[], Mapping[str, Any]] | None = None
@@ -581,6 +582,10 @@ class RuntimeLifecycle:
             "daily continuity start",
             getattr(self.daily_continuity, "start", None),
         )
+        await self._run_async_step(
+            "nightly dreams start",
+            getattr(self.nightly_dreams, "start", None),
+        )
         if self.keepalive_url:
             self._keepalive_task = asyncio.create_task(
                 self._keepalive_loop(),
@@ -606,6 +611,10 @@ class RuntimeLifecycle:
             except Exception as exc:
                 self.logger.warning("github auto-sync stop failed: %s", exc)
 
+        await self._run_async_step(
+            "nightly dreams stop",
+            getattr(self.nightly_dreams, "stop", None),
+        )
         await self._run_async_step(
             "daily continuity stop",
             getattr(self.daily_continuity, "stop", None),

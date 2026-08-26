@@ -50,6 +50,7 @@ from embedding_outbox import EmbeddingOutbox
 from import_memory import ImportEngine
 from migrate_engine import MigrateEngine
 from daily_continuity import DailyContinuityService
+from nightly_dream import NightlyDreamService
 from private_continuity import PrivateContinuityService
 from utils import get_version, load_config, setup_logging
 
@@ -228,6 +229,13 @@ daily_continuity = DailyContinuityService(
     dehydrator=dehydrator,
     logger=logger,
 )
+nightly_dreams = NightlyDreamService(
+    config,
+    bucket_mgr=bucket_mgr,
+    dehydrator=dehydrator,
+    embedding_engine=embedding_engine,
+    logger=logger,
+)
 private_continuity = PrivateContinuityService(config)
 
 # --- GitHub Sync / GitHub 同步 ---
@@ -368,6 +376,7 @@ _wsh.init_runtime(
     import_engine=import_engine,
     migrate_engine=migrate_engine,
     daily_continuity=daily_continuity,
+    nightly_dreams=nightly_dreams,
     private_continuity=private_continuity,
     github_sync_instance=github_sync_instance,
     restart_github_auto_task=_restart_github_auto_task,
@@ -531,6 +540,7 @@ _tools_runtime.init(
     embedding_engine=embedding_engine,
     import_engine=import_engine,
     daily_continuity=daily_continuity,
+    nightly_dreams=nightly_dreams,
     private_continuity=private_continuity,
     logger=logger,
     fire_webhook=_fire_webhook,
@@ -1029,6 +1039,7 @@ if __name__ == "__main__":
             decay_engine=decay_engine,
             embedding_outbox=embedding_outbox,
             daily_continuity=daily_continuity,
+            nightly_dreams=nightly_dreams,
             ensure_ollama_child=_ollama_local.ensure_child_on_boot,
             stop_ollama_child=_ollama_local.stop_child,
             load_tunnel_config=_load_tunnel_config,

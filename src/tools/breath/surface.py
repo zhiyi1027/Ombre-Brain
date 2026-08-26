@@ -33,7 +33,11 @@ from plan_review import plan_review_state, plan_stale_after_days
 from .. import _runtime as rt
 from utils import count_tokens_approx, parse_bool, parse_iso_datetime
 from ._verbatim import render_stored_bucket
-from .startup import DEFAULT_SOFT_TOKENS, surface_startup
+from .startup import (
+    DEFAULT_SOFT_TOKENS,
+    NIGHTLY_DREAM_TOKEN_BUDGET,
+    surface_startup,
+)
 from .trace import list_runs
 
 # U-07 fix: throttle the sampling-fallback INFO log to once per 5 minutes.
@@ -198,6 +202,8 @@ async def surface_default(
     if startup:
         daily_impression = ""
         daily_cited_bucket_ids: set[str] = set()
+        nightly_dream = ""
+        dream_tokens = NIGHTLY_DREAM_TOKEN_BUDGET
         private_continuity = ""
         private_service = getattr(rt, "private_continuity", None)
         if private_service is not None and getattr(private_service, "enabled", False):
@@ -220,6 +226,19 @@ async def surface_default(
                     "Daily startup evidence map unavailable: %s",
                     exc,
                 )
+        dream_service = getattr(rt, "nightly_dreams", None)
+        if dream_service is not None and getattr(dream_service, "enabled", False):
+            try:
+                nightly_dream = dream_service.read_previous()
+                dream_tokens = int(
+                    getattr(
+                        dream_service,
+                        "max_breath_tokens",
+                        NIGHTLY_DREAM_TOKEN_BUDGET,
+                    )
+                )
+            except Exception as exc:
+                rt.logger.warning("Nightly startup dream unavailable: %s", exc)
         return await surface_startup(
             all_buckets,
             max_results=max_results,
@@ -231,6 +250,8 @@ async def surface_default(
             exclude_older_id=_last_startup_unfinished_id(),
             daily_impression=daily_impression,
             daily_cited_bucket_ids=daily_cited_bucket_ids,
+            nightly_dream=nightly_dream,
+            dream_tokens=dream_tokens,
             private_continuity=private_continuity,
         )
 

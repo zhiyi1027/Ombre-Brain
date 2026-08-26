@@ -37,8 +37,25 @@ from .feel import surface_feels
 from .importance import surface_by_importance
 from .surface import surface_daily_impressions, surface_default, surface_plans
 from .search import surface_search
-from .startup import startup_total_hard_tokens
+from .startup import NIGHTLY_DREAM_TOKEN_BUDGET, startup_total_hard_tokens
 from .trace import get_run, new_run_id, record_surface_output
+
+
+def _startup_dream_tokens() -> int:
+    service = getattr(rt, "nightly_dreams", None)
+    try:
+        return max(
+            0,
+            int(
+                getattr(
+                    service,
+                    "max_breath_tokens",
+                    NIGHTLY_DREAM_TOKEN_BUDGET,
+                )
+            ),
+        )
+    except (TypeError, ValueError, OverflowError):
+        return NIGHTLY_DREAM_TOKEN_BUDGET
 
 
 async def dispatch_public(
@@ -211,7 +228,10 @@ async def dispatch(
             kind="actual",
             max_results=max_results,
             max_tokens=(
-                startup_total_hard_tokens(max_tokens)
+                startup_total_hard_tokens(
+                    max_tokens,
+                    dream_tokens=_startup_dream_tokens(),
+                )
                 if startup_surface
                 else max_tokens
             ),
@@ -266,7 +286,10 @@ async def simulate_default_surface() -> dict:
         output,
         kind="simulation",
         max_results=max_results,
-        max_tokens=startup_total_hard_tokens(max_tokens),
+        max_tokens=startup_total_hard_tokens(
+            max_tokens,
+            dream_tokens=_startup_dream_tokens(),
+        ),
         soft_tokens=int(surfacing_cfg.get("startup_breath_soft_tokens") or 3000),
         run_id=run_id,
         mode="startup",
