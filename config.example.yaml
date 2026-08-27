@@ -152,7 +152,7 @@ nightly_dreams:
   max_source_chars: 4000
   max_output_tokens: 900
   min_dream_chars: 240
-  max_dream_chars: 900
+  max_dream_chars: 650
   max_breath_tokens: 1200
   old_echo_min_similarity: 0.42
 
