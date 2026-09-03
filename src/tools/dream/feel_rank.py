@@ -24,7 +24,11 @@ def keyword_overlap(feel_text: str, reference_tokens: set[str]) -> float:
     feel_tokens = _content_tokens(feel_text)
     if not feel_tokens:
         return 0.0
-    return len(feel_tokens & reference_tokens) / len(feel_tokens)
+    # Recall against the *query*, not the candidate: a long, multi-sentence
+    # feel body naturally has many more tokens than a short query, so
+    # dividing by the feel's own token count made the ratio nearly
+    # unreachable for realistic feel bodies regardless of true relevance.
+    return len(feel_tokens & reference_tokens) / len(reference_tokens)
 
 
 async def _vector_scores(

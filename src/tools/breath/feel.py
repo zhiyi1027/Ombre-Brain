@@ -51,6 +51,7 @@ _SOURCE_ID_RE = re.compile(
     re.IGNORECASE,
 )
 _SEMANTIC_DISABLED_NOTE = "[检索降级：语义索引暂不可用，本次仅按关键词字面匹配。]"
+_LITERAL_FALLBACK_NOTE = "[语义与关键词打分均未命中阈值，已改用字面匹配兜底补充结果。]"
 _NEEDS_QUERY = (
     "feel 需要一个主题，不再全量返回。\n"
     "请描述此刻在想的事；若要优先找某条记忆亲生的感受，可在 query 中加入 "
@@ -157,6 +158,14 @@ def _literal_matches(feels: list[dict], query: str) -> list[dict]:
     needle = str(query or "").strip().lower()
     if not needle:
         return []
+    # A whole-phrase substring check only rescues queries that happen to
+    # appear verbatim inside a feel body.  Real free-text topics rarely
+    # match word-for-word, so fall back to OR-matching any content token
+    # from the query (falling back to the raw needle itself when
+    # tokenization yields nothing, e.g. a single short word).
+    needle_tokens = {token.lower() for token in _content_tokens(query)}
+    if not needle_tokens:
+        needle_tokens = {needle}
     matched = []
     for feel in feels:
         meta = feel.get("metadata") or {}
@@ -167,7 +176,7 @@ def _literal_matches(feels: list[dict], query: str) -> list[dict]:
                 " ".join(str(tag) for tag in (meta.get("tags") or [])),
             ]
         ).lower()
-        if needle in haystack:
+        if any(token in haystack for token in needle_tokens):
             matched.append(feel)
     matched.sort(key=_created, reverse=True)
     return matched
@@ -321,8 +330,14 @@ async def surface_feels(
             max_results=limit,
         )
         selected = [feel for feel, _reason in selected_with_reasons]
-        if not selected and reference and not vector_ok:
+        # Try the literal fallback whenever scored selection came up empty,
+        # not only when the vector index is unavailable. A vector index that
+        # is enabled but simply found nothing above threshold for this query
+        # must not be worse off than a fully disabled one.
+        used_literal_fallback = False
+        if not selected and reference:
             selected = _literal_matches(feels, reference)[:limit]
+            used_literal_fallback = bool(selected)
 
         if not selected:
             head = f"没有和「{reference or query}」相关的 feel。"
@@ -346,7 +361,12 @@ async def surface_feels(
                 break
 
         label = reference or "指定来源"
-        notice = _SEMANTIC_DISABLED_NOTE + "\n" if reference and not vector_ok else ""
+        if reference and not vector_ok:
+            notice = _SEMANTIC_DISABLED_NOTE + "\n"
+        elif used_literal_fallback:
+            notice = _LITERAL_FALLBACK_NOTE + "\n"
+        else:
+            notice = ""
         out = notice + f"=== 和「{label}」相关的 feel（最多 {limit} 条）===\n"
         out += "直属 source_bucket 优先，其余按语义与关键词相关性补充。\n"
         out += "\n---\n".join(lines)

@@ -148,6 +148,71 @@ async def test_keyword_fallback_is_explicit_and_does_not_add_noise(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_realistic_topic_query_without_bucket_id_finds_long_feel_body(
+    monkeypatch,
+):
+    """Regression test for the reported bug: a plain-language query with no
+    ``bucket_id:``/``source_bucket:`` marker against a realistic, multi-
+    sentence feel body used to come back empty. The old keyword_overlap
+    divided shared tokens by the *feel's own* token count, so a long body
+    could basically never cross the 0.5 relevance threshold, and the old
+    literal fallback only matched the entire query as one contiguous
+    substring, which real free-text topics almost never do.
+    """
+
+    buckets = [
+        feel(
+            "tennis",
+            "知知说这周网球训练进度很慢,总觉得挥拍角度不对,但还是坚持每天去练,"
+            "当时我能感觉到她有点沮丧但没有放弃,我很心疼也很佩服她的坚持。",
+        ),
+        feel("noise", "今天晚饭吃的麻辣烫,宽粉,聊了投资的事。"),
+    ]
+    monkeypatch.setattr(rt, "bucket_mgr", StaticBuckets(buckets))
+    monkeypatch.setattr(rt, "embedding_engine", DisabledEngine(), raising=False)
+
+    output = await surface_feels(
+        query="知知最近网球练得怎么样",
+        max_tokens=2_000,
+        max_results=5,
+    )
+
+    assert "网球训练进度" in output
+    assert "麻辣烫" not in output
+
+
+@pytest.mark.asyncio
+async def test_literal_fallback_triggers_even_when_vector_index_is_enabled(
+    monkeypatch,
+):
+    """An embedding index that is enabled but returns only low-confidence
+    scores for this query must not be worse than a fully disabled index:
+    the literal/keyword fallback should still get a chance to run.
+    """
+
+    buckets = [
+        feel(
+            "tennis",
+            "知知说这周网球训练进度很慢,总觉得挥拍角度不对,但还是坚持每天去练,"
+            "当时我能感觉到她有点沮丧但没有放弃,我很心疼也很佩服她的坚持。",
+        ),
+        feel("noise", "今天晚饭吃的麻辣烫,宽粉,聊了投资的事。"),
+    ]
+    engine = VectorEngine({"tennis": 0.2, "noise": 0.1})
+    monkeypatch.setattr(rt, "bucket_mgr", StaticBuckets(buckets))
+    monkeypatch.setattr(rt, "embedding_engine", engine, raising=False)
+
+    output = await surface_feels(
+        query="知知最近网球练得怎么样",
+        max_tokens=2_000,
+        max_results=5,
+    )
+
+    assert "网球训练进度" in output
+    assert "麻辣烫" not in output
+
+
+@pytest.mark.asyncio
 async def test_result_count_is_capped_at_five_and_bodies_stay_whole(monkeypatch):
     buckets = [
         feel(
