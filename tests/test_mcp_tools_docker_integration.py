@@ -1,4 +1,4 @@
-"""Real streamable-HTTP integration coverage for all 14 public MCP tools.
+"""Real streamable-HTTP integration coverage for all 15 public MCP tools.
 
 Run this file against an isolated Docker service by setting
 OMBRE_DOCKER_INTEGRATION_URL=http://ombre-brain:8000/mcp.
@@ -7,6 +7,7 @@ has a working compression provider; otherwise the long-form grow test verifies
 the documented provider-unavailable error path.
 """
 
+import base64
 import json
 import os
 import re
@@ -38,6 +39,7 @@ EXPECTED_TOOLS = {
     "letter_read",
     "I",
     "dream",
+    "media_read",
 }
 
 EXPECTED_TOOL_PROPERTIES = {
@@ -103,6 +105,7 @@ EXPECTED_TOOL_PROPERTIES = {
     "letter_read": {"query", "limit", "author", "date_from", "date_to"},
     "I": {"content", "aspect", "read", "limit"},
     "dream": {"window_hours", "catalog"},
+    "media_read": {"bucket_id", "index"},
 }
 
 EXPECTED_REQUIRED_PROPERTIES = {
@@ -113,6 +116,7 @@ EXPECTED_REQUIRED_PROPERTIES = {
     "release": {"bucket_id"},
     "plan": {"content"},
     "letter_write": {"author", "content"},
+    "media_read": {"bucket_id"},
 }
 
 
@@ -246,7 +250,7 @@ def _hold(mcp_client: MCPClient, marker: str, **overrides) -> str:
     )
 
 
-def test_manifest_exposes_exactly_the_documented_14_tools(mcp_client):
+def test_manifest_exposes_exactly_the_documented_15_tools(mcp_client):
     tools = mcp_client.list_tools()
     tools_by_name = {tool["name"]: tool for tool in tools}
     assert set(tools_by_name) == EXPECTED_TOOLS
@@ -281,6 +285,7 @@ def test_manifest_exposes_exactly_the_documented_14_tools(mcp_client):
         ("letter_read", {"limit": {"not": "an integer"}}, "limit"),
         ("I", {"read": {"not": "a boolean"}}, "read"),
         ("dream", {"window_hours": {"not": "an integer"}}, "window_hours"),
+        ("media_read", {}, "bucket_id"),
     ],
 )
 def test_all_tools_reject_schema_invalid_arguments(mcp_client, tool, arguments, field):
@@ -303,6 +308,39 @@ def test_hold_writes_a_memory_and_returns_bucket_id(mcp_client):
     recalled = mcp_client.call("breath_search", {"query": marker, "max_results": 5})
     assert marker in recalled
     assert bucket_id in recalled
+
+
+def test_hold_image_can_be_read_back_on_demand(mcp_client):
+    marker = _marker("media")
+    image = b"\x89PNG\r\n\x1a\n" + b"docker-media"
+    bucket_id = _hold(
+        mcp_client,
+        marker,
+        test_data=True,
+        media=[{
+            "data_base64": base64.b64encode(image).decode("ascii"),
+            "filename": "photo.png",
+            "type": "image/png",
+        }],
+    )
+
+    try:
+        result = mcp_client.call_result("media_read", {"bucket_id": bucket_id, "index": 0})
+        assert result.get("isError") is not True, result
+        images = [part for part in result.get("content", []) if part.get("type") == "image"]
+        assert len(images) == 1
+        assert images[0]["mimeType"] == "image/png"
+        assert base64.b64decode(images[0]["data"]) == image
+    finally:
+        cleanup = mcp_client.call(
+            "trace",
+            {
+                "bucket_id": bucket_id,
+                "hard_delete": True,
+                "delete_reason": "Docker integration cleanup",
+            },
+        )
+        assert "已永久删除测试桶" in cleanup
 
 
 def test_hold_rejects_invalid_feel_and_test_data_combinations(mcp_client):

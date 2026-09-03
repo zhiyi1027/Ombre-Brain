@@ -4,7 +4,7 @@ tools/__init__.py — MCP 工具实现的总入口
 ========================================
 
 这个文件让 src/tools 成为一个 Python 包。每个子目录是一个 MCP 工具
-（breath / hold / grow / trace / anchor / plan / dream），按代码路径
+（breath / hold / grow / trace / anchor / plan / dream / media），按代码路径
 拆分到独立文件，便于单独阅读和修改。
 
 关键行为：

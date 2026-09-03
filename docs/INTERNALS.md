@@ -107,7 +107,7 @@ Ombre-Brain/
 
 每个模块「干什么、边界在哪、依赖谁」：
 
-- **server.py**（约 1000 行）— MCP 服务入口。创建所有组件后调 `tools._runtime.init(...)` 注入依赖；以 `@mcp.tool()` / `@mcp_extra.tool()` 注册 **14 个薄封装**（每个 ≤ 10 行，只转发到 `tools/<名字>/`）；启动入口处把 `mcp_extra` 的 7 个工具回灌进 `mcp`，对外只暴露 **单连接器 `/mcp`**（14 工具全在这一条，详见 §3 抬头）；启动段调 `web.register_all(mcp)` 装配所有 HTTP 路由，并起 `mcp.streamable_http_app()` 一个 uvicorn 进程。**不写业务逻辑，也不再直接定义 HTTP 路由**——后者已全部迁到 `web/`。
+- **server.py**（约 1000 行）— MCP 服务入口。创建所有组件后调 `tools._runtime.init(...)` 注入依赖；以 `@mcp.tool()` / `@mcp_extra.tool()` 注册 **15 个薄封装**（每个只负责转发和协议适配）；启动入口处把 `mcp_extra` 的 8 个工具回灌进 `mcp`，对外只暴露 **单连接器 `/mcp`**（15 工具全在这一条，详见 §3 抬头）；启动段调 `web.register_all(mcp)` 装配所有 HTTP 路由，并起 `mcp.streamable_http_app()` 一个 uvicorn 进程。**不写业务逻辑，也不再直接定义 HTTP 路由**——后者已全部迁到 `web/`。
 - **tools/**（MCP 工具应用层）— 详见下面「1.x tools/ 包结构」。
 - **web/**（HTTP/Dashboard 路由层）— 详见下面「1.y web/ 包结构」。从旧 server.py 巨石里拆出的 16 个域模块，每个导出 `register(mcp)`；cookie/CSRF/会话鉴权等共享依赖在 `web/_shared.py`（类比 `tools/_runtime.py`）。
 - **bucket_manager.py** — 桶 CRUD + 多维加权搜索 + `touch()` 激活刷新 + `_time_ripple()` 时间涟漪 + 文件搬运（archive/permanent 之间）。
@@ -266,14 +266,14 @@ feel 桶自身：
 
 ---
 
-## 3. MCP 工具规格（共 14 个）
+## 3. MCP 工具规格（共 15 个）
 
-> **单连接器（iter 2.2）**：claude.ai 的 5 工具上限已解除，14 个工具合并回一个连接器 `/mcp`。
+> **单连接器（iter 2.2）**：claude.ai 的 5 工具上限已解除，15 个工具合并回一个连接器 `/mcp`。
 > 历史上（iter 2.1）曾因该上限拆成主 `mcp`（`/mcp`，5 个）+ 副 `mcp_extra`（`/mcp-extra`，7 个）两个 FastMCP 实例。
-> 现在 `mcp_extra` 仅作工具分组容器保留（7 个 `@mcp_extra.tool()` 注册不动），启动入口处统一把它的工具
+> 现在 `mcp_extra` 仅作工具分组容器保留（8 个 `@mcp_extra.tool()`），启动入口处统一把它的工具
 > 回灌进 `mcp`，三种 transport（stdio / sse / streamable-http）都只对外暴露一条 `/mcp`。
 > - 高频 7 个 —— `breath` / `breath_search` / `breath_advanced` / `hold` / `grow` / `trace` / `dream`
-> - 低频 7 个 —— `anchor` / `release` / `pulse` / `plan` / `letter_write` / `letter_read` / `I`
+> - 低频 8 个 —— `anchor` / `release` / `pulse` / `plan` / `letter_write` / `letter_read` / `I` / `media_read`
 
 ### 3.1 `breath` / `breath_search` / `breath_advanced` — 检索/浮现
 
@@ -398,6 +398,12 @@ feel 桶自身：
 - `content` 非空 → **写入模式**，记一条自我认知；`aspect` 可选维度：`nature`(本质) / `values`(看重的) / `patterns`(规律) / `limits`(局限) / `becoming`(在变成什么) / `uncertainty`(不确定的) / `stance`(立场)。
 - I 条目写入时带 `dont_surface=True`：**不参与普通 `breath` / `dream`**；只在 `SessionStart` 时自动附带最近 3 条。
 
+### 3.12 `media_read` — 按需读取图片附件
+
+签名：`media_read(bucket_id, index=0)`
+
+读取指定未删除桶的第 `index` 项媒体，序号从 0 开始。只有 PNG/JPEG/GIF/WebP 会作为 MCP image content 返回；不存在、越界、非图片、符号链接、超限文件及 `_media` 持久目录外的路径均返回文字错误。它不会改变桶，也不会让 `breath` / `dream` 自动携带图片本体。
+
 ---
 
 ## 4. REST API 与 Dashboard
@@ -477,7 +483,7 @@ feel 桶自身：
 | `/api/nightly-dreams` | GET | 🔒 | 列出最近夜间梦境状态；列表不批量返回梦境正文 |
 | `/api/nightly-dreams/{dream_day}` | GET | 🔒 | 查看某夜合成梦境与可追溯来源；只读，不提供生成或写回入口 |
 | `/internal/daily-notes` | POST | 🔑 | 幂等上传 CC/Codex 当日累计便签；只接受 `OMBRE_DAILY_NOTE_TOKEN`（或回退的 Hook Token）/ Dashboard 登录态，响应不回显正文 |
-| `/mcp/*` | — | 公开 | FastMCP 单连接器（iter 2.2）：全部 14 个工具 —— breath / breath_search / breath_advanced / hold / grow / dream / trace / anchor / release / pulse / plan / letter_write / letter_read / **I** |
+| `/mcp/*` | — | 公开 | FastMCP 单连接器（iter 2.2）：全部 15 个工具 —— breath / breath_search / breath_advanced / hold / grow / dream / trace / anchor / release / pulse / plan / letter_write / letter_read / **I** / media_read |
 
 🔒 = 需要 cookie 认证，未认证返回 `JSON {error, setup_needed}` 状态码 401。
 
@@ -770,7 +776,7 @@ Phase 38 后，Dashboard `/api/system/diagnostics` 会追加 `migration_preserva
 
 `ombrebrain.protocol.PublicToolDesignContract` 对应 vNext §25。它不改变当前 live FastMCP 注册，也不会移除现有兼容入口；它把“哪些名字可以公开给模型作为 MCP 工具”变成可测试契约，并在 Phase 32 后接入 Dashboard diagnostics 的只读源码注册审计。
 
-公开 normal tool 只能使用器官语言：`hold`、`grow`、`trace`、`breath`、`pulse`、`dream`、`anchor`、`I`、`letter`、`plan`。当前已存在的兼容名字 `release`、`letter_write`、`letter_read` 暂时允许，但报告里会给出替代归宿 `anchor` / `letter`，方便后续迁移文档和客户端慢慢收敛。
+公开 normal tool 以器官语言为主：`hold`、`grow`、`trace`、`breath`、`pulse`、`dream`、`anchor`、`I`、`letter`、`plan`；`media_read` 是明确的附件读取边界，名字刻意说明只有显式调用才返回图片本体。当前已存在的兼容名字 `release`、`letter_write`、`letter_read` 暂时允许，但报告里会给出替代归宿 `anchor` / `letter`，方便后续迁移文档和客户端慢慢收敛。
 
 工程名不能作为 public MCP tool 暴露：`remember`、`touch`、`resolve`、`suppress`、`surface`、`hippocampal_recall`、`offline_consolidate`、`update_memory_row` 等只允许作为 internal label。restricted/admin 工具（如 `verify_ledger`、`replay_ledger`、`rebuild_projection`、`admin_erasure_request`）必须显式标为 restricted 且要求 admin。
 

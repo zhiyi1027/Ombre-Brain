@@ -15,6 +15,7 @@ import hashlib
 import mimetypes
 import os
 import re
+import stat
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -147,3 +148,67 @@ class MediaStore:
         return await asyncio.to_thread(
             lambda: [self._persist_one(bucket_id, item) for item in items]
         )
+
+    @staticmethod
+    def _image_format(data: bytes) -> str:
+        """按文件签名识别 FastMCP 可返回的图片格式，不信任扩展名。"""
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):
+            return "png"
+        if data.startswith(b"\xff\xd8\xff"):
+            return "jpeg"
+        if data.startswith((b"GIF87a", b"GIF89a")):
+            return "gif"
+        if len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+            return "webp"
+        raise MediaPersistenceError("该附件不是受支持的图片（PNG/JPEG/GIF/WebP）。")
+
+    def _resolve_stored_path(self, reference: str) -> Path:
+        """把 frontmatter 引用限制在 OB 自己的持久媒体目录内。"""
+        raw = str(reference or "").strip()
+        if not raw:
+            raise MediaPersistenceError("媒体引用为空。")
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = self.vault_dir / candidate
+        try:
+            if candidate.is_symlink():
+                raise MediaPersistenceError("媒体引用是符号链接，已拒绝读取。")
+            resolved = candidate.resolve(strict=True)
+            resolved.relative_to(self.media_dir)
+        except MediaPersistenceError:
+            raise
+        except FileNotFoundError as exc:
+            raise MediaPersistenceError("媒体文件不存在。") from exc
+        except (OSError, ValueError) as exc:
+            raise MediaPersistenceError("媒体引用越界或不可读，已拒绝读取。") from exc
+        return resolved
+
+    def read_image(self, reference: str) -> tuple[bytes, str]:
+        """安全读取一项已持久化图片，供 MCP 图片内容块返回。"""
+        source = self._resolve_stored_path(reference)
+        flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
+            descriptor = os.open(source, flags)
+        except OSError as exc:
+            raise MediaPersistenceError("媒体文件不可读。") from exc
+        try:
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode):
+                raise MediaPersistenceError("媒体引用不是普通文件。")
+            if info.st_size > self.max_bytes:
+                raise MediaPersistenceError(
+                    f"媒体文件超过单项上限 {self.max_bytes} 字节。"
+                )
+            with os.fdopen(descriptor, "rb") as handle:
+                descriptor = -1
+                data = handle.read(self.max_bytes + 1)
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        if len(data) > self.max_bytes:
+            raise MediaPersistenceError(
+                f"媒体文件超过单项上限 {self.max_bytes} 字节。"
+            )
+        return data, self._image_format(data)

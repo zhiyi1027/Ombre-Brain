@@ -47,3 +47,52 @@ async def test_unreadable_client_temporary_path_is_rejected(tmp_path: Path) -> N
 
     with pytest.raises(MediaPersistenceError, match="data_base64"):
         await store.persist("bucket-3", "/client-only/temporary/photo.png")
+
+
+@pytest.mark.asyncio
+async def test_persisted_png_can_be_read_back(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    store = MediaStore(str(vault), str(vault / "_media"))
+    png = b"\x89PNG\r\n\x1a\n" + b"payload"
+    payload = base64.b64encode(png).decode("ascii")
+    stored = await store.persist(
+        "bucket-4",
+        [{"data_base64": payload, "filename": "photo.png", "type": "image/png"}],
+    )
+
+    data, image_format = store.read_image(stored[0]["path"])
+
+    assert data == png
+    assert image_format == "png"
+
+
+def test_read_image_rejects_path_outside_media_dir(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    store = MediaStore(str(vault), str(vault / "_media"))
+    outside = vault / "outside.png"
+    outside.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    with pytest.raises(MediaPersistenceError, match="越界"):
+        store.read_image("outside.png")
+
+
+def test_read_image_rejects_symlink(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    store = MediaStore(str(vault), str(vault / "_media"))
+    target = vault / "_media" / "real.png"
+    target.write_bytes(b"\x89PNG\r\n\x1a\n")
+    link = vault / "_media" / "link.png"
+    link.symlink_to(target)
+
+    with pytest.raises(MediaPersistenceError, match="符号链接"):
+        store.read_image("_media/link.png")
+
+
+def test_read_image_rejects_non_image_bytes(tmp_path: Path) -> None:
+    vault = tmp_path / "vault"
+    store = MediaStore(str(vault), str(vault / "_media"))
+    bogus = vault / "_media" / "not-really.png"
+    bogus.write_bytes(b"plain text")
+
+    with pytest.raises(MediaPersistenceError, match="不是受支持的图片"):
+        store.read_image("_media/not-really.png")
