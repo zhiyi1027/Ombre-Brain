@@ -44,7 +44,7 @@ EXPECTED_TOOLS = {
 
 EXPECTED_TOOL_PROPERTIES = {
     "breath": set(),
-    "breath_search": {"query", "domain", "max_results"},
+    "breath_search": {"query", "domain", "max_results", "quotes"},
     "breath_advanced": {
         "query",
         "max_tokens",
@@ -69,6 +69,8 @@ EXPECTED_TOOL_PROPERTIES = {
         "meaning",
         "media",
         "test_data",
+        "quotes",
+        "state_key",
     },
     "grow": {"content", "items"},
     "trace": {
@@ -96,6 +98,8 @@ EXPECTED_TOOL_PROPERTIES = {
         "delete_reason",
         "old_str",
         "new_str",
+        "state_key",
+        "superseded_by",
     },
     "anchor": {"bucket_id"},
     "release": {"bucket_id"},
