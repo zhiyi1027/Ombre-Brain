@@ -12,10 +12,56 @@ KEYWORD_WEIGHT = 0.3
 RELEVANCE_THRESHOLD = 0.5
 MAX_FEELS = 5
 
+# Query boilerplate should not count as evidence that a feel is relevant.
+# These words are common in natural-language requests (and in many feel
+# bodies), so keeping them in the denominator/overlap can make unrelated
+# entries look like matches merely because they mention "知知" or "最近".
+_QUERY_STOPWORDS = {
+    "一个",
+    "一些",
+    "一下",
+    "一直",
+    "不过",
+    "不是",
+    "为什么",
+    "今天",
+    "什么",
+    "以后",
+    "但是",
+    "因为",
+    "如何",
+    "宝宝",
+    "已经",
+    "感觉",
+    "感受",
+    "怎么样",
+    "怎么",
+    "想起",
+    "时候",
+    "是不是",
+    "最近",
+    "爸爸",
+    "真的",
+    "知知",
+    "自己",
+    "还是",
+    "这个",
+    "那个",
+    "相关",
+    "记得",
+    "关于",
+}
+
 
 def _content_tokens(text: str) -> set[str]:
     # Single-character Chinese function words create misleading overlap.
     return {token for token in _tokenize(text or "") if len(token) > 1}
+
+
+def _query_tokens(text: str) -> set[str]:
+    """Return content-bearing query tokens, excluding retrieval boilerplate."""
+
+    return _content_tokens(text) - _QUERY_STOPWORDS
 
 
 def keyword_overlap(feel_text: str, reference_tokens: set[str]) -> float:
@@ -72,7 +118,7 @@ async def rank_feels(
 
     feel_ids = {str(feel.get("id") or "") for feel in feels if feel.get("id")}
     vector_scores, vector_ok = await _vector_scores(reference_text, feel_ids)
-    reference_tokens = _content_tokens(reference_text)
+    reference_tokens = _query_tokens(reference_text)
     ranked: list[tuple[dict, float]] = []
     for feel in feels:
         bucket_id = str(feel.get("id") or "")

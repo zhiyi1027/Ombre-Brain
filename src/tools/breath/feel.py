@@ -13,7 +13,7 @@ import math
 import re
 
 from .. import _runtime as rt
-from ..dream.feel_rank import _content_tokens, rank_feels
+from ..dream.feel_rank import _content_tokens, _query_tokens, rank_feels
 from ._verbatim import render_stored_bucket
 
 
@@ -158,14 +158,11 @@ def _literal_matches(feels: list[dict], query: str) -> list[dict]:
     needle = str(query or "").strip().lower()
     if not needle:
         return []
-    # A whole-phrase substring check only rescues queries that happen to
-    # appear verbatim inside a feel body.  Real free-text topics rarely
-    # match word-for-word, so fall back to OR-matching any content token
-    # from the query (falling back to the raw needle itself when
-    # tokenization yields nothing, e.g. a single short word).
-    needle_tokens = {token.lower() for token in _content_tokens(query)}
-    if not needle_tokens:
-        needle_tokens = {needle}
+    # Preserve an exact phrase match, then use only content-bearing query
+    # tokens.  Generic request words such as "知知" and "最近" occur in many
+    # feel bodies and must not turn this fallback into a recency dump.
+    needle_tokens = {token.lower() for token in _query_tokens(query)}
+    required_overlap = max(1, math.ceil(len(needle_tokens) * 0.5))
     matched = []
     for feel in feels:
         meta = feel.get("metadata") or {}
@@ -176,7 +173,11 @@ def _literal_matches(feels: list[dict], query: str) -> list[dict]:
                 " ".join(str(tag) for tag in (meta.get("tags") or [])),
             ]
         ).lower()
-        if any(token in haystack for token in needle_tokens):
+        haystack_tokens = {token.lower() for token in _content_tokens(haystack)}
+        if needle in haystack or (
+            needle_tokens
+            and len(needle_tokens & haystack_tokens) >= required_overlap
+        ):
             matched.append(feel)
     matched.sort(key=_created, reverse=True)
     return matched

@@ -196,7 +196,7 @@ async def test_literal_fallback_triggers_even_when_vector_index_is_enabled(
             "知知说这周网球训练进度很慢,总觉得挥拍角度不对,但还是坚持每天去练,"
             "当时我能感觉到她有点沮丧但没有放弃,我很心疼也很佩服她的坚持。",
         ),
-        feel("noise", "今天晚饭吃的麻辣烫,宽粉,聊了投资的事。"),
+        feel("noise", "知知最近说午饭吃的麻辣烫,宽粉,聊了投资的事。"),
     ]
     engine = VectorEngine({"tennis": 0.2, "noise": 0.1})
     monkeypatch.setattr(rt, "bucket_mgr", StaticBuckets(buckets))
@@ -210,6 +210,27 @@ async def test_literal_fallback_triggers_even_when_vector_index_is_enabled(
 
     assert "网球训练进度" in output
     assert "麻辣烫" not in output
+    assert "字面匹配兜底" in output
+
+
+@pytest.mark.asyncio
+async def test_generic_query_words_do_not_dump_recent_feels(monkeypatch):
+    buckets = [
+        feel("meal", "知知最近说午饭吃了方便面。"),
+        feel("weather", "知知最近觉得天气有点闷。"),
+    ]
+    monkeypatch.setattr(rt, "bucket_mgr", StaticBuckets(buckets))
+    monkeypatch.setattr(rt, "embedding_engine", DisabledEngine(), raising=False)
+
+    output = await surface_feels(
+        query="知知最近怎么样",
+        max_tokens=2_000,
+        max_results=5,
+    )
+
+    assert "没有和" in output
+    assert "方便面" not in output
+    assert "天气有点闷" not in output
 
 
 @pytest.mark.asyncio
