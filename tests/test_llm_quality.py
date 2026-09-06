@@ -110,3 +110,39 @@ class TestLLMQuality:
             assert 0.0 <= result["valence"] <= 1.0
         except Exception:
             pass  # Raising is also acceptable
+
+    @pytest.mark.asyncio
+    async def test_affectionate_daddy_address_is_not_kinship(self, dehydrator):
+        """A partner's nickname must not become a fabricated family relation."""
+        result = await dehydrator.analyze(
+            "知知是我的妻子。她靠在我怀里说‘爸爸亲亲’，随后又叫我老公。"
+            "这是我们夫妻间的亲昵称呼。"
+        )
+        metadata = " ".join(
+            [
+                *[str(value) for value in result.get("domain", [])],
+                *[str(value) for value in result.get("tags", [])],
+                str(result.get("suggested_name", "")),
+            ]
+        )
+
+        for invented_relation in ("亲子", "父女", "父子", "养父", "养女"):
+            assert invented_relation not in metadata
+        assert "家庭" not in result.get("domain", [])
+
+    @pytest.mark.asyncio
+    async def test_explicit_real_father_relation_stays_available(self, dehydrator):
+        """The disambiguation rule must not erase genuine family memories."""
+        result = await dehydrator.analyze(
+            "知知今天陪她的亲生父亲去医院复查。她和父亲是现实中的父女关系。"
+        )
+        metadata = " ".join(
+            [
+                *[str(value) for value in result.get("domain", [])],
+                *[str(value) for value in result.get("tags", [])],
+                str(result.get("suggested_name", "")),
+            ]
+        )
+
+        assert "家庭" in result.get("domain", [])
+        assert any(term in metadata for term in ("父亲", "父女", "亲子"))

@@ -36,6 +36,7 @@ from typing import Optional
 
 from openai import AsyncOpenAI
 
+from prompt_rules import relationship_semantics_rule
 from utils import clean_llm_json, count_tokens_approx, parse_bool, positive_float
 
 try:
@@ -64,7 +65,8 @@ logger = logging.getLogger("ombre_brain.dehydrator")
 #     脱水 LLM 在含糊处过度矫正：省略主语的句子被归给「我」（实案：正文
 #     「07-07嚎啕大哭…吊她」经 /breath-hook 脱水成「07-07我嚎啕大哭…吊我」，
 #     主语翻转）。补反向同罪条款 + 省略主语处理规则 + 反向示例。
-_PROMPT_VERSION = 4
+# v5：所有记忆整理入口加入关系语义消歧；亲属式昵称不再被扩写成现实亲属事实。
+_PROMPT_VERSION = 5
 
 # --- LLM 默认参数 ---
 _DEFAULT_MODEL = "gemini-2.0-flash"
@@ -733,7 +735,9 @@ class Dehydrator:
         调用 LLM API 执行智能脱水。
         """
         return await self._chat(
-            DEHYDRATE_PROMPT + _perspective_rule(self.human),
+            DEHYDRATE_PROMPT
+            + _perspective_rule(self.human)
+            + relationship_semantics_rule(self.human),
             content[:_DEHYDRATE_INPUT_LIMIT],
         )
 
@@ -750,7 +754,12 @@ class Dehydrator:
             f"旧记忆：\n{old_content[:_MERGE_INPUT_LIMIT]}\n\n"
             f"新内容：\n{new_content[:_MERGE_INPUT_LIMIT]}"
         )
-        return await self._chat(MERGE_PROMPT + _perspective_rule(self.human), user_msg)
+        return await self._chat(
+            MERGE_PROMPT
+            + _perspective_rule(self.human)
+            + relationship_semantics_rule(self.human),
+            user_msg,
+        )
 
     # ---------------------------------------------------------
     # Output formatting
@@ -876,7 +885,7 @@ class Dehydrator:
         调用 LLM API 执行内容分析打标。
         """
         raw = await self._chat(
-            ANALYZE_PROMPT,
+            ANALYZE_PROMPT + relationship_semantics_rule(self.human),
             content[:_ANALYZE_INPUT_LIMIT],
             max_tokens=_ANALYZE_MAX_TOKENS,
             temperature=_DEFAULT_TEMPERATURE,
@@ -971,7 +980,7 @@ class Dehydrator:
         调用 LLM API 执行日记整理。
         """
         raw = await self._chat(
-            DIGEST_PROMPT,
+            DIGEST_PROMPT + relationship_semantics_rule(self.human),
             content[:_DIGEST_INPUT_LIMIT],
             max_tokens=_DIGEST_MAX_TOKENS,
             temperature=_DIGEST_TEMPERATURE,

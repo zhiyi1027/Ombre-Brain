@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from errors import safe_error_detail
+from prompt_rules import relationship_semantics_rule
 from tools._common import (
     WriteDisposition,
     _HIGH_IMP_THRESHOLD,
@@ -998,8 +999,13 @@ class ImportEngine:
             raise RuntimeError("API not available")
 
         # 用 human 配置替换 prompt 里的「用户」称呼，让 LLM 输出更个人化。
-        _human = self.config.get("human", "用户")
-        prompt = IMPORT_EXTRACT_PROMPT.replace("用户", _human) if _human != "用户" else IMPORT_EXTRACT_PROMPT
+        _human = self.config.get("human", "用户") or "用户"
+        prompt = (
+            IMPORT_EXTRACT_PROMPT.replace("用户", _human)
+            if _human != "用户"
+            else IMPORT_EXTRACT_PROMPT
+        )
+        prompt += relationship_semantics_rule(_human)
 
         trimmed_content = chunk_content
         total_tokens = count_tokens_approx(chunk_content)
