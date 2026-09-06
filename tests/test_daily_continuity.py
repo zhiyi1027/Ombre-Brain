@@ -747,6 +747,24 @@ def test_uploader_uses_title_day_and_four_am_cutoff(tmp_path):
         module._payload(args)
 
 
+def test_uploader_rejects_missing_source_client_instead_of_sharing_cc(tmp_path):
+    module = _load_sync_module()
+    note = tmp_path / ".daily-note"
+    note.write_text("# 2026-08-20 便签（周四）\n正文", encoding="utf-8")
+    timestamp = datetime(2026, 8, 20, 12, 0, tzinfo=timezone.utc).timestamp()
+    import os
+    os.utime(note, (timestamp, timestamp))
+    args = argparse.Namespace(
+        file=note,
+        source_client="",
+        timezone="Asia/Shanghai",
+        cutoff_hour=4,
+    )
+
+    with pytest.raises(module.PermanentSyncError, match="source-client is invalid"):
+        module._payload(args)
+
+
 def test_uploader_bad_old_note_does_not_block_newer_note(monkeypatch):
     module = _load_sync_module()
     pending = {

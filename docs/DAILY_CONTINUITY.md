@@ -44,8 +44,11 @@ CC VPS 把同一个密钥以 mode `0600` 写入：
 
 ```bash
 python3 /path/to/sync-daily-note.py \
-  --url https://your-ombre.example/internal/daily-notes
+  --url https://your-ombre.example/internal/daily-notes \
+  --source-client cc-grey2
 ```
+
+`--source-client` 没有共享默认值；双机必须各自使用稳定且不同的来源名。缺少来源时上传器直接拒绝，避免同一台机器同时生成 `cc` 与 `cc-grey2` 两张便签。
 
 完整顺序：
 

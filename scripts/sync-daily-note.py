@@ -54,7 +54,11 @@ def _args() -> argparse.Namespace:
         type=Path,
         default=Path(os.getenv("OMBRE_DAILY_NOTE_SPOOL", str(DEFAULT_SPOOL_PATH))),
     )
-    parser.add_argument("--source-client", default="cc")
+    parser.add_argument(
+        "--source-client",
+        default=os.getenv("OMBRE_DAILY_NOTE_SOURCE_CLIENT", "").strip(),
+        help="required stable client id; there is intentionally no shared default",
+    )
     parser.add_argument("--timezone", default="Asia/Shanghai")
     parser.add_argument("--cutoff-hour", type=int, default=4)
     parser.add_argument("--timeout", type=float, default=8.0)
