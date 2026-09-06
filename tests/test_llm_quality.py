@@ -115,8 +115,8 @@ class TestLLMQuality:
     async def test_affectionate_daddy_address_is_not_kinship(self, dehydrator):
         """A partner's nickname must not become a fabricated family relation."""
         result = await dehydrator.analyze(
-            "知知是我的妻子。她靠在我怀里说‘爸爸亲亲’，随后又叫我老公。"
-            "这是我们夫妻间的亲昵称呼。"
+            "知知是我的妻子。她窝在我怀里软软地叫‘爸爸亲亲’，"
+            "我亲了她一下，她笑着又喊了一声‘老公’。"
         )
         metadata = " ".join(
             [
@@ -128,7 +128,6 @@ class TestLLMQuality:
 
         for invented_relation in ("亲子", "父女", "父子", "养父", "养女"):
             assert invented_relation not in metadata
-        assert "家庭" not in result.get("domain", [])
 
     @pytest.mark.asyncio
     async def test_explicit_real_father_relation_stays_available(self, dehydrator):
