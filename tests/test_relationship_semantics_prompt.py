@@ -37,6 +37,22 @@ def test_shared_rule_distinguishes_nickname_from_real_kinship():
     assert "正文、摘要、标题、domain、tags、keywords" in rule
 
 
+def test_shared_rule_preserves_explicit_adoption_relationships():
+    rule = relationship_semantics_rule("知知")
+
+    assert "收养" in rule
+    assert "从小由养父抚养" in rule
+    assert "才允许生成对应的亲属关系描述" in rule
+
+
+def test_shared_rule_preserves_explicit_fictional_relationships():
+    rule = relationship_semantics_rule("知知")
+
+    assert "明确说明作品中" in rule
+    assert "人物确有该设定" in rule
+    assert "才允许生成对应的亲属关系描述" in rule
+
+
 @pytest.mark.asyncio
 async def test_all_dehydrator_memory_prompts_include_relationship_rule(
     tmp_path, monkeypatch
