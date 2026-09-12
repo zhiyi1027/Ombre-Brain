@@ -629,6 +629,16 @@ def load_config(config_path: Optional[str] = None) -> dict:
         except Exception:
             pass
 
+    # A blank YAML value makes every relative join land in the current working
+    # directory. Treat it exactly like an unset environment override so memory
+    # files cannot silently scatter through the code directory.
+    if not str(config.get("buckets_dir") or "").strip():
+        config["buckets_dir"] = defaults["buckets_dir"]
+        logging.getLogger(__name__).warning(
+            "buckets_dir is blank; falling back to %s",
+            config["buckets_dir"],
+        )
+
     # 媒体必须和记忆一起落在持久卷；默认使用数据目录下独立的 _media。
     # OMBRE_MEDIA_DIR 仅在确实挂载了另一块持久盘时覆盖。
     media_dir = os.environ.get("OMBRE_MEDIA_DIR", "").strip()
