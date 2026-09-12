@@ -320,6 +320,10 @@ class Dehydrator:
                 api_key=self.api_key,
                 base_url=self.base_url,
                 timeout=self.timeout_seconds,
+                # ``_chat`` owns the visible, bounded retry loop. Leaving the
+                # SDK default enabled multiplies three application attempts by
+                # three hidden transport attempts.
+                max_retries=0,
             )
 
         # --- SQLite dehydration cache ---

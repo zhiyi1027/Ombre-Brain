@@ -220,6 +220,10 @@ class APIEmbeddingEngine(BaseEmbeddingEngine):
         self._client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
+            # Pass the timeout at the SDK boundary as well as to httpx. When
+            # the configured value equals httpx's default (5s), OpenAI's SDK
+            # otherwise substitutes its own 600s read timeout.
+            timeout=self.timeout_seconds,
             http_client=httpx.AsyncClient(timeout=self.timeout_seconds, trust_env=not _is_local_host),
         )
 
