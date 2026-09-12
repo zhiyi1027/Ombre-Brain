@@ -369,6 +369,37 @@ class GeminiNativeEmbeddingEngine(BaseEmbeddingEngine):
 # 门面：EmbeddingEngine — 对外保持原接口
 # ============================================================
 
+
+def _record_startup_e001(detail: str) -> None:
+    try:
+        try:
+            from errors import record_error  # type: ignore
+        except ImportError:
+            from .errors import record_error  # type: ignore
+        record_error("OB-E001", detail)
+    except Exception:
+        logger.warning("[embedding] OB-E001 (record failed): %s", detail)
+
+
+def _header_safe(value: str) -> bool:
+    """Return whether a value can be placed in an HTTP header unchanged."""
+
+    try:
+        str(value).encode("ascii")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def _first_non_ascii(value: str) -> int:
+    """Return the one-based position of the first non-ASCII character."""
+
+    for index, char in enumerate(str(value), start=1):
+        if ord(char) > 127:
+            return index
+    return 0
+
+
 class EmbeddingEngine:
     """SQLite 存储 + 搜索 + 元数据校验，持有一颗 BaseEmbeddingEngine。"""
 
@@ -422,6 +453,18 @@ class EmbeddingEngine:
             # user-supplied Ollama URL. The real cloud key stays in config for
             # switching back, but the local runtime uses a non-secret token.
             api_key = "ollama"
+
+        if not _header_safe(api_key):
+            # Invalid header text can never succeed on retry. Keep Markdown
+            # writes available, create the derived store, and wait for a
+            # corrected key instead of poisoning the outbox with retries.
+            _record_startup_e001(
+                f"embedding api_key contains a non-ASCII character at position "
+                f"{_first_non_ascii(api_key)}; vectorization is in standby until "
+                "the key is corrected"
+            )
+            self._init_db()
+            return
 
         if not api_key:
             # 无 key（仅云端后端会走到这）→ 待机模式：enabled=False，DB 仍初始化，key 热更新后激活
