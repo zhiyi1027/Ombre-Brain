@@ -41,7 +41,7 @@ from ombrebrain.maintenance import (
     MigrationTraceRecord,
     VNextPreflightReportBuilder,
 )
-from ombrebrain.observability import ObservabilityMetricBoundary
+from ombrebrain.observability import ObservabilityMetricBoundary, process_memory
 from ombrebrain.policy import RedLineContract, RedLineFeatureSpec, SurfaceDecision
 from ombrebrain.protocol import PublicToolDesignContract, PublicToolSpec
 from ombrebrain.resilience import CrashRecoveryContract, CrashRecoveryPlan, PathStep
@@ -1460,6 +1460,49 @@ async def build_system_diagnostics() -> dict[str, Any]:
             "decay_engine": "running" if decay_running else "stopped",
         },
         action="如长期停止，请重启服务并查看日志" if not decay_running else "",
+    ))
+
+    memory = process_memory.snapshot()
+    if not memory.get("available"):
+        memory_status = "ok"
+        memory_message = "当前平台无法读取进程常驻内存"
+        memory_action = ""
+    else:
+        used = memory.get("used_percent")
+        if used is None:
+            memory_status = "ok"
+            memory_message = (
+                f"常驻内存 {memory['rss_mb']} MB；未检测到容器内存上限"
+            )
+            memory_action = ""
+        elif used >= 90:
+            memory_status = "error"
+            memory_message = (
+                f"常驻内存 {memory['rss_mb']} MB / 上限 {memory['limit_mb']} MB"
+                f"（{used}%），随时可能被 OOM 杀掉"
+            )
+            memory_action = "保存此诊断结果并提高实例内存，排查持续增长来源"
+        elif used >= 75:
+            memory_status = "warning"
+            memory_message = (
+                f"常驻内存 {memory['rss_mb']} MB / 上限 {memory['limit_mb']} MB"
+                f"（{used}%）"
+            )
+            memory_action = "持续观察；报告问题时附上此诊断结果"
+        else:
+            memory_status = "ok"
+            memory_message = (
+                f"常驻内存 {memory['rss_mb']} MB / 上限 {memory['limit_mb']} MB"
+                f"（{used}%）"
+            )
+            memory_action = ""
+    checks.append(_check(
+        "process_memory",
+        "进程内存",
+        memory_status,
+        memory_message,
+        details=memory,
+        action=memory_action,
     ))
 
     summary = {"ok": 0, "warning": 0, "error": 0}
