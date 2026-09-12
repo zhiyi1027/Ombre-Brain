@@ -41,6 +41,7 @@ import logging
 import math
 import os
 import sqlite3
+import time
 from collections import OrderedDict
 from typing import Any
 
@@ -507,8 +508,33 @@ class EmbeddingEngine:
     # -------------------- SQLite 初始化 --------------------
 
     def _init_db(self) -> None:
-        """建表。embeddings 主表 + embeddings_meta 元数据表（2.0.3 新增）。"""
+        """Create derived tables, quarantining a corrupt index first."""
+
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        try:
+            self._create_tables()
+            return
+        except sqlite3.DatabaseError as exc:
+            if not os.path.exists(self.db_path):
+                raise
+            quarantined = f"{self.db_path}.corrupt-{time.strftime('%Y%m%d-%H%M%S')}"
+            os.replace(self.db_path, quarantined)
+            for suffix in ("-wal", "-shm"):
+                try:
+                    os.unlink(self.db_path + suffix)
+                except OSError:
+                    pass
+            logger.warning(
+                "Embedding index corruption quarantined as %s; rebuilt empty (%s: %s)",
+                os.path.basename(quarantined),
+                type(exc).__name__,
+                exc,
+            )
+            self._create_tables()
+
+    def _create_tables(self) -> None:
+        """建表。embeddings 主表 + embeddings_meta 元数据表（2.0.3 新增）。"""
+
         conn = sqlite3.connect(self.db_path)
         try:
             conn.execute("""

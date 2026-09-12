@@ -30,6 +30,7 @@ import json
 import asyncio
 import hashlib
 import sqlite3
+import time
 import weakref
 import logging
 from typing import Optional
@@ -343,20 +344,50 @@ class Dehydrator:
         self._cache_finalizer()
 
     def _init_cache_db(self) -> sqlite3.Connection:
-        """Open (or create) the dehydration cache DB; return a persistent connection."""
+        """Open the derived cache, quarantining corruption before rebuilding."""
+
         os.makedirs(os.path.dirname(self.cache_db_path), exist_ok=True)
+        try:
+            return self._open_cache_db()
+        except sqlite3.DatabaseError as exc:
+            if not os.path.exists(self.cache_db_path):
+                raise
+            quarantined = (
+                f"{self.cache_db_path}.corrupt-{time.strftime('%Y%m%d-%H%M%S')}"
+            )
+            os.replace(self.cache_db_path, quarantined)
+            for suffix in ("-wal", "-shm"):
+                try:
+                    os.unlink(self.cache_db_path + suffix)
+                except OSError:
+                    pass
+            logger.warning(
+                "Dehydration cache corruption quarantined as %s; rebuilt empty (%s: %s)",
+                os.path.basename(quarantined),
+                type(exc).__name__,
+                exc,
+            )
+            return self._open_cache_db()
+
+    def _open_cache_db(self) -> sqlite3.Connection:
         # check_same_thread=False is safe here: asyncio runs on one thread and all
         # cache calls are synchronous helper methods called from that same thread.
         conn = sqlite3.connect(self.cache_db_path, check_same_thread=False)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS dehydration_cache (
-                content_hash TEXT PRIMARY KEY,
-                summary TEXT NOT NULL,
-                model TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-        """)
-        conn.commit()
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS dehydration_cache (
+                    content_hash TEXT PRIMARY KEY,
+                    summary TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+            """)
+            conn.commit()
+        except BaseException:
+            # sqlite3.connect is lazy. Close the descriptor before quarantine,
+            # especially on Windows where an open handle prevents os.replace.
+            conn.close()
+            raise
         return conn
 
     def _content_key(self, content: str) -> str:
