@@ -78,7 +78,16 @@ FINGERPRINT_TOOL="$IMAGE_ROOT/src/ombrebrain/maintenance/code_fingerprint.py"
 
 _code_fingerprint() {
     [ -f "$FINGERPRINT_TOOL" ] || return 1
-    python "$FINGERPRINT_TOOL" "$1" 2>/dev/null
+    # The production image exposes ``python``, while many Linux hosts only
+    # install ``python3``. Bootstrap diagnostics and rollback tests must not
+    # silently disable fingerprints merely because the alias is absent.
+    if command -v python >/dev/null 2>&1; then
+        python "$FINGERPRINT_TOOL" "$1" 2>/dev/null
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 "$FINGERPRINT_TOOL" "$1" 2>/dev/null
+    else
+        return 1
+    fi
 }
 
 _write_marker() {
