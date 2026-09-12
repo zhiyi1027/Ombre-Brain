@@ -227,6 +227,7 @@ from utils import (
     now_iso,
     parse_bool,
     parse_iso_datetime,
+    publish_new_file,
 )
 from media_store import MediaStore
 from bucket_scoring import (
@@ -274,7 +275,7 @@ def _atomic_create_text(path: str, text: str) -> None:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
-        os.link(temporary, target)
+        publish_new_file(temporary, target, text)
     finally:
         try:
             os.unlink(temporary)

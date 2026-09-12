@@ -1025,6 +1025,43 @@ def atomic_write_text(path: str | Path, text: str) -> None:
         raise
 
 
+def publish_new_file(temporary: str, target: str, text: str) -> None:
+    """Publish a staged file without ever replacing an existing target.
+
+    A hard link provides an atomic no-clobber publish on normal filesystems.
+    Filesystems such as some FUSE, NAS, and SMB mounts may reject hard links;
+    there we reserve the target with ``O_CREAT|O_EXCL`` and write it directly.
+    If that fallback write fails, the target belongs to this call and is
+    removed so a truncated memory bucket cannot survive a reported failure.
+    """
+
+    link = getattr(os, "link", None)
+    if link is not None:
+        try:
+            link(temporary, target)
+            return
+        except FileExistsError:
+            raise
+        except OSError:
+            # Hard-link support fails with different errno values across
+            # platforms. The fallback remains no-clobber and reports its own
+            # more precise error if the target cannot be created.
+            pass
+
+    descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except BaseException:
+        try:
+            os.unlink(target)
+        except OSError:
+            pass
+        raise
+
+
 def count_tokens_approx(text: str) -> int:
     """
     Rough token count estimate.
