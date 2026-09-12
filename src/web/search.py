@@ -91,7 +91,10 @@ def register(mcp) -> None:
                 query, top_k=50
             )
             matches = await sh.bucket_mgr.search(
-                query, limit=10, vector_scores=vector_scores
+                query,
+                limit=10,
+                vector_scores=vector_scores,
+                include_archive=True,
             )
             result = []
             for b in matches:
@@ -106,6 +109,8 @@ def register(mcp) -> None:
                     "valence": meta.get("valence", 0.5),
                     "arousal": meta.get("arousal", 0.3),
                     "content_preview": strip_wikilinks(b.get("content", ""))[:200],
+                    "type": meta.get("type", "dynamic"),
+                    "archived": meta.get("type") == "archived",
                     "state_key": meta.get("state_key", ""),
                     "superseded_by": meta.get("superseded_by", ""),
                 })

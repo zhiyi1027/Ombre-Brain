@@ -2432,6 +2432,7 @@ class BucketManager:
         query_valence: Optional[float] = None,
         query_arousal: Optional[float] = None,
         vector_scores: Optional[dict[str, float]] = None,
+        include_archive: bool = False,
     ) -> list[dict]:
         """
         Multi-dimensional indexed search for memory buckets.
@@ -2439,6 +2440,8 @@ class BucketManager:
 
         domain_filter: pre-filter by domain (None = search all)
         query_valence/arousal: emotion coordinates for resonance scoring
+        include_archive: include non-deleted archived buckets in the candidate pool;
+            read-side surface policy remains responsible for hiding tombstones.
         """
         if not query or not query.strip():
             return []
@@ -2446,7 +2449,28 @@ class BucketManager:
         limit = limit or self.max_results
         # 字面召回：把查询原样（小写、去空白）留作子串匹配，保证显式搜的词必被召回
         q_norm = query.strip().lower()
-        all_buckets = await self.list_all(include_archive=False)
+        all_buckets = await self.list_all(include_archive=include_archive)
+
+        # Historical crash recovery can leave an active and archived physical
+        # copy with the same logical ID.  Active directories are scanned first,
+        # so preserve that canonical copy and never render one memory twice.
+        # Apply the hard deletion boundary here as well as in surface policy so
+        # a new include_archive caller cannot accidentally receive tombstones.
+        if include_archive:
+            unique_buckets: dict[str, dict] = {}
+            for bucket in all_buckets:
+                metadata = bucket.get("metadata", {}) or {}
+                bucket_type = str(metadata.get("type") or "").strip().lower()
+                if (
+                    metadata.get("deleted_at")
+                    or bucket_type == "tombstone"
+                    or parse_bool(metadata.get("tombstone"), default=False)
+                ):
+                    continue
+                bucket_id = str(bucket.get("id") or "")
+                if bucket_id and bucket_id not in unique_buckets:
+                    unique_buckets[bucket_id] = bucket
+            all_buckets = list(unique_buckets.values())
 
         if not all_buckets:
             return []
@@ -2455,8 +2479,8 @@ class BucketManager:
         # bucket id 是随机 hex、**没有语义**，不该进向量/BM25/模糊通道（塞进去只会
         # 污染语义空间）。这里独立做「完整 id 精确匹配」：查询串正好等于某个可见桶的
         # 完整 id → 直接返回该桶（满分），绕开语义排序。「我知道要哪条」的精确定位。
-        # 只认完整 id（不做前缀匹配），避免普通关键词误触；软删除/归档桶不在 all_buckets
-        # 中，故按 id 也搜不到已删除桶，与 get() 的可见性一致。
+        # 只认完整 id（不做前缀匹配），避免普通关键词误触。include_archive=True
+        # 时归档桶也可定位；软删除/tombstone 由调用方的读取策略继续拦截。
         q_exact = query.strip()
         if q_exact:
             for b in all_buckets:
@@ -2947,10 +2971,10 @@ class BucketManager:
         return stats
 
     # ---------------------------------------------------------
-    # Archive bucket (move from permanent/dynamic into archive)
+    # Archive bucket (explicitly move permanent/dynamic into archive)
     # 归档桶（从 permanent/dynamic 移入 archive）
-    # Called by decay engine to simulate "forgetting"
-    # 由衰减引擎调用，模拟"遗忘"
+    # This is an explicit/manual lifecycle action; decay never calls it.
+    # 这是显式/手动生命周期操作；衰减引擎不会调用它。
     # ---------------------------------------------------------
     async def archive(self, bucket_id: str) -> bool:
         """

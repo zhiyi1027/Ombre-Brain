@@ -61,7 +61,10 @@ class SurfacePolicyVM:
 
         if bucket_type == "tombstone" or _truthy(metadata.get("tombstone")):
             reasons.append("tombstone")
-        if bucket_type == "archived":
+        # Archive means "keep out of passive recall", not "make
+        # undiscoverable".  Explicit search may retrieve the preserved source;
+        # tombstones and soft-deleted memories remain hidden in every mode.
+        if bucket_type == "archived" and normalized_mode != SurfaceMode.SEARCH:
             reasons.append("archived")
         if metadata.get("deleted_at"):
             reasons.append("deleted")

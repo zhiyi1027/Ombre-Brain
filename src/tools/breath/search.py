@@ -13,6 +13,7 @@ tools/breath/search.py — 有 query 的检索模式
 - 命中正文不经过 LLM 摘要、改写或压缩，直接返回当前存储的 content
 - 命中后调 touch()，但不修改本次返回的正文或元数据
 - 显式搜索只返回相关命中，不混入随机旧桶；联想式旧事由 breath() 负责
+- 非删除 archived 桶只在显式关键词或完整 ID 查询时可读，并标记 archived:true
 - 命中 0 条时回 webhook 报空，并给出可操作的引导文案
 
 不做什么（边界）：
@@ -63,6 +64,12 @@ def _state_header(metadata: dict) -> str:
     )
 
 
+def _archive_header(metadata: dict) -> str:
+    if str(metadata.get("type") or "").strip().lower() == "archived":
+        return " [archived:true]"
+    return ""
+
+
 async def _semantic_scores(query: str, top_k: int) -> tuple[dict[str, float], str]:
     """Run the vector query once and return scores plus an optional notice."""
     engine = rt.embedding_engine
@@ -102,8 +109,8 @@ async def surface_search(
     # A full bucket id is an address, not a semantic query.  Resolve it before
     # embedding/BM25 work so callers can reliably read the on-disk source text
     # immediately before trace(content=...) without an LLM or derived index in
-    # the path.  Archived/deleted and dedicated bucket types keep the same
-    # visibility boundary as ordinary search.
+    # the path.  Non-deleted archives are valid explicit addresses; tombstones
+    # and dedicated bucket types keep the same visibility boundary as search.
     exact_id = query.strip()
     try:
         exact_bucket = await rt.bucket_mgr.get(exact_id)
@@ -115,16 +122,15 @@ async def surface_search(
         exact_bucket = None
     if exact_bucket:
         meta = exact_bucket.get("metadata", {}) or {}
-        is_archived = meta.get("type") == "archived" or bool(meta.get("deleted_at"))
         if (
-            not is_archived
-            and meta.get("type") not in ("feel", "plan", "letter")
+            meta.get("type") not in ("feel", "plan", "letter")
             and _can_surface_search(exact_bucket)
             and _bucket_has_tags(meta, tag_filter)
         ):
             rendered, entry_tokens = render_stored_bucket(
                 exact_bucket,
                 f"[exact_bucket_id:true] [bucket_id:{exact_bucket['id']}]"
+                f"{_archive_header(meta)}"
                 f"{_state_header(meta)}",
             )
             if with_quotes:
@@ -156,6 +162,7 @@ async def surface_search(
             query_valence=q_valence,
             query_arousal=q_arousal,
             vector_scores=vector_scores,
+            include_archive=True,
         )
     except Exception as e:
         rt.logger.error(f"Search failed / 检索失败: {e}")
@@ -177,7 +184,9 @@ async def surface_search(
         meta = bucket["metadata"]
         bucket_id = bucket["id"]
         is_core = meta.get("pinned") or meta.get("protected") or meta.get("type") == "permanent"
-        if meta.get("superseded_by"):
+        if str(meta.get("type") or "").strip().lower() == "archived":
+            header = f"[已归档] [archived:true] [bucket_id:{bucket_id}]"
+        elif meta.get("superseded_by"):
             header = f"[历史状态] [bucket_id:{bucket_id}]"
         elif is_core:
             header = f"📌 [核心准则] [bucket_id:{bucket_id}]"

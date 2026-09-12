@@ -151,6 +151,84 @@ async def test_query_equal_to_bucket_id_reads_raw_content_without_indexes(
 
 
 @pytest.mark.asyncio
+async def test_archived_bucket_is_retrievable_by_exact_id_without_indexes(
+    bucket_mgr, monkeypatch
+):
+    original = "归档直达校验：原始正文仍然逐字可读。"
+    bucket_id = await bucket_mgr.create(
+        content=original, domain=["记忆"], importance=4
+    )
+    assert await bucket_mgr.archive(bucket_id)
+    dehydrator = _install_runtime(bucket_mgr)
+    rt.embedding_engine = ExplodingEmbedding()
+
+    async def unexpected_search(*args, **kwargs):
+        raise AssertionError("archived exact-id lookup must not call BM25/search")
+
+    monkeypatch.setattr(bucket_mgr, "search", unexpected_search)
+
+    output = await dispatch(query=bucket_id, max_tokens=10000)
+    actual = _returned_body(output, bucket_id, len(original))
+    await asyncio.sleep(0)
+
+    assert "[exact_bucket_id:true]" in output
+    assert "[archived:true]" in output
+    assert actual == original
+    assert dehydrator.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_archived_bucket_is_retrievable_by_keyword_but_not_passive_breath(
+    bucket_mgr, monkeypatch
+):
+    original = "云杉月台归档检索校验：只在主动搜索中出现。"
+    bucket_id = await bucket_mgr.create(
+        content=original, domain=["记忆"], importance=4
+    )
+    assert await bucket_mgr.archive(bucket_id)
+    _install_runtime(bucket_mgr)
+    monkeypatch.setattr("tools.breath.surface.random.random", lambda: 1.0)
+
+    searched = await _search("云杉月台")
+    passive = await surface_default(
+        max_results=20,
+        max_tokens=10000,
+        tag_filter=[],
+    )
+    await asyncio.sleep(0)
+
+    assert bucket_id in searched
+    assert original in searched
+    assert "[archived:true]" in searched
+    assert bucket_id not in passive
+    assert original not in passive
+
+
+@pytest.mark.asyncio
+async def test_soft_deleted_bucket_stays_hidden_from_exact_id_and_keyword_search(
+    bucket_mgr
+):
+    original = "赤狐墓碑校验：软删除正文不能通过搜索泄露。"
+    bucket_id = await bucket_mgr.create(
+        content=original, domain=["记忆"], importance=4
+    )
+    assert await bucket_mgr.delete(bucket_id)
+    _install_runtime(bucket_mgr)
+
+    exact = await dispatch(query=bucket_id, max_tokens=10000)
+    keyword = await _search("赤狐墓碑")
+    direct = await bucket_mgr.search(
+        "赤狐墓碑", include_archive=True, vector_scores={}
+    )
+
+    assert original not in exact
+    assert original not in keyword
+    assert f"[bucket_id:{bucket_id}]" not in exact
+    assert f"[bucket_id:{bucket_id}]" not in keyword
+    assert all(bucket["id"] != bucket_id for bucket in direct)
+
+
+@pytest.mark.asyncio
 async def test_query_multiple_buckets_return_each_body_exactly(bucket_mgr, monkeypatch):
     contents = [
         "群星校验词：第一段。\n保留 [[原始双链]] 和标点；A=1。",

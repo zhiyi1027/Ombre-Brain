@@ -138,7 +138,7 @@ def test_retrieval_rank_uses_surface_score_not_raw_candidate_score():
     assert ranked[1].candidate_score > ranked[0].candidate_score
 
 
-def test_retrieval_score_is_json_safe_and_preserves_policy_decision():
+def test_retrieval_score_is_json_safe_and_allows_archive_in_explicit_search():
     from ombrebrain.retrieval.scoring import PolicyGatedRetrievalScorer, RetrievalFeatures
 
     data = PolicyGatedRetrievalScorer.default().score_bucket(
@@ -148,9 +148,9 @@ def test_retrieval_score_is_json_safe_and_preserves_policy_decision():
     ).to_dict()
 
     assert data["bucket_id"] == "archived"
-    assert data["policy_allowed"] is False
-    assert data["surface_score"] == 0.0
-    assert data["policy_reasons"] == ["archived"]
+    assert data["policy_allowed"] is True
+    assert data["surface_score"] > 0.0
+    assert data["policy_reasons"] == []
 
 
 def test_retrieval_package_exports_policy_gated_scorer():

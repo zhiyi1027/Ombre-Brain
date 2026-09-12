@@ -325,7 +325,7 @@ feel 桶自身：
 - `hard_delete=True` → 仅当桶在创建时带有 `provenance.kind=test` 与 `erasable=true` 才物理删除；真实记忆、后补字段及普通 Dashboard 路径均不得越过此边界。Dashboard 普通模式支持多选/当前筛选全选的沉底、主动遗忘和归档，开发者模式才显示测试桶永久删除入口。
 - 其它字段：仅收集传入的（用 `-1`/空串作为「未传」哨兵）批量更新 frontmatter。
 - `pinned=1` 自动锁 importance=10 + 触发 `_move_bucket(permanent_dir)`。
-- `resolved=1` **不**自动归档（B-01 修复）；只更新 frontmatter，由 decay 引擎自然衰减。
+- `resolved=1` 只更新 frontmatter；decay 引擎继续计算低活跃分，但不会自动归档或移动文件。
 - `status` 仅接受 `active`/`resolved`/`abandoned`，主要用于 plan 桶。
 - `content="..."` 替换正文并重新生成 embedding。
 - `weight` 仅对 plan 桶有意义；`dont_surface` 切换主动遗忘标记；`why_remembered` 写「为什么留着这条」自由文本。
@@ -560,7 +560,7 @@ FTS 搜索只用于本地验证和未来 projection 迁移准备，当前只索�
 当前规则：
 - `spontaneous` / `dream` 模式拒绝 `dont_surface=True`、`anchor=True`、`feel/plan/letter/self/i`、`archived`、`deleted_at`、`tombstone`。
 - `importance` 模式拒绝 `dont_surface=True` 与专用类型，但保留 anchor 可达性。
-- `search` 模式只拒绝终态（archived / deleted / tombstone），显式关键词搜索仍可找回 `dont_surface=True` 的记忆。这是主动遗忘契约：不主动冒出来，但没有被抹去。
+- `search` 模式允许显式找回 `archived` 与 `dont_surface=True` 的记忆，但始终拒绝 `deleted_at` / `tombstone`。这是主动遗忘契约：不主动冒出来，但没有被抹去。
 
 这一步仍是 **shadow guard**：用于把边界集中成可测试规则，后续 Phase 3 才会逐步把更多 retrieval 路径迁到同一 VM 前置。
 
@@ -571,7 +571,7 @@ Dashboard `/api/search` 现在会在 `bucket_mgr.search()` 排序之后、JSON �
 边界：
 
 - `dont_surface=True` 在显式搜索里仍可达，因为主动遗忘限制的是主动浮现，不是抹去。
-- `archived`、`deleted_at`、`tombstone` 终态不会从 `/api/search` 返回。
+- 非删除 `archived` 会从 `/api/search` 返回并带 `type=archived` / `archived=true`；`deleted_at`、`tombstone` 始终隐藏。
 - 排序、BM25、embedding、literal-hit 召回逻辑保持原样。
 - 内部调用者（导入去重、merge 候选、工具内部匹配）仍可以直接使用 `BucketManager.search()`，避免把用户可见 retrieval policy 混入写入/维护流程。
 
@@ -582,7 +582,7 @@ MCP `breath(query=...)` 现在也会在显式查询命中进入 dehydration / to
 边界：
 
 - `dont_surface=True` 在 `breath(query=...)` 里仍可达；主动遗忘只限制无参/被动浮现。
-- `archived`、`deleted_at`、`tombstone` 终态不会从 MCP 查询搜索返回，也不会被这条路径 `touch()`。
+- 非删除 `archived` 可由关键词或完整 bucket ID 从 MCP 查询搜索返回，结果带 `[archived:true]`；`deleted_at`、`tombstone` 始终隐藏。
 - `feel`、`plan`、`letter` 仍沿用 MCP 搜索入口原有排除规则，保持专用通道边界。
 - 查询结果不足时的随机 drift 仍是后续收敛项；本阶段只统一显式 query hit 的读取侧 policy。
 
@@ -1301,9 +1301,11 @@ if not resolved && importance ≤ 4 && days_since > 30:
 
 (改动注意：必须立即更新本地 `meta` dict，否则该桶在本轮 cycle 仍按未结案分计算，archive 判定要等下一轮。)
 
-### 5.3 自动归档
+### 5.3 低活跃观测与显式归档
 
-`score < threshold(0.3)` → `bucket_mgr.archive()`：读 frontmatter 改 `type="archived"` → 写回 → `shutil.move()` 到 `archive/{primary_domain}/`。
+`score < threshold(0.3)` 只计入 `run_decay_cycle()` 的 `below_threshold` 统计，供排序和诊断参考，不再移动任何 Markdown。兼容字段 `archived` 保留且恒为 `0`。
+
+只有用户明确触发 Dashboard/API 归档时才调用 `bucket_mgr.archive()`：读 frontmatter 改 `type="archived"`，再移动到 `archive/{primary_domain}/`。归档内容退出普通 `breath()` / dream，但仍能被关键词或完整 ID 主动找回；软删除/tombstone 不可检索。
 
 ### 5.4 搜索评分（bucket_manager.search）
 
@@ -1342,12 +1344,12 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 
 | 类型 (`type`) | 目录 | importance | 衰减分 | 普通 breath 浮现 | 参与合并 | 参与 dream | 自动归档 |
 |---|---|---|---|---|---|---|---|
-| `dynamic` | `dynamic/{domain}/` | 1~10 | 公式计算 | ✅ | ✅ | ✅ | ✅ |
+| `dynamic` | `dynamic/{domain}/` | 1~10 | 公式计算 | ✅ | ✅ | ✅ | ❌ |
 | `permanent`（可独立于 `pinned`） | `permanent/{domain}/` | 显式 permanent 为 1~10；pinned 锁 10 | 999 | 作为固化记忆展示 | ❌ | ❌ | ❌ |
 | `feel` | `feel/沉淀物/` | 5 | 50 | ❌（仅 `domain="feel"`） | ❌ | 仅参与结晶检测 | ❌ |
 | `plan` | `plans/active/` | 7 | 50 | ❌（仅 dream 末尾 active 段） | ❌ | dream 列出 | ❌ |
 | `letter` | `letters/history/` | 10 | 50 | ❌（仅 `/breath-hook` 末尾各最新一封） | ❌ | ❌ | ❌ |
-| `archived` | `archive/{domain}/` | — | — | ❌ | ❌ | ❌ | — |
+| `archived` | `archive/{domain}/` | — | — | ❌（显式搜索可达） | ❌ | ❌ | — |
 
 **新建时初始字段**：`activation_count = 0`（B-04 修复值；曾经是 1 导致冷启动检测失效）；`resolved/pinned/digested` 不显式写入，仅在变更时才出现在 frontmatter 中。
 

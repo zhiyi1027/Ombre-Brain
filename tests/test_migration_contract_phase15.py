@@ -22,7 +22,12 @@ def test_migration_contract_accepts_preserved_philosophical_fields():
     source = [
         _record("d1", "dynamic"),
         _record("p1", "permanent", state="active", surfacing_rules={"spontaneous": True}),
-        _record("a1", "archive", state="archived", surfacing_rules={"search": False}),
+        _record(
+            "a1",
+            "archive",
+            state="archived",
+            surfacing_rules={"spontaneous": False, "search": True},
+        ),
         _record("anchor1", "dynamic", anchor=True, surfacing_rules={"spontaneous": False}),
         _record("t1", "dynamic", state="tombstone", tombstone=True),
     ]

@@ -77,18 +77,36 @@ def test_explicit_search_can_still_retrieve_digested_memory():
 @pytest.mark.parametrize(
     ("metadata", "reason"),
     [
-        ({"type": "archived"}, "archived"),
         ({"deleted_at": "2026-07-02T00:00:00+00:00"}, "deleted"),
         ({"type": "tombstone"}, "tombstone"),
     ],
 )
-def test_terminal_memory_states_are_denied_in_every_read_mode(mode, metadata, reason):
+def test_deleted_memory_states_are_denied_in_every_read_mode(mode, metadata, reason):
     vm = SurfacePolicyVM.default()
 
     decision = vm.evaluate_bucket(_bucket(**metadata), mode=mode)
 
     assert not decision.allowed
     assert reason in decision.reasons
+
+
+def test_explicit_search_can_retrieve_non_deleted_archive():
+    vm = SurfacePolicyVM.default()
+
+    decision = vm.evaluate_bucket(_bucket(type="archived"), mode="search")
+
+    assert decision.allowed
+    assert decision.reasons == ()
+
+
+@pytest.mark.parametrize("mode", ["spontaneous", "importance", "dream"])
+def test_archived_memory_stays_out_of_non_search_read_modes(mode):
+    vm = SurfacePolicyVM.default()
+
+    decision = vm.evaluate_bucket(_bucket(type="archived"), mode=mode)
+
+    assert not decision.allowed
+    assert "archived" in decision.reasons
 
 
 def test_filter_buckets_returns_only_allowed_items():
@@ -142,8 +160,11 @@ class FakeSearchRequest:
 
 
 class FakeSearchBucketManager:
-    async def search(self, query, limit=10, vector_scores=None):
+    async def search(
+        self, query, limit=10, vector_scores=None, include_archive=False
+    ):
         assert query == "memory"
+        assert include_archive is True
         return [
             _bucket(id="visible", name="Visible", importance=8),
             _bucket(id="hidden", name="Hidden", importance=10, dont_surface=True),
@@ -179,7 +200,8 @@ async def test_dashboard_search_filters_terminal_states_but_keeps_dont_surface(m
     response = await mcp.routes[("GET", "/api/search")](FakeSearchRequest())
     payload = json.loads(response.body.decode("utf-8"))
 
-    assert [bucket["id"] for bucket in payload] == ["visible", "hidden"]
+    assert [bucket["id"] for bucket in payload] == ["visible", "hidden", "archived"]
+    assert payload[-1]["archived"] is True
     # 响应体形状不变（前端依赖 Array.isArray），语义检索状态走响应头。
     assert isinstance(payload, list)
 

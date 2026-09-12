@@ -3,18 +3,18 @@
 decay_engine.py — 记忆衰减引擎，模拟人类遗忘曲线
 ========================================
 
-这个文件负责给每个桶算「现在还有多重」的权重分，然后把分数掉到阈值以下
-的桶搬到 archive。后台一个 asyncio 任务每隔 N 小时跑一次。
+这个文件负责给每个桶算「现在还有多重」的权重分。低分只作为排序和观测
+信号，不再改变桶的存储位置。后台一个 asyncio 任务每隔 N 小时跑一次。
 
 关键行为：
 - 打分公式（改进版艾宾浩斯 + 情感坐标）：
     Score = Importance × (activation_count^0.3) × e^(-λ×days) × emotion_weight
 - 情感权重 = base + arousal × arousal_boost；唤醒度高的记忆衰减得慢
-- anchor / pinned / protected 桶不参与衰减、不被归档
+- anchor / pinned / protected 桶不参与衰减评分
 - ensure_started() 幂等启动后台循环；可被测试 monkeypatch 成 noop
 
 不做什么（边界）：
-- 不删除桶（只把分数低的搬到 archive）
+- 不删除或自动归档桶；archive() 只保留给显式人工操作
 - 不做内容修改、不打标、不调用 LLM
 - 不决定「该不该 hold/grow」，只对已有桶打分
 
@@ -45,7 +45,7 @@ logger = logging.getLogger("ombre_brain.decay")
 
 # --- DecayEngine 默认值（被 config.yaml 的 decay.* 覆盖）---
 _DEFAULT_LAMBDA = 0.05            # 指数衰减率：每过一天分数 × e^(-λ)
-_DEFAULT_THRESHOLD = 0.3          # 低于此分数 → 归档
+_DEFAULT_THRESHOLD = 0.3          # 低于此分数 → 计入低活跃观测，不改存储位置
 _DEFAULT_CHECK_INTERVAL_HRS = 24  # 后台循环间隔（小时）
 _DEFAULT_EMOTION_BASE = 1.0       # 情感权重基准
 _DEFAULT_AROUSAL_BOOST = 0.8      # arousal 每 +1 → 情感权重 +0.8
@@ -123,10 +123,9 @@ def _days_since_active(meta: dict, fallback_days: float = _DEFAULT_DAYS_FALLBACK
 class DecayEngine:
     """
     Memory decay engine — periodically scans all dynamic buckets,
-    calculates decay scores, auto-archives low-activity buckets
-    to simulate natural forgetting.
+    calculates decay scores without mutating bucket storage.
     记忆衰减引擎 —— 定期扫描所有动态桶，
-    计算衰减得分，将低活跃桶自动归档，模拟自然遗忘。
+    计算衰减得分；低活跃只影响读取排序，不再自动归档。
     """
 
     def __init__(self, config: dict, bucket_mgr):
@@ -158,8 +157,8 @@ class DecayEngine:
     # Core: calculate decay score for a single bucket
     # 核心：计算单个桶的衰减得分
     #
-    # Higher score = more vivid memory; below threshold → archive
-    # 得分越高 = 记忆越鲜活，低于阈值则归档
+    # Higher score = more vivid memory; threshold is observational only.
+    # 得分越高 = 记忆越鲜活；阈值仅用于观测。
     # Permanent buckets never decay / 固化桶永远不衰减
     # ---------------------------------------------------------
     # ---------------------------------------------------------
@@ -274,25 +273,33 @@ class DecayEngine:
     # ---------------------------------------------------------
     # Execute one decay cycle
     # 执行一轮衰减周期
-    # Scan all dynamic buckets → score → archive those below threshold
-    # 扫描所有动态桶 → 算分 → 低于阈值的归档
+    # Scan all dynamic buckets → score → report low-activity count
+    # 扫描所有动态桶 → 算分 → 报告低活跃数量
     # ---------------------------------------------------------
     async def run_decay_cycle(self) -> dict:
         """
-        Execute one decay cycle: iterate dynamic buckets, archive those
-        scoring below threshold.
-        执行一轮衰减：遍历动态桶，归档得分低于阈值的桶。
+        Execute one decay cycle: score dynamic buckets without moving them.
+        执行一轮衰减：遍历动态桶并计算分数，但不移动文件。
 
-        Returns stats: {"checked": N, "archived": N, "lowest_score": X}
+        ``archived`` remains as a compatibility key and is always zero;
+        ``below_threshold`` reports how many active buckets scored below the
+        configured observation threshold.
         """
         try:
             buckets = await self.bucket_mgr.list_all(include_archive=False)
         except Exception as e:
             logger.error(f"Failed to list buckets for decay / 衰减周期列桶失败: {e}")
-            return {"checked": 0, "archived": 0, "lowest_score": 0, "error": str(e)}
+            return {
+                "checked": 0,
+                "archived": 0,
+                "below_threshold": 0,
+                "lowest_score": 0,
+                "error": str(e),
+            }
 
         checked = 0
         archived = 0
+        below_threshold = 0
         auto_resolved = 0
         lowest_score = float("inf")
 
@@ -352,23 +359,10 @@ class DecayEngine:
 
             lowest_score = min(lowest_score, score)
 
-            # --- Below threshold → archive (simulate forgetting) ---
-            # --- 低于阈值 → 归档（模拟遗忘）---
+            # Low scores remain useful for ranking/diagnostics, but must never
+            # make source memories disappear from explicit recall.
             if score < self.threshold:
-                try:
-                    success = await self.bucket_mgr.archive(bucket["id"])
-                    if success:
-                        archived += 1
-                        logger.info(
-                            f"Decay archived / 衰减归档: "
-                            f"{meta.get('name', bucket['id'])} "
-                            f"(score={score:.4f}, threshold={self.threshold})"
-                        )
-                except Exception as e:
-                    logger.warning(
-                        f"Archive failed for {bucket.get('id', '?')} / "
-                        f"归档失败: {e}"
-                    )
+                below_threshold += 1
 
         # --- Self-heal: 补齐缺失向量（周期性，详见 _self_heal_embeddings）---
         backfilled_embeddings = await self._self_heal_embeddings(buckets)
@@ -376,6 +370,7 @@ class DecayEngine:
         result = {
             "checked": checked,
             "archived": archived,
+            "below_threshold": below_threshold,
             "auto_resolved": auto_resolved,
             "demoted_orphans": demoted_orphans,
             "backfilled_embeddings": backfilled_embeddings,
