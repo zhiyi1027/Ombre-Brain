@@ -4898,9 +4898,15 @@ async function loadBuckets() {
     selectedBucketIds.forEach(function(id) { if (!liveIds.has(id)) selectedBucketIds.delete(id); });
     updateStats();
     buildFilters();
-    // 数据刷新不等于用户切换视图：继续应用当前筛选，并保留所在页。
-    // 若刷新后页数减少，_paintBuckets 会自动把 bucketPage 收敛到末页。
-    renderBuckets(filterBuckets(allBuckets), true);
+    // A refresh caused by edit/archive/delete must preserve the active search
+    // view as well as the current page. Otherwise the query stays visible but
+    // the list silently jumps back to every bucket, inviting a wrong edit.
+    var activeQuery = (document.getElementById('search-input') || {}).value || '';
+    if (activeQuery.trim()) {
+      await searchBuckets(activeQuery.trim(), true);
+    } else {
+      renderBuckets(filterBuckets(allBuckets), true);
+    }
     if (data.length === 0 && window.ObPet) window.ObPet.react('empty');
   } catch (e) {
     if (generation !== bucketLoadGeneration || requestedSort !== bucketSort) return;
@@ -5166,7 +5172,7 @@ function _localBucketMatches(query) {
   return name.concat(other);                          // 桶名匹配排最前
 }
 
-async function searchBuckets(query) {
+async function searchBuckets(query, preservePage) {
   var petShowcase = ['跳舞','耳机','听歌','music','dance','咖啡','coffee','下雨','雨天','rain'];
   if (window.ObPet && !petShowcase.includes(String(query || '').trim().toLowerCase())) window.ObPet.react('search');
   var seen = {}, merged = [];
@@ -5179,7 +5185,7 @@ async function searchBuckets(query) {
       if (Array.isArray(results)) results.forEach(function(b) { if (!seen[b.id]) { seen[b.id] = 1; merged.push(b); } });
     }
   } catch (e) { /* 离线 / 无向量化：退化为纯本地字面 + 模糊匹配 */ }
-  renderBuckets(merged);
+  renderBuckets(merged, preservePage);
 }
 
 let detailLoadGeneration = 0;

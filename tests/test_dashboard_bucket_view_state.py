@@ -316,3 +316,26 @@ process.stdout.write(JSON.stringify(values));
     )
 
     assert json.loads(completed.stdout) == [3, 1, 5, 2, 3, 3, 3, 1, 1]
+
+
+def test_reload_keeps_search_results_when_query_is_active():
+    source = _dashboard_section(
+        "async function loadBuckets()", "function updateStats()"
+    )
+
+    assert "getElementById('search-input')" in source
+    assert "await searchBuckets(activeQuery.trim(), true);" in source
+    assert "renderBuckets(filterBuckets(allBuckets), true);" in source
+
+
+def test_search_refresh_can_preserve_page_without_changing_typing_behavior():
+    source = _dashboard_section(
+        "async function searchBuckets(", "let detailLoadGeneration"
+    )
+    typing = _dashboard_section(
+        "let searchTimer;", "async function loadBuckets()"
+    )
+
+    assert "async function searchBuckets(query, preservePage)" in source
+    assert "renderBuckets(merged, preservePage);" in source
+    assert "searchBuckets(q);" in typing
