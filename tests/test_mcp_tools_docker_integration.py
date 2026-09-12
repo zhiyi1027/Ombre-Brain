@@ -55,6 +55,7 @@ EXPECTED_TOOL_PROPERTIES = {
         "importance_min",
         "tags",
         "catalog",
+        "quotes",
     },
     "hold": {
         "content",
