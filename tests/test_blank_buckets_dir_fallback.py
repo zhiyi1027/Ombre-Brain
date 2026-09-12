@@ -11,7 +11,17 @@ from utils import load_config
 
 @pytest.fixture(autouse=True)
 def no_storage_env_overrides(monkeypatch):
-    for name in ("OMBRE_BUCKETS_DIR", "OMBRE_VAULT_DIR", "OMBRE_MEDIA_DIR"):
+    # load_config also mirrors legacy PASSWORD and derives OMBRE_LOG_FILE by
+    # assigning os.environ directly. Register those names with monkeypatch so
+    # this config test cannot leak process state into later auth/log tests.
+    for name in (
+        "OMBRE_BUCKETS_DIR",
+        "OMBRE_VAULT_DIR",
+        "OMBRE_MEDIA_DIR",
+        "PASSWORD",
+        "OMBRE_DASHBOARD_PASSWORD",
+        "OMBRE_LOG_FILE",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
