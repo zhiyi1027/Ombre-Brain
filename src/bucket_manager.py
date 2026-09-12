@@ -484,6 +484,13 @@ class BucketManager:
         self._active_cache_state_guard = threading.RLock()
         self._active_cache_generation = 0
         self._active_cache_lock = _CrossLoopAsyncLock()
+        # Archived buckets participate only in explicit search/pulse.  Keep a
+        # separate parsed cache so a keyword query does not re-read the entire
+        # vault, while passive list_all() retains its smaller active-only pool.
+        self._archive_cache: "list[dict] | None" = None
+        self._archive_file_state: dict[str, tuple[int, int]] = {}
+        self._archive_cache_generation = 0
+        self._archive_cache_lock = _CrossLoopAsyncLock()
         # Synchronous CRUD paths ask for IDs repeatedly.  A complete index
         # turns migration conflict/apply checks from O(imported × vault) into
         # one O(vault) build plus O(1) lookups.  Managed writes invalidate it;
@@ -506,6 +513,7 @@ class BucketManager:
         except (TypeError, ValueError):
             self.external_change_poll_seconds = 1.0
         self._last_file_state_check = 0.0
+        self._last_archive_file_state_check = 0.0
         self._external_changes_detected = 0
         self._last_external_change = ""
 
@@ -862,6 +870,14 @@ class BucketManager:
             self._bucket_path_index_ready = False
             self._bucket_path_index = {}
 
+    def _invalidate_archive_cache(self) -> None:
+        """Invalidate parsed archive rows after a managed archive-tree change."""
+        with self._active_cache_state_guard:
+            self._archive_cache_generation += 1
+            self._archive_cache = None
+            self._archive_file_state = {}
+            self._last_archive_file_state_check = 0.0
+
     def _cache_bump(
         self,
         bucket_id: str,
@@ -870,15 +886,23 @@ class BucketManager:
         activation_count=None,
         file_path: str = "",
     ) -> None:
-        """touch/ripple 只改了某桶的激活字段（集合没变）→ 就地更新缓存，不清整表。"""
+        """touch/ripple 只改了某桶的激活字段（集合没变）→ 就地更新对应缓存。"""
+        is_archive = bool(file_path) and self._path_is_within(
+            file_path, self.archive_dir
+        )
         with self._active_cache_state_guard:
             # Even with no published cache, a concurrent builder may have
             # parsed the pre-touch file.  Bumping the generation makes its
             # eventual publish fail the CAS and forces a rescan.
-            self._active_cache_generation += 1
-            if self._active_cache is None:
+            if is_archive:
+                self._archive_cache_generation += 1
+                cache = self._archive_cache
+            else:
+                self._active_cache_generation += 1
+                cache = self._active_cache
+            if cache is None:
                 return
-            for b in self._active_cache:
+            for b in cache:
                 if b.get("id") == bucket_id:
                     m = b.get("metadata")
                     if isinstance(m, dict):
@@ -888,25 +912,55 @@ class BucketManager:
                             m["activation_count"] = activation_count
                     break
             if file_path:
-                self._refresh_cached_file_state(file_path)
+                self._refresh_cached_file_state(file_path, archive=is_archive)
 
-    def _refresh_cached_file_state(self, file_path: str) -> None:
+    @staticmethod
+    def _path_is_within(file_path: str, directory: str) -> bool:
+        try:
+            normalized_path = os.path.normcase(os.path.abspath(file_path))
+            normalized_dir = os.path.normcase(os.path.abspath(directory))
+            return os.path.commonpath((normalized_path, normalized_dir)) == normalized_dir
+        except (OSError, ValueError):
+            return False
+
+    def _refresh_cached_file_state(
+        self, file_path: str, *, archive: bool = False
+    ) -> None:
         """Acknowledge an internal in-place write without invalidating the cache."""
         with self._active_cache_state_guard:
-            if self._active_cache is None:
+            cache = self._archive_cache if archive else self._active_cache
+            if cache is None:
                 return
             normalized = os.path.normcase(os.path.abspath(file_path))
+            state = self._archive_file_state if archive else self._active_file_state
             try:
                 stat = os.stat(file_path)
-                self._active_file_state[normalized] = (stat.st_mtime_ns, stat.st_size)
+                state[normalized] = (stat.st_mtime_ns, stat.st_size)
             except OSError:
-                self._active_file_state.pop(normalized, None)
-            self._last_file_state_check = time.monotonic()
+                state.pop(normalized, None)
+            if archive:
+                self._last_archive_file_state_check = time.monotonic()
+            else:
+                self._last_file_state_check = time.monotonic()
 
     def _scan_active_file_state(self) -> dict[str, tuple[int, int]]:
         """Return a cheap metadata fingerprint for every active Markdown file."""
         state: dict[str, tuple[int, int]] = {}
         for _root, _fname, file_path in self._iter_md_files(self._active_dirs):
+            try:
+                stat = os.stat(file_path)
+            except OSError:
+                continue
+            state[os.path.normcase(os.path.abspath(file_path))] = (
+                stat.st_mtime_ns,
+                stat.st_size,
+            )
+        return state
+
+    def _scan_archive_file_state(self) -> dict[str, tuple[int, int]]:
+        """Return a cheap metadata fingerprint for archived Markdown files."""
+        state: dict[str, tuple[int, int]] = {}
+        for _root, _fname, file_path in self._iter_md_files([self.archive_dir]):
             try:
                 stat = os.stat(file_path)
             except OSError:
@@ -924,6 +978,7 @@ class BucketManager:
                 "detected": self._external_changes_detected,
                 "last_detected": self._last_external_change,
                 "cached_files": len(self._active_file_state),
+                "cached_archive_files": len(self._archive_file_state),
             }
 
     def _reconcile_external_changes(
@@ -2153,6 +2208,7 @@ class BucketManager:
             except Exception as exc:
                 logger.warning("hard delete embedding cleanup failed for %s: %s", bucket_id, exc)
         self._invalidate_bm25()
+        self._invalidate_archive_cache()
         self._record_ledger_event(
             "TraceHardDeleted", bucket_id, bucket_type, "",
             {"provenance": {"kind": "test", "erasable": True}},
@@ -2228,6 +2284,7 @@ class BucketManager:
                 logger.warning(f"delete embedding failed for {bucket_id}: {e}")
 
         self._invalidate_bm25()
+        self._invalidate_archive_cache()
         logger.info(f"Soft-deleted bucket (moved to archive) / 软删除记忆桶: {bucket_id}")
         self._record_v3_bucket_event(
             "delete",
@@ -2831,19 +2888,110 @@ class BucketManager:
                 report["failed_sources"].append(source_id)
         return report
 
+    @staticmethod
+    def _searchable_archive_rows(buckets: list[dict]) -> list[dict]:
+        """Exclude tombstones before archive external-change reconciliation."""
+        visible: list[dict] = []
+        for bucket in buckets:
+            metadata = bucket.get("metadata", {}) or {}
+            bucket_type = str(metadata.get("type") or "").strip().lower()
+            if (
+                metadata.get("deleted_at")
+                or bucket_type == "tombstone"
+                or parse_bool(metadata.get("tombstone"), default=False)
+            ):
+                continue
+            visible.append(bucket)
+        return visible
+
+    async def _list_archive_cached(self) -> list[dict]:
+        """Return parsed archive rows with active-cache-equivalent CAS safety."""
+        async with self._archive_cache_lock:
+            previous_cache: list[dict] | None = None
+            while True:
+                now = time.monotonic()
+                with self._active_cache_state_guard:
+                    generation = self._archive_cache_generation
+                    cached = self._archive_cache
+                    if cached is not None:
+                        poll_due = (
+                            self.external_change_poll_seconds == 0
+                            or now - self._last_archive_file_state_check
+                            >= self.external_change_poll_seconds
+                        )
+                        if not poll_due:
+                            return [dict(bucket) for bucket in cached]
+                        cached_state = dict(self._archive_file_state)
+                    else:
+                        poll_due = False
+                        cached_state = {}
+
+                if cached is not None and poll_due:
+                    current_state = self._scan_archive_file_state()
+                    with self._active_cache_state_guard:
+                        if generation != self._archive_cache_generation:
+                            previous_cache = None
+                            continue
+                        self._last_archive_file_state_check = now
+                        if current_state == cached_state:
+                            current_cache = self._archive_cache
+                            if current_cache is not None:
+                                return [dict(bucket) for bucket in current_cache]
+                            continue
+
+                        previous_cache = [dict(bucket) for bucket in cached]
+                        self._archive_cache_generation += 1
+                        generation = self._archive_cache_generation
+                        self._archive_cache = None
+                        self._archive_file_state = {}
+                        self._bm25_dirty = True
+                        self._external_changes_detected += 1
+                        self._last_external_change = now_iso()
+                        with self._bucket_path_index_guard:
+                            self._bucket_path_index_ready = False
+                            self._bucket_path_index = {}
+
+                with self._active_cache_state_guard:
+                    generation = self._archive_cache_generation
+
+                state_before = self._scan_archive_file_state()
+                buckets = []
+                for _root, _fname, file_path in self._iter_md_files(
+                    [self.archive_dir]
+                ):
+                    bucket = self._load_bucket(file_path)
+                    if bucket:
+                        buckets.append(bucket)
+                state_after = self._scan_archive_file_state()
+
+                if state_before != state_after:
+                    await asyncio.sleep(0)
+                    continue
+
+                with self._active_cache_state_guard:
+                    if generation != self._archive_cache_generation:
+                        previous_cache = None
+                        continue
+                    self._archive_cache = [dict(bucket) for bucket in buckets]
+                    self._archive_file_state = state_after
+                    self._last_archive_file_state_check = time.monotonic()
+
+                if previous_cache is not None:
+                    self._reconcile_external_changes(
+                        self._searchable_archive_rows(previous_cache),
+                        self._searchable_archive_rows(buckets),
+                    )
+                return buckets
+
     async def list_all(self, include_archive: bool = False) -> list[dict]:
         """
         Recursively walk directories (including domain subdirs), list all buckets.
         递归遍历目录（含域子目录），列出所有记忆桶。
         """
         if include_archive:
-            buckets = []
-            dirs = list(self._active_dirs) + [self.archive_dir]
-            for _root, _fname, file_path in self._iter_md_files(dirs):
-                bucket = self._load_bucket(file_path)
-                if bucket:
-                    buckets.append(bucket)
-            return buckets
+            active = await self.list_all(include_archive=False)
+            archived = await self._list_archive_cached()
+            return active + archived
 
         # Active buckets use a parsed cache, but Obsidian/Git/manual edits may
         # bypass BucketManager.  The build mutex is cross-loop; the short state
@@ -3020,6 +3168,7 @@ class BucketManager:
             return False
 
         self._invalidate_bm25()
+        self._invalidate_archive_cache()
         logger.info(f"Archived bucket / 归档记忆桶: {bucket_id} → archive/{primary_domain}/")
         self._record_v3_bucket_event(
             "archive",

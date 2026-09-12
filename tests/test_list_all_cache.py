@@ -1,6 +1,7 @@
-"""list_all() 活跃桶缓存与外部文件变更回归测试（性能 P1）。
+"""list_all() 活跃/归档桶缓存与外部文件变更回归测试（性能 P1）。
 
 缓存必须：命中返回、写操作后失效、touch 就地更新、返回副本不污染缓存。
+归档使用独立缓存，不能拖慢或扩大无参数 breath 的活跃候选池。
 不能改变任何可见语义（桶数/内容/元数据都要与直读磁盘一致）。
 """
 import asyncio
@@ -255,3 +256,146 @@ def test_cache_builder_cannot_publish_stale_content_after_invalidation(
     assert result["content"] == "BBBB same-size body"
     [cached] = asyncio.run(bucket_mgr.list_all())
     assert cached["content"] == "BBBB same-size body"
+
+
+@pytest.mark.asyncio
+async def test_include_archive_reuses_parsed_archive_cache(bucket_mgr, monkeypatch):
+    bucket_id = await bucket_mgr.create(
+        content="archive cache body", name="archive-cache", domain=["test"]
+    )
+    assert await bucket_mgr.archive(bucket_id)
+    bucket_mgr.external_change_poll_seconds = 3600
+
+    original_load = bucket_mgr._load_bucket
+    archive_loads = 0
+
+    def counted_load(file_path):
+        nonlocal archive_loads
+        if Path(file_path).is_relative_to(Path(bucket_mgr.archive_dir)):
+            archive_loads += 1
+        return original_load(file_path)
+
+    monkeypatch.setattr(bucket_mgr, "_load_bucket", counted_load)
+
+    first = await bucket_mgr.list_all(include_archive=True)
+    second = await bucket_mgr.list_all(include_archive=True)
+
+    assert bucket_id in {bucket["id"] for bucket in first}
+    assert bucket_id in {bucket["id"] for bucket in second}
+    assert archive_loads == 1
+    assert bucket_mgr._archive_cache is not None
+
+
+@pytest.mark.asyncio
+async def test_archive_touch_updates_cache_and_file_fingerprint(bucket_mgr):
+    bucket_id = await bucket_mgr.create(content="archive touch cache")
+    assert await bucket_mgr.archive(bucket_id)
+    bucket_mgr.external_change_poll_seconds = 0
+    cached = await bucket_mgr.list_all(include_archive=True)
+    before = next(bucket for bucket in cached if bucket["id"] == bucket_id)
+    before_count = float(before["metadata"].get("activation_count") or 0)
+
+    await bucket_mgr.touch(bucket_id, ripple=False)
+    refreshed = await bucket_mgr.list_all(include_archive=True)
+    after = next(bucket for bucket in refreshed if bucket["id"] == bucket_id)
+
+    assert float(after["metadata"].get("activation_count") or 0) == before_count + 1
+    assert bucket_mgr.external_change_status()["detected"] == 0
+
+
+@pytest.mark.asyncio
+async def test_external_archive_edit_refreshes_archive_cache(bucket_mgr):
+    bucket_mgr.external_change_poll_seconds = 0
+    bucket_id = await bucket_mgr.create(content="old archived body")
+    assert await bucket_mgr.archive(bucket_id)
+    await bucket_mgr.list_all(include_archive=True)
+    outbox = _OutboxProbe()
+    bucket_mgr.attach_embedding_outbox(outbox)
+
+    path = Path(bucket_mgr._find_bucket_file(bucket_id))
+    post = frontmatter.load(path)
+    post.content = "new archived body from Obsidian"
+    path.write_text(frontmatter.dumps(post), encoding="utf-8")
+
+    refreshed = await bucket_mgr.list_all(include_archive=True)
+    bucket = next(item for item in refreshed if item["id"] == bucket_id)
+
+    assert bucket["content"] == "new archived body from Obsidian"
+    assert outbox.enqueued == [(bucket_id, "new archived body from Obsidian")]
+    assert bucket_mgr.external_change_status()["detected"] == 1
+
+
+@pytest.mark.asyncio
+async def test_archive_move_invalidates_and_rebuilds_archive_cache(bucket_mgr):
+    first_id = await bucket_mgr.create(content="first archived body")
+    assert await bucket_mgr.archive(first_id)
+    await bucket_mgr.list_all(include_archive=True)
+    assert bucket_mgr._archive_cache is not None
+
+    second_id = await bucket_mgr.create(content="second archived body")
+    assert await bucket_mgr.archive(second_id)
+    assert bucket_mgr._archive_cache is None
+
+    refreshed = await bucket_mgr.list_all(include_archive=True)
+    ids = {bucket["id"] for bucket in refreshed}
+
+    assert {first_id, second_id} <= ids
+
+
+@pytest.mark.asyncio
+async def test_include_archive_returns_copy_not_archive_cache(bucket_mgr):
+    bucket_id = await bucket_mgr.create(content="archive copy isolation")
+    assert await bucket_mgr.archive(bucket_id)
+    result = await bucket_mgr.list_all(include_archive=True)
+    archived = next(bucket for bucket in result if bucket["id"] == bucket_id)
+    archived["score"] = 999
+
+    fresh = await bucket_mgr.list_all(include_archive=True)
+    cached = next(bucket for bucket in fresh if bucket["id"] == bucket_id)
+
+    assert "score" not in cached
+
+
+def test_archive_cache_builder_cannot_publish_stale_content_after_invalidation(
+    bucket_mgr, monkeypatch
+):
+    bucket_id = asyncio.run(bucket_mgr.create("AAAA archive body"))
+    assert asyncio.run(bucket_mgr.archive(bucket_id))
+    path = Path(bucket_mgr._find_bucket_file(bucket_id))
+    bucket_mgr._invalidate_archive_cache()
+    parsed_old = threading.Event()
+    release_builder = threading.Event()
+    original_load = bucket_mgr._load_bucket
+    blocked = False
+    fixed_state = bucket_mgr._scan_archive_file_state()
+
+    def coordinated_load(file_path):
+        nonlocal blocked
+        bucket = original_load(file_path)
+        if not blocked and Path(file_path) == path:
+            blocked = True
+            parsed_old.set()
+            release_builder.wait(timeout=2)
+        return bucket
+
+    monkeypatch.setattr(bucket_mgr, "_load_bucket", coordinated_load)
+    monkeypatch.setattr(
+        bucket_mgr,
+        "_scan_archive_file_state",
+        lambda: dict(fixed_state),
+    )
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            lambda: asyncio.run(bucket_mgr.list_all(include_archive=True))
+        )
+        assert parsed_old.wait(timeout=2)
+
+        post = frontmatter.load(path)
+        post.content = "BBBB archive body"
+        path.write_text(frontmatter.dumps(post), encoding="utf-8")
+        bucket_mgr._invalidate_archive_cache()
+        release_builder.set()
+        result = future.result(timeout=2)
+
+    archived = next(bucket for bucket in result if bucket["id"] == bucket_id)
+    assert archived["content"] == "BBBB archive body"

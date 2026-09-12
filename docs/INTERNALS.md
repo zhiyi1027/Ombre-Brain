@@ -1336,6 +1336,8 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 3. 两阶段检索：先由 literal / topic / BM25 / semantic 做相关性准入，再用 topic / emotion / time / importance / touch [+ semantic] [+ bm25] 多维加权精排。时间、重要度、情绪和触碰次数只影响已相关候选的顺序，不能单独把无关桶抬进结果。BM25 稀疏召回由 `bm25_index.py` 提供（软依赖未装则该通道关闭）。
 4. 截断到 `limit`
 
+**归档搜索缓存**：`list_all(include_archive=True)` 不再逐次重读整库 Markdown，而是合并现有活跃桶缓存与独立归档缓存。两份缓存各自用文件 `mtime_ns + size` 指纹、跨 event-loop 锁和 generation CAS 防止并发构建发布旧快照；归档/软删除/测试硬删除会显式失效归档缓存，搜索命中的 `touch()` 则写穿缓存并同步文件指纹。直接在 Obsidian/磁盘修改归档 Markdown 时，下一次外部变更轮询会重建归档缓存并刷新派生索引。Markdown 始终是唯一真源，缓存丢失只会触发重读，不影响记忆文件。
+
 (改动注意：iter 2.1+ 起 embedding 不再用作候选预筛。历史实现把候选集替换成「在 embeddings.db 里的桶」，导致缺失向量的桶在 breath 检索里整体消失，pulse 总数与 breath 命中数对不上。修复后没向量的桶 `semantic_score=0`，仍可凭 topic/emotion/time/importance 命中。现在 Markdown 是唯一写入真源；`bucket_manager.create()/update(content=...)` 落盘后把 id 与正文 hash 投递到 `.embedding_outbox.json`，后台单 worker 负责生成、失败重试和启动对账。新文件必须在任何 meaning/provider `await` 前完成路径与活跃缓存发布。`reconcile()` 只根据快照补任务，绝不删除或覆盖现有 pending——衰减/补齐调用方持有的桶快照可能已经过时，候选入队前必须重读当前 Markdown，最终提交还要重新核对正文索引。正文向量存在性以非空 `embedding` 列判断，不能把旧版空 `content_hash` 与 meaning-only 占位行混为一谈。`pulse` 会把“排队中”与真正的索引漂移分开显示。)
 
 ---

@@ -91,6 +91,46 @@ def test_active_cache_lock_serializes_independent_event_loops(bucket_mgr, monkey
     assert len(asyncio.run(bucket_mgr.list_all())) == 1
 
 
+def test_archive_cache_lock_serializes_independent_event_loops(
+    bucket_mgr, monkeypatch
+):
+    bucket_id = asyncio.run(
+        bucket_mgr.create("cross-loop archive cache body", domain=["race"])
+    )
+    assert asyncio.run(bucket_mgr.archive(bucket_id))
+    bucket_mgr.external_change_poll_seconds = 0
+    entered = threading.Event()
+    release = threading.Event()
+    original_scan = bucket_mgr._scan_archive_file_state
+    calls = 0
+    calls_guard = threading.Lock()
+
+    def coordinated_scan():
+        nonlocal calls
+        with calls_guard:
+            calls += 1
+            call_number = calls
+        if call_number == 1:
+            entered.set()
+            release.wait(timeout=2)
+        return original_scan()
+
+    monkeypatch.setattr(bucket_mgr, "_scan_archive_file_state", coordinated_scan)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(
+            lambda: asyncio.run(bucket_mgr.list_all(include_archive=True))
+        )
+        assert entered.wait(timeout=2)
+        second = pool.submit(
+            lambda: asyncio.run(bucket_mgr.list_all(include_archive=True))
+        )
+        release.set()
+        assert len(first.result(timeout=2)) == 1
+        assert len(second.result(timeout=2)) == 1
+
+    assert len(asyncio.run(bucket_mgr.list_all(include_archive=True))) == 1
+
+
 def test_bulk_bucket_id_index_avoids_n_by_n_frontmatter_scans(
     bucket_mgr,
     monkeypatch,
