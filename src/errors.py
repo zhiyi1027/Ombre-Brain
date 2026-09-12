@@ -334,11 +334,30 @@ def configure_errors_path(buckets_dir: str) -> None:
         _errors_path = None
 
 
+def _ends_with_newline(path: str) -> bool:
+    """Return whether appending can start a fresh JSONL record safely."""
+
+    try:
+        if os.path.getsize(path) == 0:
+            return True
+        with open(path, "rb") as handle:
+            handle.seek(-1, os.SEEK_END)
+            return handle.read(1) == b"\n"
+    except OSError:
+        return True
+
+
 def _persist_error_record(record: dict) -> None:
     if not _errors_path:
         return
     try:
         with _errors_path_lock:
+            # A crash can leave the final JSONL record truncated. Appending
+            # directly would concatenate the next valid record to that tail
+            # and lose both. Isolate the damaged record on its own line first.
+            if not _ends_with_newline(_errors_path):
+                with open(_errors_path, "a", encoding="utf-8", newline="\n") as f:
+                    f.write("\n")
             with open(_errors_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception as e:
