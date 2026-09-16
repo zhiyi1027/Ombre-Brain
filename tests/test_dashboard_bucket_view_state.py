@@ -133,7 +133,7 @@ process.stdout.write(JSON.stringify({topLevel, relationExpanded, relationIds, cu
     assert 'data-domain-group="内心"' not in result["topLevel"]
     assert "待归类 2" in result["topLevel"]
     assert "domain:恋爱" not in result["topLevel"]
-    assert "domain:恋爱" in result["relationExpanded"]
+    assert "domain:恋爱" not in result["relationExpanded"]
     assert "domain:亲密" in result["relationExpanded"]
     assert result["relationIds"] == ["love", "family", "intimacy-alias"]
     assert "domain:旧分类" in result["customExpanded"]
