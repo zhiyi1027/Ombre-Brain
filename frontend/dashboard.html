@@ -2162,6 +2162,83 @@
     box-shadow: 0 7px 22px rgba(90, 76, 60, 0.14);
   }
 
+  .domain-audit-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 9997;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(44, 42, 38, 0.62);
+    backdrop-filter: blur(4px);
+  }
+  .domain-audit-overlay.open { display: flex; }
+  .domain-audit-modal {
+    width: min(920px, 96vw);
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: var(--surface-solid);
+    box-shadow: 0 16px 54px rgba(44, 42, 38, 0.28);
+  }
+  .domain-audit-header,
+  .domain-audit-toolbar,
+  .domain-audit-footer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+  }
+  .domain-audit-header { border-bottom: 1px solid var(--border); }
+  .domain-audit-header h2 { margin: 0; font-size: 17px; }
+  .domain-audit-header p { margin: 3px 0 0; color: var(--text-dim); font-size: 11px; }
+  .domain-audit-toolbar { flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+  .domain-audit-summary { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; }
+  .domain-audit-stat {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .domain-audit-stat b { color: var(--text); font-size: 14px; margin-right: 3px; }
+  .domain-audit-body { padding: 14px 18px; overflow: auto; min-height: 180px; }
+  .domain-audit-card {
+    padding: 13px 14px;
+    margin-bottom: 9px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .domain-audit-card-head { display: flex; align-items: flex-start; gap: 10px; }
+  .domain-audit-card-title { min-width: 0; flex: 1; font-size: 13px; font-weight: 600; }
+  .domain-audit-card-id { display: block; margin-top: 2px; color: var(--text-light); font: 10px/1.4 monospace; }
+  .domain-audit-flags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .domain-audit-flag {
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(184, 151, 98, 0.14);
+    color: var(--warning);
+    font-size: 10px;
+  }
+  .domain-audit-change { margin-top: 8px; font-size: 11px; color: var(--text-dim); line-height: 1.65; }
+  .domain-audit-reason { margin-top: 5px; font-size: 11px; color: var(--text-light); }
+  .domain-audit-footer { justify-content: space-between; border-top: 1px solid var(--border); }
+  .domain-audit-pages { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); }
+
+  @media (max-width: 640px) {
+    .domain-audit-overlay { padding: 8px; }
+    .domain-audit-modal { width: 100%; max-height: 94vh; border-radius: 14px; }
+    .domain-audit-header, .domain-audit-toolbar, .domain-audit-footer { padding: 12px; }
+    .domain-audit-body { padding: 10px 12px; }
+    .domain-audit-card-head { flex-wrap: wrap; }
+  }
+
   @media (max-width: 980px) {
     .header {
       grid-template-columns: auto 1fr auto;
@@ -2348,7 +2425,10 @@
       </select>
     </label>
     <span class="bucket-sort-note" id="bucket-sort-note">按综合衰减分排列</span>
-    <button id="repair-digested-btn" type="button" onclick="repairDigestedMarkers()" title="根据 feel 的源记忆链接补回漏写的 digested 标记" style="margin-left:auto;height:30px;padding:0 11px;font-size:11px;display:inline-flex;align-items:center;gap:5px;">
+    <button id="domain-audit-btn" type="button" onclick="openDomainAudit()" title="只读检查分类，不会修改记忆" style="margin-left:auto;height:30px;padding:0 11px;font-size:11px;display:inline-flex;align-items:center;gap:5px;">
+      <i data-lucide="clipboard-check"></i> 分类体检
+    </button>
+    <button id="repair-digested-btn" type="button" onclick="repairDigestedMarkers()" title="根据 feel 的源记忆链接补回漏写的 digested 标记" style="height:30px;padding:0 11px;font-size:11px;display:inline-flex;align-items:center;gap:5px;">
       <i data-lucide="wrench"></i> 修复消化标记
     </button>
     <span id="repair-digested-status" role="status" style="font-size:11px;color:var(--text-dim);"></span>
@@ -3620,6 +3700,37 @@
   </div>
 </div>
 
+<!-- 分类体检：严格只读；没有应用、更改或批量修复入口。 -->
+<div id="domain-audit-overlay" class="domain-audit-overlay" role="dialog" aria-modal="true" aria-labelledby="domain-audit-title" onclick="if(event.target===this)closeDomainAudit()">
+  <div class="domain-audit-modal">
+    <div class="domain-audit-header">
+      <div style="flex:1;min-width:0;">
+        <h2 id="domain-audit-title">分类体检 <span class="en">Domain Audit</span></h2>
+        <p>只读预览，不会修改记忆、标签、索引或文件。</p>
+      </div>
+      <button id="domain-audit-refresh" type="button" onclick="runDomainAudit()" title="重新扫描" style="height:32px;padding:0 11px;font-size:11px;display:inline-flex;align-items:center;gap:5px;"><i data-lucide="refresh-cw"></i> 重新体检</button>
+      <button type="button" onclick="closeDomainAudit()" aria-label="关闭分类体检" style="border:none;background:transparent;padding:6px;color:var(--text-dim);"><i data-lucide="x"></i></button>
+    </div>
+    <div class="domain-audit-toolbar">
+      <div class="domain-audit-summary" id="domain-audit-summary"><span class="loading">等待体检…</span></div>
+      <label style="font-size:11px;color:var(--text-dim);">问题类型
+        <select id="domain-audit-filter" onchange="setDomainAuditFilter(this.value)" style="margin-left:5px;height:30px;">
+          <option value="">全部候选</option>
+        </select>
+      </label>
+    </div>
+    <div class="domain-audit-body" id="domain-audit-body"><div class="loading">正在读取分类元数据…</div></div>
+    <div class="domain-audit-footer">
+      <span id="domain-audit-note" style="font-size:11px;color:var(--text-dim);">候选不等于错误；需结合正文判断的项目不会自动给结论。</span>
+      <div class="domain-audit-pages">
+        <button id="domain-audit-prev" type="button" onclick="changeDomainAuditPage(-1)">上一页</button>
+        <span id="domain-audit-page">—</span>
+        <button id="domain-audit-next" type="button" onclick="changeDomainAuditPage(1)">下一页</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Onboarding modal (iter 1.6 §8): 仅当 env+config 都没有任何 key 时弹出 -->
 <div id="onboarding-overlay" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;">
   <div style="background:var(--surface-solid);max-width:520px;width:92%;padding:32px 28px;border-radius:18px;box-shadow:0 8px 40px rgba(0,0,0,0.25);">
@@ -4692,6 +4803,201 @@ async function readJsonSafe(resp) {
     throw new Error('网关/网络错误（HTTP ' + resp.status + '）：' + (snippet || '响应非 JSON') + ' — 请稍后重试');
   }
 }
+
+// ========================================
+// 分类体检：只读扫描 + 分页预览
+// ========================================
+var domainAuditReport = null;
+var domainAuditFilter = '';
+var domainAuditPage = 1;
+var domainAuditLoadGeneration = 0;
+var DOMAIN_AUDIT_PAGE_SIZE = 40;
+var DOMAIN_AUDIT_FLAG_LABELS = {
+  unclassified: '待归类',
+  too_many_domains: '主题域过多',
+  parent_domain: '使用大类名',
+  family_romance_ambiguous: '家庭 / 恋爱待判断',
+  legacy_alias: '旧域别名',
+  facet_domain: '细分概念应作标签',
+  custom_domain: '词表外自定义域'
+};
+
+function domainAuditCount(value) {
+  var number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
+}
+
+function openDomainAudit() {
+  document.getElementById('domain-audit-overlay').classList.add('open');
+  runDomainAudit();
+  if (window.lucide) lucide.createIcons();
+}
+
+function closeDomainAudit() {
+  document.getElementById('domain-audit-overlay').classList.remove('open');
+}
+
+async function runDomainAudit() {
+  var button = document.getElementById('domain-audit-btn');
+  var refreshButton = document.getElementById('domain-audit-refresh');
+  var body = document.getElementById('domain-audit-body');
+  var summary = document.getElementById('domain-audit-summary');
+  var generation = ++domainAuditLoadGeneration;
+  domainAuditReport = null;
+  domainAuditFilter = '';
+  domainAuditPage = 1;
+  button.disabled = true;
+  refreshButton.disabled = true;
+  body.setAttribute('aria-busy', 'true');
+  body.innerHTML = '<div class="loading">正在只读扫描分类元数据…</div>';
+  summary.innerHTML = '<span class="loading">体检中…</span>';
+  document.getElementById('domain-audit-filter').innerHTML = '<option value="">全部候选</option>';
+  try {
+    var response = await authFetch('/api/domain-audit');
+    if (!response) return;
+    var report = await readJsonSafe(response);
+    if (generation !== domainAuditLoadGeneration) return;
+    if (!response.ok) throw new Error((report && report.error) || ('HTTP ' + response.status));
+    if (!report || report.mode !== 'read_only_preview' || !report.summary || !Array.isArray(report.candidates) || !Array.isArray(report.errors)) {
+      throw new Error('分类体检响应无效');
+    }
+    domainAuditReport = report;
+    renderDomainAuditSummary();
+    renderDomainAuditFilter();
+    renderDomainAuditCandidates();
+  } catch (error) {
+    if (generation !== domainAuditLoadGeneration) return;
+    summary.innerHTML = '<span class="domain-audit-stat">体检未完成</span>';
+    body.innerHTML = '<div style="color:var(--negative);padding:18px 4px;">加载失败：' + esc(error.message || error) + '</div>';
+    syncDomainAuditPager(0, 0);
+  } finally {
+    if (generation === domainAuditLoadGeneration) {
+      button.disabled = false;
+      refreshButton.disabled = false;
+      body.removeAttribute('aria-busy');
+    }
+  }
+}
+
+function renderDomainAuditSummary() {
+  var item = domainAuditReport.summary || {};
+  var parseErrors = domainAuditCount(item.parse_errors);
+  document.getElementById('domain-audit-summary').innerHTML = [
+    '<span class="domain-audit-stat"><b>' + domainAuditCount(item.eligible_buckets) + '</b>参与体检</span>',
+    '<span class="domain-audit-stat"><b>' + domainAuditCount(item.candidate_buckets) + '</b>候选</span>',
+    '<span class="domain-audit-stat"><b>' + domainAuditCount(item.high_confidence_candidates) + '</b>可确定归一</span>',
+    '<span class="domain-audit-stat"><b>' + domainAuditCount(item.content_review_candidates) + '</b>需读正文</span>',
+    '<span class="domain-audit-stat"><b>' + parseErrors + '</b>解析失败</span>'
+  ].join('');
+}
+
+function renderDomainAuditFilter() {
+  var counts = domainAuditReport.summary.flag_counts || {};
+  var options = Object.keys(counts).sort(function(a, b) {
+    return domainAuditCount(counts[b]) - domainAuditCount(counts[a]) || a.localeCompare(b);
+  });
+  document.getElementById('domain-audit-filter').innerHTML =
+    '<option value="">全部候选（' + domainAuditCount(domainAuditReport.summary.candidate_buckets) + '）</option>' +
+    options.map(function(flag) {
+      var label = DOMAIN_AUDIT_FLAG_LABELS[flag] || flag;
+      return '<option value="' + escAttr(flag) + '">' + esc(label) + '（' + domainAuditCount(counts[flag]) + '）</option>';
+    }).join('');
+}
+
+function setDomainAuditFilter(value) {
+  domainAuditFilter = String(value || '');
+  domainAuditPage = 1;
+  renderDomainAuditCandidates();
+}
+
+function filteredDomainAuditCandidates() {
+  if (!domainAuditReport) return [];
+  if (!domainAuditFilter) return domainAuditReport.candidates;
+  return domainAuditReport.candidates.filter(function(candidate) {
+    return Array.isArray(candidate.flags) && candidate.flags.includes(domainAuditFilter);
+  });
+}
+
+function syncDomainAuditPager(total, totalPages) {
+  var pageLabel = document.getElementById('domain-audit-page');
+  var previous = document.getElementById('domain-audit-prev');
+  var next = document.getElementById('domain-audit-next');
+  pageLabel.textContent = total ? ('第 ' + domainAuditPage + ' / ' + totalPages + ' 页 · ' + total + ' 条') : '0 条';
+  previous.disabled = !total || domainAuditPage <= 1;
+  next.disabled = !total || domainAuditPage >= totalPages;
+}
+
+function changeDomainAuditPage(delta) {
+  var total = filteredDomainAuditCandidates().length;
+  var totalPages = Math.max(1, Math.ceil(total / DOMAIN_AUDIT_PAGE_SIZE));
+  domainAuditPage = Math.min(totalPages, Math.max(1, domainAuditPage + Number(delta || 0)));
+  renderDomainAuditCandidates();
+  document.getElementById('domain-audit-body').scrollTop = 0;
+}
+
+function domainAuditList(value) {
+  return Array.isArray(value) ? value.map(function(item) { return String(item || ''); }).filter(Boolean) : [];
+}
+
+function renderDomainAuditCandidates() {
+  var body = document.getElementById('domain-audit-body');
+  var candidates = filteredDomainAuditCandidates();
+  var totalPages = Math.max(1, Math.ceil(candidates.length / DOMAIN_AUDIT_PAGE_SIZE));
+  domainAuditPage = Math.min(totalPages, Math.max(1, domainAuditPage));
+  syncDomainAuditPager(candidates.length, totalPages);
+
+  if (!candidates.length) {
+    var clean = domainAuditReport && !domainAuditReport.candidates.length;
+    body.innerHTML = '<div class="loading">' + (clean ? '没有发现分类候选，当前分类很干净。' : '这个问题类型下没有候选。') + '</div>';
+    return;
+  }
+
+  var start = (domainAuditPage - 1) * DOMAIN_AUDIT_PAGE_SIZE;
+  var pageItems = candidates.slice(start, start + DOMAIN_AUDIT_PAGE_SIZE);
+  body.innerHTML = pageItems.map(function(candidate) {
+    var current = candidate.current || {};
+    var proposal = candidate.proposal || {};
+    var currentDomains = domainAuditList(current.domains);
+    var proposedDomains = domainAuditList(proposal.domains);
+    var currentTags = domainAuditList(current.tags);
+    var proposedTags = domainAuditList(proposal.tags);
+    var flags = domainAuditList(candidate.flags);
+    var reasons = domainAuditList(candidate.reasons);
+    var domainChanged = JSON.stringify(currentDomains) !== JSON.stringify(proposedDomains);
+    var tagsChanged = JSON.stringify(currentTags) !== JSON.stringify(proposedTags);
+    var changes = [];
+    if (domainChanged) changes.push('主题域：' + (currentDomains.join('、') || '无') + ' → ' + (proposedDomains.join('、') || '无'));
+    if (tagsChanged) changes.push('标签：' + (currentTags.join('、') || '无') + ' → ' + (proposedTags.join('、') || '无'));
+    if (!changes.length) changes.push(candidate.requires_content_review ? '需要读正文后再决定具体小类' : '分类值可直接归一');
+    var bucketId = String(candidate.bucket_id || '');
+    var name = String(candidate.name || bucketId || '未命名记忆');
+    return '<article class="domain-audit-card">' +
+      '<div class="domain-audit-card-head">' +
+        '<div class="domain-audit-card-title">' + esc(name) + '<span class="domain-audit-card-id">' + esc(bucketId || '缺少 bucket id') + '</span></div>' +
+        (bucketId ? '<button type="button" data-bucket-id="' + escAttr(bucketId) + '" onclick="openDomainAuditBucket(this.dataset.bucketId)" style="height:28px;padding:0 9px;font-size:10px;">查看记忆</button>' : '') +
+      '</div>' +
+      '<div class="domain-audit-flags">' + flags.map(function(flag) { return '<span class="domain-audit-flag">' + esc(DOMAIN_AUDIT_FLAG_LABELS[flag] || flag) + '</span>'; }).join('') + '</div>' +
+      '<div class="domain-audit-change">' + changes.map(esc).join('<br>') + '</div>' +
+      (reasons.length ? '<div class="domain-audit-reason">' + reasons.map(esc).join('；') + '</div>' : '') +
+    '</article>';
+  }).join('');
+
+  var parseErrors = domainAuditReport.errors || [];
+  if (parseErrors.length && !domainAuditFilter && domainAuditPage === totalPages) {
+    body.innerHTML += '<div class="domain-audit-card" style="border-color:var(--warning);color:var(--text-dim);font-size:11px;">另有 ' + parseErrors.length + ' 个文件无法解析；报告只记录相对路径和错误类型，没有回显记忆正文。</div>';
+  }
+}
+
+async function openDomainAuditBucket(bucketId) {
+  closeDomainAudit();
+  var listTab = document.querySelector('[data-tab="list"]');
+  if (listTab && !listTab.classList.contains('active')) listTab.click();
+  await showDetail(bucketId);
+}
+
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape') closeDomainAudit();
+});
 
 // ========================================
 

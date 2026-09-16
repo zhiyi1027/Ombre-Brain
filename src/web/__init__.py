@@ -36,6 +36,7 @@ from . import v3_debug
 from . import daily_continuity
 from . import nightly_dreams
 from . import private_continuity
+from . import domain_audit
 
 
 _WEB_MODULES = (
@@ -61,6 +62,7 @@ _WEB_MODULES = (
     ("web.daily_continuity", daily_continuity.register),
     ("web.nightly_dreams", nightly_dreams.register),
     ("web.private_continuity", private_continuity.register),
+    ("web.domain_audit", domain_audit.register),
 )
 
 
