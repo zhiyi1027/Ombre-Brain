@@ -190,9 +190,24 @@
 
   .filters {
     display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     gap: 10px;
     margin-bottom: 24px;
+  }
+  .filter-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
     flex-wrap: wrap;
+    width: 100%;
+  }
+  .domain-child-row {
+    margin-left: 12px;
+    padding-left: 12px;
+    width: calc(100% - 12px);
+    box-sizing: border-box;
+    border-left: 2px solid var(--border);
   }
   .filter-btn {
     padding: 8px 18px;
@@ -4683,8 +4698,45 @@ async function readJsonSafe(resp) {
 const BASE = location.origin;
 let allBuckets = [];
 let currentFilter = 'all';
-var DOMAIN_FILTER_LIMIT = 10;
-var domainFiltersExpanded = false;
+var expandedDomainGroup = '';
+var SYSTEM_BUCKET_TYPES = ['feel', 'plan', 'letter', 'self', 'i'];
+var DOMAIN_GROUPS = [
+  { key: '日常', aliases: [], children: [
+    { key: '饮食', aliases: [] }, { key: '穿搭', aliases: [] },
+    { key: '出行', aliases: [] }, { key: '居家', aliases: [] },
+    { key: '购物', aliases: [] }
+  ] },
+  { key: '关系', aliases: ['人际', '安全感', '称呼', '冲突', '陪伴', '信任', '身份', '纪念日', '沟通', '共同生活'], children: [
+    { key: '家庭', aliases: [] }, { key: '恋爱', aliases: [] },
+    { key: '友谊', aliases: [] }, { key: '社交', aliases: [] },
+    { key: '亲密', aliases: ['亲密互动'] }, { key: '性', aliases: ['性爱'] }
+  ] },
+  { key: '成长', aliases: [], children: [
+    { key: '工作', aliases: [] }, { key: '学习', aliases: [] },
+    { key: '考试', aliases: [] }, { key: '求职', aliases: [] }
+  ] },
+  { key: '身心', aliases: [], children: [
+    { key: '健康', aliases: [] }, { key: '心理', aliases: [] },
+    { key: '睡眠', aliases: [] }, { key: '运动', aliases: [] }
+  ] },
+  { key: '兴趣', aliases: [], children: [
+    { key: '游戏', aliases: [] }, { key: '影视', aliases: [] },
+    { key: '音乐', aliases: [] }, { key: '阅读', aliases: ['文学'] },
+    { key: '创作', aliases: [] }, { key: '手工', aliases: [] }
+  ] },
+  { key: '数字', aliases: ['故障', '记忆'], children: [
+    { key: '编程', aliases: ['技术'] }, { key: 'AI', aliases: [] },
+    { key: '硬件', aliases: [] }, { key: '网络', aliases: [] }
+  ] },
+  { key: '事务', aliases: [], children: [
+    { key: '财务', aliases: ['投资'] }, { key: '计划', aliases: [] },
+    { key: '待办', aliases: [] }
+  ] },
+  { key: '内心', aliases: ['认知'], children: [
+    { key: '情绪', aliases: ['情感', '感受'] }, { key: '回忆', aliases: [] },
+    { key: '梦境', aliases: [] }, { key: '自省', aliases: ['self'] }
+  ] }
+];
 var BUCKET_SORT_MODES = ['score', 'created_desc', 'created_asc'];
 var bucketSort = 'score';
 try {
@@ -4954,9 +5006,74 @@ function updateStats() {
   updatePet(total);   // 小螃蟹随记忆总数从贝壳里探头、长大
 }
 
+function domainFilterBuckets() {
+  return allBuckets.filter(function(b) { return !SYSTEM_BUCKET_TYPES.includes(b.type); });
+}
+
+function domainGroupValues(group) {
+  var values = [group.key].concat(group.aliases || []);
+  group.children.forEach(function(child) {
+    values.push(child.key);
+    values = values.concat(child.aliases || []);
+  });
+  return values;
+}
+
+function customDomainGroup(buckets) {
+  var known = new Set(['未分类'].concat(SYSTEM_BUCKET_TYPES));
+  DOMAIN_GROUPS.forEach(function(group) {
+    domainGroupValues(group).forEach(function(value) { known.add(value); });
+  });
+  var custom = new Set();
+  buckets.forEach(function(bucket) {
+    (bucket.domain || []).forEach(function(value) {
+      if (value && !known.has(value)) custom.add(value);
+    });
+  });
+  if (!custom.size) return null;
+  return {
+    key: '其他',
+    aliases: [],
+    children: Array.from(custom).sort(function(a, b) { return a.localeCompare(b, 'zh-CN'); })
+      .map(function(value) { return { key: value, aliases: [] }; })
+  };
+}
+
+function allDomainGroups(buckets) {
+  var groups = DOMAIN_GROUPS.slice();
+  var custom = customDomainGroup(buckets);
+  if (custom) groups.push(custom);
+  return groups;
+}
+
+function findDomainGroup(groupKey) {
+  return allDomainGroups(domainFilterBuckets()).find(function(group) { return group.key === groupKey; });
+}
+
+function findDomainChild(domainKey) {
+  var groups = allDomainGroups(domainFilterBuckets());
+  for (var i = 0; i < groups.length; i += 1) {
+    var child = groups[i].children.find(function(item) { return item.key === domainKey; });
+    if (child) return { group: groups[i], child: child };
+  }
+  return null;
+}
+
+function bucketHasAnyDomain(bucket, values) {
+  var domains = bucket.domain || [];
+  return values.some(function(value) { return domains.includes(value); });
+}
+
+function availableDomainGroups(buckets) {
+  return allDomainGroups(buckets).filter(function(group) {
+    var values = domainGroupValues(group);
+    return buckets.some(function(bucket) { return bucketHasAnyDomain(bucket, values); });
+  });
+}
+
 function buildFilters() {
-  const domains = new Set();
-  allBuckets.forEach(b => (b.domain || []).forEach(d => domains.add(d)));
+  var filterableBuckets = domainFilterBuckets();
+  var availableGroups = availableDomainGroups(filterableBuckets);
   const filters = document.getElementById('filters');
   const types = [
     { key: 'all', label: '全部' },
@@ -4967,55 +5084,69 @@ function buildFilters() {
     { key: 'archived', label: '<i data-lucide="archive"></i> 归档' },
   ];
   const typeKeys = types.map(function(t) { return t.key; });
-  // domain 筛选可能因最后一个相关桶被编辑而消失；这时才安全退回“全部”。
-  if (currentFilter.startsWith('domain:')) {
-    if (!domains.has(currentFilter.slice(7))) currentFilter = 'all';
+  // 分类可能因最后一个相关桶被编辑而消失；这时才安全退回“全部”。
+  if (currentFilter.startsWith('group:')) {
+    if (!availableGroups.some(function(group) { return group.key === currentFilter.slice(6); })) currentFilter = 'all';
+  } else if (currentFilter.startsWith('domain:')) {
+    var currentDomain = currentFilter.slice(7);
+    var childMatch = findDomainChild(currentDomain);
+    var values = childMatch ? [childMatch.child.key].concat(childMatch.child.aliases || []) : [currentDomain];
+    if (!filterableBuckets.some(function(bucket) { return bucketHasAnyDomain(bucket, values); })) currentFilter = 'all';
   } else if (!typeKeys.includes(currentFilter)) {
     currentFilter = 'all';
   }
-  const allDomains = Array.from(domains);
-  const visibleDomains = domainFiltersExpanded
-    ? allDomains.slice()
-    : allDomains.slice(0, DOMAIN_FILTER_LIMIT);
-  // 排序会改变 domain 的首次出现顺序。即使当前 domain 掉出默认范围，
-  // 也保留它的活动按钮，而不是悄悄清空用户的筛选。
-  var currentDomain = currentFilter.startsWith('domain:') ? currentFilter.slice(7) : '';
-  if (currentDomain && !visibleDomains.includes(currentDomain)) {
-    if (visibleDomains.length >= DOMAIN_FILTER_LIMIT) visibleDomains[visibleDomains.length - 1] = currentDomain;
-    else visibleDomains.push(currentDomain);
+  var currentChild = currentFilter.startsWith('domain:') ? findDomainChild(currentFilter.slice(7)) : null;
+  if (currentChild) expandedDomainGroup = currentChild.group.key;
+  if (expandedDomainGroup && !availableGroups.some(function(group) { return group.key === expandedDomainGroup; })) {
+    expandedDomainGroup = '';
   }
-  var hiddenDomainCount = Math.max(0, allDomains.length - DOMAIN_FILTER_LIMIT);
-  var domainToggleHtml = hiddenDomainCount
-    ? '<button type="button" class="filter-btn domain-toggle-btn" data-domain-toggle="true" aria-expanded="' +
-      (domainFiltersExpanded ? 'true' : 'false') + '">' +
-      (domainFiltersExpanded ? '收起域' : '更多域 +' + hiddenDomainCount) + '</button>'
-    : '';
-  filters.innerHTML = types.map(function(t) {
+  var expandedGroup = expandedDomainGroup ? findDomainGroup(expandedDomainGroup) : null;
+  var typeHtml = types.map(function(t) {
     var active = t.key === currentFilter;
     return '<button class="filter-btn ' + (active ? 'active' : '') + '" aria-pressed="' + (active ? 'true' : 'false') + '" data-filter="' + escAttr(t.key) + '">' + t.label + '</button>';
-  }).join('') + visibleDomains.map(function(d) {
-    var key = 'domain:' + d;
-    var active = key === currentFilter;
-    return '<button class="filter-btn ' + (active ? 'active' : '') + '" aria-pressed="' + (active ? 'true' : 'false') + '" data-filter="' + escAttr(key) + '">' + esc(d) + '</button>';
-  }).join('') + domainToggleHtml;
+  }).join('');
+  var groupHtml = availableGroups.map(function(group) {
+    var active = currentFilter === 'group:' + group.key || (currentChild && currentChild.group.key === group.key);
+    var expanded = expandedDomainGroup === group.key;
+    return '<button class="filter-btn domain-group-btn ' + (active ? 'active' : '') + '" aria-pressed="' + (active ? 'true' : 'false') + '" aria-expanded="' + (expanded ? 'true' : 'false') + '" data-domain-group="' + escAttr(group.key) + '">' + esc(group.key) + '</button>';
+  }).join('');
+  var unclassifiedCount = filterableBuckets.filter(function(bucket) { return bucketHasAnyDomain(bucket, ['未分类']); }).length;
+  if (unclassifiedCount) {
+    var unclassifiedActive = currentFilter === 'domain:未分类';
+    groupHtml += '<button class="filter-btn ' + (unclassifiedActive ? 'active' : '') + '" aria-pressed="' + (unclassifiedActive ? 'true' : 'false') + '" data-filter="domain:未分类">待归类 ' + unclassifiedCount + '</button>';
+  }
+  var childHtml = '';
+  if (expandedGroup) {
+    childHtml = expandedGroup.children.filter(function(child) {
+      var values = [child.key].concat(child.aliases || []);
+      return filterableBuckets.some(function(bucket) { return bucketHasAnyDomain(bucket, values); });
+    }).map(function(child) {
+      var key = 'domain:' + child.key;
+      var active = key === currentFilter;
+      return '<button class="filter-btn domain-child-btn ' + (active ? 'active' : '') + '" aria-pressed="' + (active ? 'true' : 'false') + '" data-filter="' + escAttr(key) + '">' + esc(child.key) + '</button>';
+    }).join('');
+  }
+  filters.innerHTML = '<div class="filter-row filter-type-row">' + typeHtml + '</div>' +
+    '<div class="filter-row domain-group-row" aria-label="记忆大类">' + groupHtml + '</div>' +
+    (childHtml ? '<div class="filter-row domain-child-row" aria-label="' + escAttr(expandedGroup.key) + '子类">' + childHtml + '</div>' : '');
 
   // buildFilters 会在每次数据刷新后运行；覆盖处理器，避免重复累积监听器。
   filters.onclick = function(e) {
-    var domainToggle = e.target.closest('[data-domain-toggle]');
-    if (domainToggle) {
-      domainFiltersExpanded = !domainFiltersExpanded;
+    var groupButton = e.target.closest('[data-domain-group]');
+    if (groupButton) {
+      expandedDomainGroup = groupButton.dataset.domainGroup;
+      currentFilter = 'group:' + expandedDomainGroup;
       buildFilters();
+      renderBuckets(filterBuckets(allBuckets));
       return;
     }
     var btn = e.target.closest('.filter-btn');
     if (!btn) return;
-    filters.querySelectorAll('.filter-btn').forEach(function(b) {
-      b.classList.remove('active');
-      b.setAttribute('aria-pressed', 'false');
-    });
-    btn.classList.add('active');
-    btn.setAttribute('aria-pressed', 'true');
     currentFilter = btn.dataset.filter;
+    if (!currentFilter.startsWith('domain:') || !findDomainChild(currentFilter.slice(7))) {
+      expandedDomainGroup = '';
+    }
+    buildFilters();
     renderBuckets(filterBuckets(allBuckets));
   };
 }
@@ -5027,9 +5158,17 @@ function filterBuckets(buckets) {
   if (currentFilter === 'unresolved') return buckets.filter(function(b) { return !b.resolved && b.type !== 'permanent' && !b.pinned; });
   if (currentFilter === 'digested') return buckets.filter(function(b) { return b.digested; });
   if (currentFilter === 'archived') return buckets.filter(function(b) { return b.type === 'archived' || b.score < 0.3; });
+  if (currentFilter.startsWith('group:')) {
+    var group = findDomainGroup(currentFilter.slice(6));
+    if (!group) return buckets;
+    var groupValues = domainGroupValues(group);
+    return buckets.filter(function(b) { return !SYSTEM_BUCKET_TYPES.includes(b.type) && bucketHasAnyDomain(b, groupValues); });
+  }
   if (currentFilter.startsWith('domain:')) {
     var d = currentFilter.slice(7);
-    return buckets.filter(function(b) { return (b.domain || []).includes(d); });
+    var match = findDomainChild(d);
+    var domainValues = match ? [match.child.key].concat(match.child.aliases || []) : [d];
+    return buckets.filter(function(b) { return !SYSTEM_BUCKET_TYPES.includes(b.type) && bucketHasAnyDomain(b, domainValues); });
   }
   return buckets;
 }

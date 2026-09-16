@@ -28,57 +28,93 @@ def test_bucket_reload_preserves_active_filter_and_page():
 
 
 def test_filter_rebuild_restores_active_filter_without_listener_leaks():
-    source = _dashboard_section("function buildFilters()", "function filterBuckets(")
+    html = DASHBOARD.read_text(encoding="utf-8")
+    source = _dashboard_section("function domainFilterBuckets()", "function filterBuckets(")
 
-    assert "if (!domains.has(currentFilter.slice(7))) currentFilter = 'all';" in source
-    assert "domainFiltersExpanded" in source
-    assert "allDomains.slice(0, DOMAIN_FILTER_LIMIT)" in source
-    assert "!visibleDomains.includes(currentDomain)" in source
-    assert "visibleDomains[visibleDomains.length - 1] = currentDomain;" in source
-    assert "data-domain-toggle" in source
-    assert "更多域 +" in source
-    assert "收起域" in source
+    assert ".filter-row" in html
+    assert "width: 100%;" in html
+    assert "width: calc(100% - 12px);" in html
+    assert "availableDomainGroups(filterableBuckets)" in source
+    assert "data-domain-group" in source
+    assert "expandedDomainGroup" in source
+    assert "domain-child-row" in source
+    assert "待归类 " in source
     assert "var active = t.key === currentFilter;" in source
-    assert "var active = key === currentFilter;" in source
     assert "aria-pressed" in source
     assert "filters.onclick = function(e)" in source
     assert "filters.addEventListener('click'" not in source
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is unavailable")
-def test_domain_filter_toggle_reveals_every_domain_and_can_collapse():
+def test_domain_groups_expand_to_children_and_filter_aliases():
     state_source = _dashboard_section(
         "const BASE = location.origin", "function syncBucketSortControl()"
     )
-    filter_source = _dashboard_section("function buildFilters()", "function filterBuckets(")
+    filter_source = _dashboard_section(
+        "function domainFilterBuckets()", "function filterBuckets("
+    )
+    filtering_source = _dashboard_section("function filterBuckets(", "// 翻页状态")
     script = (
         """
 var localStorage = {getItem() { return null; }};
 var location = {origin:'https://example.test'};
-var filters = {innerHTML:'', onclick:null, querySelectorAll() { return []; }};
+var filters = {innerHTML:'', onclick:null};
 var document = {getElementById(id) { return id === 'filters' ? filters : null; }};
 function esc(value) { return String(value); }
 function escAttr(value) { return String(value); }
-function renderBuckets() {}
-function filterBuckets(value) { return value; }
+var renderedIds = [];
+function renderBuckets(value) { renderedIds = value.map(function(item) { return item.id; }); }
 """
         + state_source
         + """
-allBuckets = Array.from({length:12}, (_, i) => ({domain:['域' + (i + 1)]}));
+allBuckets = [
+  {id:'love', type:'dynamic', domain:['恋爱']},
+  {id:'family', type:'dynamic', domain:['家庭']},
+  {id:'intimacy-alias', type:'dynamic', domain:['亲密互动']},
+  {id:'health', type:'dynamic', domain:['健康']},
+  {id:'code-alias', type:'dynamic', domain:['技术']},
+  {id:'custom', type:'dynamic', domain:['旧分类']},
+  {id:'unclassified-a', type:'dynamic', domain:['未分类']},
+  {id:'unclassified-b', type:'permanent', domain:['未分类']},
+  {id:'legacy-feel', type:'feel', domain:['未分类']},
+  {id:'system-feel', type:'feel', domain:['feel']},
+  {id:'private-i', type:'i', domain:['self']}
+];
 """
         + filter_source
+        + filtering_source
         + """
 buildFilters();
-var collapsed = filters.innerHTML;
+var topLevel = filters.innerHTML;
 filters.onclick({target:{closest(selector) {
-  return selector === '[data-domain-toggle]' ? {dataset:{domainToggle:'true'}} : null;
+  return selector === '[data-domain-group]' ? {dataset:{domainGroup:'关系'}} : null;
 }}});
-var expanded = filters.innerHTML;
+var relationExpanded = filters.innerHTML;
+var relationIds = renderedIds.slice();
 filters.onclick({target:{closest(selector) {
-  return selector === '[data-domain-toggle]' ? {dataset:{domainToggle:'true'}} : null;
+  return selector === '[data-domain-group]' ? {dataset:{domainGroup:'其他'}} : null;
 }}});
-var collapsedAgain = filters.innerHTML;
-process.stdout.write(JSON.stringify({collapsed, expanded, collapsedAgain}));
+var customExpanded = filters.innerHTML;
+var customGroupIds = renderedIds.slice();
+filters.onclick({target:{closest(selector) {
+  if (selector === '[data-domain-group]') return null;
+  return selector === '.filter-btn' ? {dataset:{filter:'domain:旧分类'}} : null;
+}}});
+var customDomainIds = renderedIds.slice();
+filters.onclick({target:{closest(selector) {
+  return selector === '[data-domain-group]' ? {dataset:{domainGroup:'关系'}} : null;
+}}});
+filters.onclick({target:{closest(selector) {
+  if (selector === '[data-domain-group]') return null;
+  return selector === '.filter-btn' ? {dataset:{filter:'domain:亲密'}} : null;
+}}});
+var intimacyIds = renderedIds.slice();
+filters.onclick({target:{closest(selector) {
+  if (selector === '[data-domain-group]') return null;
+  return selector === '.filter-btn' ? {dataset:{filter:'domain:未分类'}} : null;
+}}});
+var unclassifiedIds = renderedIds.slice();
+process.stdout.write(JSON.stringify({topLevel, relationExpanded, relationIds, customExpanded, customGroupIds, customDomainIds, intimacyIds, unclassifiedIds}));
 """
     )
     completed = subprocess.run(
@@ -90,14 +126,21 @@ process.stdout.write(JSON.stringify({collapsed, expanded, collapsedAgain}));
     )
     result = json.loads(completed.stdout)
 
-    assert "域10" in result["collapsed"]
-    assert "域11" not in result["collapsed"]
-    assert "更多域 +2" in result["collapsed"]
-    assert "域11" in result["expanded"]
-    assert "域12" in result["expanded"]
-    assert "收起域" in result["expanded"]
-    assert "域11" not in result["collapsedAgain"]
-    assert "更多域 +2" in result["collapsedAgain"]
+    assert "关系" in result["topLevel"]
+    assert "身心" in result["topLevel"]
+    assert "数字" in result["topLevel"]
+    assert "其他" in result["topLevel"]
+    assert 'data-domain-group="内心"' not in result["topLevel"]
+    assert "待归类 2" in result["topLevel"]
+    assert "domain:恋爱" not in result["topLevel"]
+    assert "domain:恋爱" in result["relationExpanded"]
+    assert "domain:亲密" in result["relationExpanded"]
+    assert result["relationIds"] == ["love", "family", "intimacy-alias"]
+    assert "domain:旧分类" in result["customExpanded"]
+    assert result["customGroupIds"] == ["custom"]
+    assert result["customDomainIds"] == ["custom"]
+    assert result["intimacyIds"] == ["intimacy-alias"]
+    assert result["unclassifiedIds"] == ["unclassified-a", "unclassified-b"]
 
 
 def test_bucket_renderer_only_resets_page_for_an_explicit_view_change():
@@ -304,24 +347,31 @@ def test_time_views_use_created_and_invalid_dates_never_render_nan():
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is unavailable")
-def test_filter_rebuild_keeps_selected_domain_outside_visible_top_ten():
-    source = _dashboard_section("function buildFilters()", "function filterBuckets(")
+def test_filter_rebuild_keeps_selected_child_and_drops_it_when_last_bucket_disappears():
+    state_source = _dashboard_section(
+        "const BASE = location.origin", "function syncBucketSortControl()"
+    )
+    source = _dashboard_section("function domainFilterBuckets()", "function filterBuckets(")
     script = """
-let currentFilter = 'domain:d11';
-let allBuckets = Array.from({length: 12}, (_, i) => ({domain: ['d' + i]}));
-var DOMAIN_FILTER_LIMIT = 10;
-var domainFiltersExpanded = false;
+var localStorage = {getItem() { return null; }};
+var location = {origin:'https://example.test'};
 function escAttr(value) { return String(value); }
 function esc(value) { return String(value); }
 const filterElement = {innerHTML: '', onclick: null};
 const document = {getElementById() { return filterElement; }};
+function renderBuckets() {}
+function filterBuckets(value) { return value; }
+""" + state_source + """
+currentFilter = 'domain:亲密';
+allBuckets = [{id:'legacy', type:'dynamic', domain:['亲密互动']}];
 """ + source + """
 buildFilters();
 const retained = currentFilter;
-const retainedButton = filterElement.innerHTML.includes('data-filter="domain:d11"');
-allBuckets = allBuckets.slice(0, 11);
+const retainedButton = filterElement.innerHTML.includes('data-filter="domain:亲密"');
+const expandedGroup = filterElement.innerHTML.includes('data-domain-group="关系"');
+allBuckets = [];
 buildFilters();
-process.stdout.write(JSON.stringify([retained, retainedButton, currentFilter]));
+process.stdout.write(JSON.stringify([retained, retainedButton, expandedGroup, currentFilter]));
 """
     completed = subprocess.run(
         [shutil.which("node"), "-e", script],
@@ -330,7 +380,7 @@ process.stdout.write(JSON.stringify([retained, retainedButton, currentFilter]));
         text=True,
     )
 
-    assert json.loads(completed.stdout) == ["domain:d11", True, "all"]
+    assert json.loads(completed.stdout) == ["domain:亲密", True, True, "all"]
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is unavailable")
