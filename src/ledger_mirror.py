@@ -9,6 +9,7 @@ from typing import Any, Iterator
 
 LEDGER_SCHEMA_VERSION = 1
 LEDGER_ROLE = "mirror"
+_MAX_SEQUENCE_RETRIES = 3
 
 
 class LedgerMirror:
@@ -20,6 +21,8 @@ class LedgerMirror:
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
+        self._latest_seq_cache: int | None = None
+        self._ledger_signature: tuple[int, int, int] | None = None
 
     def append_event(
         self,
@@ -31,6 +34,53 @@ class LedgerMirror:
         body: str = "",
     ) -> dict[str, Any]:
         body_hash = _hash_body(body)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_append_starts_on_new_line()
+
+        for _attempt in range(_MAX_SEQUENCE_RETRIES):
+            event = {
+                "seq": self.latest_seq() + 1,
+                "schema_version": LEDGER_SCHEMA_VERSION,
+                "ledger_role": LEDGER_ROLE,
+                "canonical": False,
+                "event_type": str(event_type),
+                "trace_id": str(trace_id),
+                "trace_kind": str(trace_kind),
+                "body_hash": body_hash,
+                "payload": _json_safe(payload or {}),
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+            }
+            before_write = self._file_signature()
+            if before_write != self._ledger_signature:
+                # Another writer changed the ledger after sequence allocation.
+                # Drop the high-water mark and recalculate before writing.
+                self._latest_seq_cache = None
+                self._ledger_signature = None
+                continue
+
+            line = json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n"
+            with self.path.open("a", encoding="utf-8", newline="\n") as f:
+                f.write(line)
+
+            after_write = self._file_signature()
+            previous_size = before_write[1] if before_write is not None else 0
+            expected_size = previous_size + len(line.encode("utf-8"))
+            if after_write is not None and after_write[1] == expected_size:
+                self._latest_seq_cache = int(event["seq"])
+                self._ledger_signature = after_write
+            else:
+                # A concurrent append may have interleaved with ours.  The old
+                # implementation could already allocate one duplicate in that
+                # race; never let a stale cache extend the corruption further.
+                self._latest_seq_cache = None
+                self._ledger_signature = None
+            return event
+
+        # Sustained external writes must not hang the bucket mutation path.
+        # Fall back to the old bounded behavior: scan once, append, and leave
+        # the cache invalid so the next call rechecks the complete ledger.
+        self._latest_seq_cache = None
+        self._ledger_signature = None
         event = {
             "seq": self.latest_seq() + 1,
             "schema_version": LEDGER_SCHEMA_VERSION,
@@ -43,21 +93,44 @@ class LedgerMirror:
             "payload": _json_safe(payload or {}),
             "recorded_at": datetime.now(timezone.utc).isoformat(),
         }
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._ensure_append_starts_on_new_line()
+        line = json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n"
         with self.path.open("a", encoding="utf-8", newline="\n") as f:
-            f.write(json.dumps(event, ensure_ascii=False, sort_keys=True))
-            f.write("\n")
+            f.write(line)
+        self._latest_seq_cache = None
+        self._ledger_signature = None
         return event
 
     def latest_seq(self) -> int:
+        """Return the maximum sequence, caching the high-water mark safely.
+
+        The first lookup scans the ledger so a parseable but out-of-order tail
+        cannot make a later append reuse an existing sequence.  Subsequent
+        appends update an in-memory high-water mark.  External edits invalidate
+        the cache through the file's inode, size, and nanosecond mtime, causing
+        the next lookup to rescan before allocating another sequence.
+        """
+        signature = self._file_signature()
+        if self._latest_seq_cache is not None and signature == self._ledger_signature:
+            return self._latest_seq_cache
+
         latest = 0
         for event in self.iter_events():
+            if not isinstance(event, dict):
+                continue
             try:
                 latest = max(latest, int(event.get("seq", 0)))
             except (TypeError, ValueError):
                 continue
+        self._latest_seq_cache = latest
+        self._ledger_signature = signature
         return latest
+
+    def _file_signature(self) -> tuple[int, int, int] | None:
+        try:
+            stat = self.path.stat()
+        except OSError:
+            return None
+        return (stat.st_ino, stat.st_size, stat.st_mtime_ns)
 
     def iter_events(self) -> Iterator[dict[str, Any]]:
         if not self.path.exists():
