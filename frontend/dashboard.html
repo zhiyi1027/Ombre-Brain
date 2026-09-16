@@ -4683,6 +4683,8 @@ async function readJsonSafe(resp) {
 const BASE = location.origin;
 let allBuckets = [];
 let currentFilter = 'all';
+var DOMAIN_FILTER_LIMIT = 10;
+var domainFiltersExpanded = false;
 var BUCKET_SORT_MODES = ['score', 'created_desc', 'created_asc'];
 var bucketSort = 'score';
 try {
@@ -4971,14 +4973,23 @@ function buildFilters() {
   } else if (!typeKeys.includes(currentFilter)) {
     currentFilter = 'all';
   }
-  const visibleDomains = Array.from(domains).slice(0, 10);
-  // 排序会改变 domain 的首次出现顺序。即使当前 domain 掉出前 10，
+  const allDomains = Array.from(domains);
+  const visibleDomains = domainFiltersExpanded
+    ? allDomains.slice()
+    : allDomains.slice(0, DOMAIN_FILTER_LIMIT);
+  // 排序会改变 domain 的首次出现顺序。即使当前 domain 掉出默认范围，
   // 也保留它的活动按钮，而不是悄悄清空用户的筛选。
   var currentDomain = currentFilter.startsWith('domain:') ? currentFilter.slice(7) : '';
   if (currentDomain && !visibleDomains.includes(currentDomain)) {
-    if (visibleDomains.length >= 10) visibleDomains[visibleDomains.length - 1] = currentDomain;
+    if (visibleDomains.length >= DOMAIN_FILTER_LIMIT) visibleDomains[visibleDomains.length - 1] = currentDomain;
     else visibleDomains.push(currentDomain);
   }
+  var hiddenDomainCount = Math.max(0, allDomains.length - DOMAIN_FILTER_LIMIT);
+  var domainToggleHtml = hiddenDomainCount
+    ? '<button type="button" class="filter-btn domain-toggle-btn" data-domain-toggle="true" aria-expanded="' +
+      (domainFiltersExpanded ? 'true' : 'false') + '">' +
+      (domainFiltersExpanded ? '收起域' : '更多域 +' + hiddenDomainCount) + '</button>'
+    : '';
   filters.innerHTML = types.map(function(t) {
     var active = t.key === currentFilter;
     return '<button class="filter-btn ' + (active ? 'active' : '') + '" aria-pressed="' + (active ? 'true' : 'false') + '" data-filter="' + escAttr(t.key) + '">' + t.label + '</button>';
@@ -4986,10 +4997,16 @@ function buildFilters() {
     var key = 'domain:' + d;
     var active = key === currentFilter;
     return '<button class="filter-btn ' + (active ? 'active' : '') + '" aria-pressed="' + (active ? 'true' : 'false') + '" data-filter="' + escAttr(key) + '">' + esc(d) + '</button>';
-  }).join('');
+  }).join('') + domainToggleHtml;
 
   // buildFilters 会在每次数据刷新后运行；覆盖处理器，避免重复累积监听器。
   filters.onclick = function(e) {
+    var domainToggle = e.target.closest('[data-domain-toggle]');
+    if (domainToggle) {
+      domainFiltersExpanded = !domainFiltersExpanded;
+      buildFilters();
+      return;
+    }
     var btn = e.target.closest('.filter-btn');
     if (!btn) return;
     filters.querySelectorAll('.filter-btn').forEach(function(b) {

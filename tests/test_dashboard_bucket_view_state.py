@@ -31,13 +31,73 @@ def test_filter_rebuild_restores_active_filter_without_listener_leaks():
     source = _dashboard_section("function buildFilters()", "function filterBuckets(")
 
     assert "if (!domains.has(currentFilter.slice(7))) currentFilter = 'all';" in source
+    assert "domainFiltersExpanded" in source
+    assert "allDomains.slice(0, DOMAIN_FILTER_LIMIT)" in source
     assert "!visibleDomains.includes(currentDomain)" in source
     assert "visibleDomains[visibleDomains.length - 1] = currentDomain;" in source
+    assert "data-domain-toggle" in source
+    assert "更多域 +" in source
+    assert "收起域" in source
     assert "var active = t.key === currentFilter;" in source
     assert "var active = key === currentFilter;" in source
     assert "aria-pressed" in source
     assert "filters.onclick = function(e)" in source
     assert "filters.addEventListener('click'" not in source
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="Node.js is unavailable")
+def test_domain_filter_toggle_reveals_every_domain_and_can_collapse():
+    state_source = _dashboard_section(
+        "const BASE = location.origin", "function syncBucketSortControl()"
+    )
+    filter_source = _dashboard_section("function buildFilters()", "function filterBuckets(")
+    script = (
+        """
+var localStorage = {getItem() { return null; }};
+var location = {origin:'https://example.test'};
+var filters = {innerHTML:'', onclick:null, querySelectorAll() { return []; }};
+var document = {getElementById(id) { return id === 'filters' ? filters : null; }};
+function esc(value) { return String(value); }
+function escAttr(value) { return String(value); }
+function renderBuckets() {}
+function filterBuckets(value) { return value; }
+"""
+        + state_source
+        + """
+allBuckets = Array.from({length:12}, (_, i) => ({domain:['域' + (i + 1)]}));
+"""
+        + filter_source
+        + """
+buildFilters();
+var collapsed = filters.innerHTML;
+filters.onclick({target:{closest(selector) {
+  return selector === '[data-domain-toggle]' ? {dataset:{domainToggle:'true'}} : null;
+}}});
+var expanded = filters.innerHTML;
+filters.onclick({target:{closest(selector) {
+  return selector === '[data-domain-toggle]' ? {dataset:{domainToggle:'true'}} : null;
+}}});
+var collapsedAgain = filters.innerHTML;
+process.stdout.write(JSON.stringify({collapsed, expanded, collapsedAgain}));
+"""
+    )
+    completed = subprocess.run(
+        [shutil.which("node"), "-e", script],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    result = json.loads(completed.stdout)
+
+    assert "域10" in result["collapsed"]
+    assert "域11" not in result["collapsed"]
+    assert "更多域 +2" in result["collapsed"]
+    assert "域11" in result["expanded"]
+    assert "域12" in result["expanded"]
+    assert "收起域" in result["expanded"]
+    assert "域11" not in result["collapsedAgain"]
+    assert "更多域 +2" in result["collapsedAgain"]
 
 
 def test_bucket_renderer_only_resets_page_for_an_explicit_view_change():
@@ -249,6 +309,8 @@ def test_filter_rebuild_keeps_selected_domain_outside_visible_top_ten():
     script = """
 let currentFilter = 'domain:d11';
 let allBuckets = Array.from({length: 12}, (_, i) => ({domain: ['d' + i]}));
+var DOMAIN_FILTER_LIMIT = 10;
+var domainFiltersExpanded = false;
 function escAttr(value) { return String(value); }
 function esc(value) { return String(value); }
 const filterElement = {innerHTML: '', onclick: null};
