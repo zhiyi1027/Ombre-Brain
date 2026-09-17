@@ -4816,6 +4816,7 @@ var DOMAIN_AUDIT_FLAG_LABELS = {
   unclassified: '待归类',
   too_many_domains: '主题域过多',
   parent_domain: '使用大类名',
+  legacy_romance_review: '旧恋爱域待细分',
   family_romance_ambiguous: '家庭 / 恋爱待判断',
   legacy_alias: '旧域别名',
   facet_domain: '细分概念应作标签',
@@ -5012,10 +5013,10 @@ var DOMAIN_GROUPS = [
     { key: '出行', aliases: [] }, { key: '居家', aliases: [] },
     { key: '购物', aliases: [] }
   ] },
-  { key: '关系', aliases: ['恋爱', '人际', '安全感', '称呼', '冲突', '陪伴', '信任', '身份', '纪念日', '沟通', '共同生活'], children: [
-    { key: '家庭', aliases: [] }, { key: '友谊', aliases: [] },
-    { key: '社交', aliases: [] },
-    { key: '亲密', aliases: ['亲密互动'] }, { key: '性', aliases: ['性爱'] }
+  { key: '关系', aliases: ['人际', '安全感', '称呼', '冲突', '陪伴', '信任', '身份', '纪念日', '沟通', '共同生活'], children: [
+    { key: '家庭', aliases: [] }, { key: '伴侣', aliases: ['恋爱'] },
+    { key: '亲密', aliases: ['亲密互动'] }, { key: '性', aliases: ['性爱'] },
+    { key: '友谊', aliases: [] }, { key: '社交', aliases: [] }
   ] },
   { key: '成长', aliases: [], children: [
     { key: '工作', aliases: [] }, { key: '学习', aliases: [] },

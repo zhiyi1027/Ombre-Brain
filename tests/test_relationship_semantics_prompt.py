@@ -27,6 +27,10 @@ def _assert_rule(prompt: str) -> None:
     assert "我父亲今天陪我去医院" in prompt
     assert "可以标记家庭、父亲或亲子关系" in prompt
     assert "若「知知」是在称呼「我」（AI）" in prompt
+    assert "伴侣、亲密、亲昵称呼" in prompt
+    assert "domain 描述正文的主事件" in prompt
+    assert "不能只因出现老公/老婆、爸爸/宝宝" in prompt
+    assert "关系本身（承诺、争吵和好、吃醋、信任、相处变化）" in prompt
 
 
 def test_shared_rule_distinguishes_nickname_from_real_kinship():
@@ -63,7 +67,7 @@ async def test_all_dehydrator_memory_prompts_include_relationship_rule(
     async def fake_chat(system: str, _user: str, **_kwargs):
         prompts.append(system)
         if "内容分析器" in system:
-            return '{"domain":["恋爱"],"valence":0.8,"arousal":0.5,"tags":["亲昵称呼"],"suggested_name":"昵称"}'
+            return '{"domain":["伴侣"],"valence":0.8,"arousal":0.5,"tags":["亲昵称呼"],"suggested_name":"昵称"}'
         if "日记整理专家" in system:
             return "[]"
         return "merged-or-dehydrated"
@@ -76,10 +80,20 @@ async def test_all_dehydrator_memory_prompts_include_relationship_rule(
     await dehydrator._api_digest("今天叫了恋人爸爸")
     dehydrator.close()
 
-    assert _PROMPT_VERSION >= 5
+    assert _PROMPT_VERSION >= 6
     assert len(prompts) == 4
     for prompt in prompts:
         _assert_rule(prompt)
+
+
+def test_all_domain_prompts_use_the_specific_relationship_taxonomy():
+    from dehydrator import ANALYZE_PROMPT, DIGEST_PROMPT
+    from import_memory import IMPORT_EXTRACT_PROMPT
+
+    expected = '关系: ["家庭", "伴侣", "亲密", "性", "友谊", "社交"]'
+    for prompt in (ANALYZE_PROMPT, DIGEST_PROMPT, IMPORT_EXTRACT_PROMPT):
+        assert expected in prompt
+        assert '人际: ["家庭", "恋爱", "友谊", "社交"]' not in prompt
 
 
 @pytest.mark.asyncio

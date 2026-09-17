@@ -92,6 +92,11 @@ filters.onclick({target:{closest(selector) {
 var relationExpanded = filters.innerHTML;
 var relationIds = renderedIds.slice();
 filters.onclick({target:{closest(selector) {
+  if (selector === '[data-domain-group]') return null;
+  return selector === '.filter-btn' ? {dataset:{filter:'domain:伴侣'}} : null;
+}}});
+var companionIds = renderedIds.slice();
+filters.onclick({target:{closest(selector) {
   return selector === '[data-domain-group]' ? {dataset:{domainGroup:'其他'}} : null;
 }}});
 var customExpanded = filters.innerHTML;
@@ -114,7 +119,7 @@ filters.onclick({target:{closest(selector) {
   return selector === '.filter-btn' ? {dataset:{filter:'domain:未分类'}} : null;
 }}});
 var unclassifiedIds = renderedIds.slice();
-process.stdout.write(JSON.stringify({topLevel, relationExpanded, relationIds, customExpanded, customGroupIds, customDomainIds, intimacyIds, unclassifiedIds}));
+process.stdout.write(JSON.stringify({topLevel, relationExpanded, relationIds, companionIds, customExpanded, customGroupIds, customDomainIds, intimacyIds, unclassifiedIds}));
 """
     )
     completed = subprocess.run(
@@ -134,8 +139,10 @@ process.stdout.write(JSON.stringify({topLevel, relationExpanded, relationIds, cu
     assert "待归类 2" in result["topLevel"]
     assert "domain:恋爱" not in result["topLevel"]
     assert "domain:恋爱" not in result["relationExpanded"]
+    assert "domain:伴侣" in result["relationExpanded"]
     assert "domain:亲密" in result["relationExpanded"]
     assert result["relationIds"] == ["love", "family", "intimacy-alias"]
+    assert result["companionIds"] == ["love"]
     assert "domain:旧分类" in result["customExpanded"]
     assert result["customGroupIds"] == ["custom"]
     assert result["customDomainIds"] == ["custom"]
