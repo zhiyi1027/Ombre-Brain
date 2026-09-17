@@ -2228,6 +2228,9 @@
   }
   .domain-audit-change { margin-top: 8px; font-size: 11px; color: var(--text-dim); line-height: 1.65; }
   .domain-audit-reason { margin-top: 5px; font-size: 11px; color: var(--text-light); }
+  .domain-audit-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .domain-audit-model-suggestion { margin-top: 7px; min-height: 16px; font-size: 11px; color: var(--accent); }
+  .domain-audit-model-suggestion.error { color: var(--negative); }
   .domain-audit-footer { justify-content: space-between; border-top: 1px solid var(--border); }
   .domain-audit-pages { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); }
 
@@ -3721,7 +3724,7 @@
     </div>
     <div class="domain-audit-body" id="domain-audit-body"><div class="loading">正在读取分类元数据…</div></div>
     <div class="domain-audit-footer">
-      <span id="domain-audit-note" style="font-size:11px;color:var(--text-dim);">候选不等于错误；需结合正文判断的项目不会自动给结论。</span>
+      <span id="domain-audit-note" style="font-size:11px;color:var(--text-dim);">候选不等于错误；点“生成建议”会把该条标题和正文发送给当前配置的打标模型，只显示结果，不保存。</span>
       <div class="domain-audit-pages">
         <button id="domain-audit-prev" type="button" onclick="changeDomainAuditPage(-1)">上一页</button>
         <span id="domain-audit-page">—</span>
@@ -4811,11 +4814,13 @@ var domainAuditReport = null;
 var domainAuditFilter = '';
 var domainAuditPage = 1;
 var domainAuditLoadGeneration = 0;
+var domainAuditSuggestions = new Map();
 var DOMAIN_AUDIT_PAGE_SIZE = 40;
 var DOMAIN_AUDIT_FLAG_LABELS = {
   unclassified: '待归类',
   too_many_domains: '主题域过多',
   parent_domain: '使用大类名',
+  legacy_romance_review: '旧恋爱域待细分',
   family_romance_ambiguous: '家庭 / 恋爱待判断',
   legacy_alias: '旧域别名',
   facet_domain: '细分概念应作标签',
@@ -4846,6 +4851,7 @@ async function runDomainAudit() {
   domainAuditReport = null;
   domainAuditFilter = '';
   domainAuditPage = 1;
+  domainAuditSuggestions.clear();
   button.disabled = true;
   refreshButton.disabled = true;
   body.setAttribute('aria-busy', 'true');
@@ -4971,20 +4977,71 @@ function renderDomainAuditCandidates() {
     if (!changes.length) changes.push(candidate.requires_content_review ? '需要读正文后再决定具体小类' : '分类值可直接归一');
     var bucketId = String(candidate.bucket_id || '');
     var name = String(candidate.name || bucketId || '未命名记忆');
+    var modelSuggestion = bucketId ? domainAuditSuggestions.get(bucketId) : null;
+    var suggestionText = modelSuggestion && modelSuggestion.length
+      ? '模型建议：' + modelSuggestion.join('、') + '（未保存）'
+      : '';
     return '<article class="domain-audit-card">' +
       '<div class="domain-audit-card-head">' +
         '<div class="domain-audit-card-title">' + esc(name) + '<span class="domain-audit-card-id">' + esc(bucketId || '缺少 bucket id') + '</span></div>' +
-        (bucketId ? '<button type="button" data-bucket-id="' + escAttr(bucketId) + '" onclick="openDomainAuditBucket(this.dataset.bucketId)" style="height:28px;padding:0 9px;font-size:10px;">查看记忆</button>' : '') +
+        (bucketId ? '<div class="domain-audit-actions">' +
+          (candidate.requires_content_review ? '<button type="button" data-bucket-id="' + escAttr(bucketId) + '" onclick="suggestDomainAuditBucket(this)" style="height:28px;padding:0 9px;font-size:10px;">生成建议</button>' : '') +
+          '<button type="button" data-bucket-id="' + escAttr(bucketId) + '" onclick="openDomainAuditBucket(this.dataset.bucketId)" style="height:28px;padding:0 9px;font-size:10px;">查看记忆</button>' +
+        '</div>' : '') +
       '</div>' +
       '<div class="domain-audit-flags">' + flags.map(function(flag) { return '<span class="domain-audit-flag">' + esc(DOMAIN_AUDIT_FLAG_LABELS[flag] || flag) + '</span>'; }).join('') + '</div>' +
       '<div class="domain-audit-change">' + changes.map(esc).join('<br>') + '</div>' +
       (reasons.length ? '<div class="domain-audit-reason">' + reasons.map(esc).join('；') + '</div>' : '') +
+      '<div class="domain-audit-model-suggestion" aria-live="polite">' + esc(suggestionText) + '</div>' +
     '</article>';
   }).join('');
 
   var parseErrors = domainAuditReport.errors || [];
   if (parseErrors.length && !domainAuditFilter && domainAuditPage === totalPages) {
     body.innerHTML += '<div class="domain-audit-card" style="border-color:var(--warning);color:var(--text-dim);font-size:11px;">另有 ' + parseErrors.length + ' 个文件无法解析；报告只记录相对路径和错误类型，没有回显记忆正文。</div>';
+  }
+}
+
+async function suggestDomainAuditBucket(button) {
+  var bucketId = String(button && button.dataset ? button.dataset.bucketId || '' : '');
+  var card = button && button.closest ? button.closest('.domain-audit-card') : null;
+  var status = card ? card.querySelector('.domain-audit-model-suggestion') : null;
+  if (!bucketId || !status) return;
+
+  var originalLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = '分析中…';
+  status.classList.remove('error');
+  status.textContent = '正在读取这条正文并生成建议…';
+  try {
+    // Do not use authFetch here: its gateway retry is safe for reads/upserts,
+    // but it could repeat this paid model call after a transient 502/503/504.
+    var response = await fetch('/api/domain-audit/suggest', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({bucket_id: bucketId})
+    });
+    if (response.status === 401) {
+      checkAuth();
+      status.classList.add('error');
+      status.textContent = '请先完成访问验证，再重新生成。';
+      return;
+    }
+    var result = await readJsonSafe(response);
+    if (!response.ok) throw new Error((result && result.error) || ('HTTP ' + response.status));
+    if (!result || result.mode !== 'read_only_suggestion' || result.applied !== false || result.bucket_id !== bucketId) {
+      throw new Error('分类建议响应无效');
+    }
+    var suggestedDomains = domainAuditList(result.suggested_domains);
+    if (!suggestedDomains.length) throw new Error('模型没有返回可用的小类');
+    domainAuditSuggestions.set(bucketId, suggestedDomains);
+    status.textContent = '模型建议：' + suggestedDomains.join('、') + '（未保存）';
+  } catch (error) {
+    status.classList.add('error');
+    status.textContent = '生成失败：' + (error.message || error);
+  } finally {
+    button.disabled = false;
+    button.textContent = originalLabel;
   }
 }
 
@@ -5012,10 +5069,10 @@ var DOMAIN_GROUPS = [
     { key: '出行', aliases: [] }, { key: '居家', aliases: [] },
     { key: '购物', aliases: [] }
   ] },
-  { key: '关系', aliases: ['恋爱', '人际', '安全感', '称呼', '冲突', '陪伴', '信任', '身份', '纪念日', '沟通', '共同生活'], children: [
-    { key: '家庭', aliases: [] }, { key: '友谊', aliases: [] },
-    { key: '社交', aliases: [] },
-    { key: '亲密', aliases: ['亲密互动'] }, { key: '性', aliases: ['性爱'] }
+  { key: '关系', aliases: ['人际', '安全感', '称呼', '冲突', '陪伴', '信任', '身份', '纪念日', '沟通', '共同生活'], children: [
+    { key: '家庭', aliases: [] }, { key: '伴侣', aliases: ['恋爱'] },
+    { key: '亲密', aliases: ['亲密互动'] }, { key: '性', aliases: ['性爱'] },
+    { key: '友谊', aliases: [] }, { key: '社交', aliases: [] }
   ] },
   { key: '成长', aliases: [], children: [
     { key: '工作', aliases: [] }, { key: '学习', aliases: [] },

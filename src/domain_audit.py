@@ -35,6 +35,7 @@ CANONICAL_DOMAINS = frozenset(
         "居家",
         "购物",
         "家庭",
+        "伴侣",
         "友谊",
         "社交",
         "工作",
@@ -73,7 +74,6 @@ PARENT_DOMAINS = frozenset(
         "日常",
         "关系",
         "人际",
-        "恋爱",
         "成长",
         "身心",
         "兴趣",
@@ -93,6 +93,13 @@ DOMAIN_ALIASES = {
     "感受": "情绪",
     "self": "自省",
 }
+
+# The historical 恋爱 domain was both a relationship umbrella and a frequent
+# fallback for otherwise unrelated memories containing affectionate forms of
+# address.  ``伴侣`` is the safe fallback proposal, not an automatic alias:
+# every such bucket remains a content-review candidate.
+LEGACY_ROMANCE_DOMAIN = "恋爱"
+LEGACY_ROMANCE_FALLBACK = "伴侣"
 
 # These are useful retrieval facets, but they are too narrow to be navigation
 # domains.  A future confirmed apply step can preserve them as tags.
@@ -235,6 +242,12 @@ def audit_bucket(
         flags.append("parent_domain")
         reasons.append("使用了导航大类名，需要结合正文选择具体小类")
 
+    if LEGACY_ROMANCE_DOMAIN in current_domains:
+        flags.append("legacy_romance_review")
+        reasons.append(
+            "旧恋爱域范围过宽；伴侣只是兜底建议，需读正文判断实际主题"
+        )
+
     if "家庭" in current_domains and "恋爱" in current_domains:
         flags.append("family_romance_ambiguous")
         reasons.append("家庭与恋爱并存，需排除亲昵称呼造成的旧版误判")
@@ -242,6 +255,8 @@ def audit_bucket(
     for domain in current_domains:
         if domain.lower() in UNCLASSIFIED_DOMAINS:
             _append_unique(proposed_domains, "未分类")
+        elif domain == LEGACY_ROMANCE_DOMAIN:
+            _append_unique(proposed_domains, LEGACY_ROMANCE_FALLBACK)
         elif domain in PARENT_DOMAINS:
             _append_unique(proposed_domains, domain)
         elif domain in DOMAIN_ALIASES:
@@ -271,6 +286,7 @@ def audit_bucket(
             "unclassified",
             "too_many_domains",
             "parent_domain",
+            "legacy_romance_review",
             "family_romance_ambiguous",
             "custom_domain",
         }

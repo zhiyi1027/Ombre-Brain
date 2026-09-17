@@ -77,13 +77,14 @@ def test_audit_bucket_keeps_ambiguous_and_custom_domains_for_review():
     assert candidate is not None
     assert candidate["proposal"]["domains"] == [
         "家庭",
-        "恋爱",
+        "伴侣",
         "旧分类",
         "内心",
     ]
     assert set(candidate["flags"]) == {
         "too_many_domains",
         "parent_domain",
+        "legacy_romance_review",
         "family_romance_ambiguous",
         "custom_domain",
     }
@@ -94,7 +95,6 @@ def test_audit_bucket_treats_dashboard_group_names_as_parent_domains():
     for domain in (
         "日常",
         "关系",
-        "恋爱",
         "成长",
         "身心",
         "兴趣",
@@ -110,6 +110,34 @@ def test_audit_bucket_treats_dashboard_group_names_as_parent_domains():
         assert candidate is not None
         assert candidate["flags"] == ["parent_domain"]
         assert candidate["proposal"]["domains"] == [domain]
+
+
+def test_audit_bucket_proposes_companion_as_review_only_romance_fallback():
+    candidate = audit_bucket(
+        {
+            "id": "legacy-romance",
+            "type": "dynamic",
+            "domain": ["恋爱"],
+        },
+        "正文仍需人工判断真实主题",
+    )
+
+    assert candidate is not None
+    assert candidate["proposal"]["domains"] == ["伴侣"]
+    assert candidate["flags"] == ["legacy_romance_review"]
+    assert candidate["confidence"] == "review"
+    assert candidate["requires_content_review"] is True
+    assert "兜底建议" in candidate["reasons"][0]
+
+
+def test_audit_bucket_accepts_companion_as_a_clean_specific_domain():
+    assert (
+        audit_bucket(
+            {"id": "companion", "type": "dynamic", "domain": ["伴侣"]},
+            "正文",
+        )
+        is None
+    )
 
 
 def test_audit_bucket_normalizes_legacy_unclassified_sentinel():
