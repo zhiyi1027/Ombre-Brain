@@ -257,7 +257,7 @@ def _hold(mcp_client: MCPClient, marker: str, **overrides) -> str:
     )
 
 
-def test_manifest_exposes_exactly_the_documented_16_tools(mcp_client):
+def test_manifest_exposes_exactly_the_documented_15_tools(mcp_client):
     tools = mcp_client.list_tools()
     tools_by_name = {tool["name"]: tool for tool in tools}
     assert set(tools_by_name) == EXPECTED_TOOLS
