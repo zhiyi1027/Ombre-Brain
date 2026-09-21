@@ -1,4 +1,4 @@
-"""Real streamable-HTTP integration coverage for all 16 public MCP tools.
+"""Real streamable-HTTP integration coverage for all 15 public MCP tools.
 
 Run this file against an isolated Docker service by setting
 OMBRE_DOCKER_INTEGRATION_URL=http://ombre-brain:8000/mcp.
@@ -39,7 +39,6 @@ EXPECTED_TOOLS = {
     "letter_read",
     "I",
     "dream",
-    "media_catalog",
     "media_read",
 }
 
@@ -111,7 +110,6 @@ EXPECTED_TOOL_PROPERTIES = {
     "letter_read": {"query", "limit", "author", "date_from", "date_to"},
     "I": {"content", "aspect", "read", "limit"},
     "dream": {"window_hours", "catalog"},
-    "media_catalog": {"query"},
     "media_read": {"bucket_id", "index"},
 }
 

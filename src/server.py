@@ -8,9 +8,8 @@ DecayEngine / EmbeddingEngine / ImportEngine，把它们注入 tools._runtime �
 web._shared，然后以 @mcp.tool() 注册薄封装（真正的实现在 src/tools/<工具>/ 下面）。
 
 关键行为：
-- 启动后暴露 16 个 MCP 工具：breath/breath_search/breath_advanced/hold/grow/
-  trace/anchor/release/pulse/plan/letter_write/letter_read/dream/I/media_catalog/
-  media_read；每个入口
+- 启动后暴露 15 个 MCP 工具：breath/breath_search/breath_advanced/hold/grow/
+  trace/anchor/release/pulse/plan/letter_write/letter_read/dream/I/media_read；每个入口
       ≤ 10 行，只负责转发。breath 拆成 breath()(0 参数)+breath_search(4 参数)+
   breath_advanced(9 参数) 三级，是因为 claude.ai 按需加载工具时会跳过参数
   复杂的工具，全塞一个 breath() 会导致它常年加载不上（见 issue #17）。
@@ -24,7 +23,7 @@ web._shared，然后以 @mcp.tool() 注册薄封装（真正的实现在 src/too
 - 不写 HTTP 路由处理（全在 web/* 下）；不写 LLM prompt（dehydrator 负责）
 - 不直接读写桶文件（bucket_manager 负责）
 
-对外暴露：mcp/mcp_extra 两个实例 + 16 个 @mcp*.tool() 函数；HTTP 路由在 src/web/*
+对外暴露：mcp/mcp_extra 两个实例 + 15 个 @mcp*.tool() 函数；HTTP 路由在 src/web/*
 ========================================
 """
 
@@ -942,17 +941,6 @@ async def I(
 
 
 @mcp_extra.tool()
-async def media_catalog(query: Optional[str] = "") -> str:
-    """列出所有带图片的记忆桶；query 可按正文、标签、图片标题/备注或桶 ID 过滤。只返回日期、关键词、桶 ID 和张数，不加载图片本体；确定目标后再调用 media_read。"""
-    safe_query = "" if query is None else query
-    return await _with_notice(
-        _t_media.catalog(query=safe_query),
-        op="media_catalog",
-        args={"query": safe_query},
-    )
-
-
-@mcp_extra.tool()
 async def media_read(bucket_id: str, index: Optional[int] = 0) -> Image:
     """按 bucket_id 和序号读取一张已存图片。只在明确需要看原图时调用；不会把图片自动塞进 breath/dream。index 从 0 开始。"""
     safe_index = 0 if index is None else index
@@ -1040,9 +1028,9 @@ if __name__ == "__main__":
 
     # iter 2.2：合并为单连接器 /mcp。
     # 当初（iter 2.1）拆 /mcp + /mcp-extra 是因为 claude.ai 连接器存在 5 工具上限；
-    # 该上限现已解除，16 个工具全部挂在主实例 mcp 上对外暴露一条 /mcp 即可，
+    # 该上限现已解除，15 个工具全部挂在主实例 mcp 上对外暴露一条 /mcp 即可，
     # 顺带消除「第二个连接器」在 Claude.ai 侧的 OAuth/连接器校验疑难。
-    # mcp_extra 仅作历史工具分组容器保留（9 个 @mcp_extra.tool()），
+    # mcp_extra 仅作历史工具分组容器保留（8 个 @mcp_extra.tool()），
     # 这里把它的工具回灌进 mcp，让 stdio / sse / streamable-http 三种 transport 一致。
     # 依赖 FastMCP._tool_manager 私有结构；若未来版本变化，降级为仅暴露主集 7 工具。
     from server_app import (
@@ -1101,7 +1089,7 @@ if __name__ == "__main__":
             lifecycle=_runtime_lifecycle,
         )
         if transport == "streamable-http":
-            logger.info("MCP 单连接器 /mcp：16 个工具统一对外暴露")
+            logger.info("MCP 单连接器 /mcp：15 个工具统一对外暴露")
         logger.info("CORS middleware enabled for remote transport / 已启用 CORS 中间件")
         logger.info(
             "MCP request body limit: %s",
