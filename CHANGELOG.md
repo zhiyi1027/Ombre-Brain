@@ -6,6 +6,7 @@
 
 ### 新增 / Added
 
+- 新增 `media_catalog(query="")`：可先浏览全部图片记忆桶的关键词目录，或按正文、标签、附件标题/备注与桶 ID 过滤；目录不读取原图、不暴露持久路径，选定后再交给 `media_read`。
 - 新增 `media_read(bucket_id, index=0)`：显式取回已持久化的 PNG/JPEG/GIF/WebP 图片本体；默认召回仍只显示附件提示，不自动把图片塞进上下文。
 
 ### 安全 / Security
