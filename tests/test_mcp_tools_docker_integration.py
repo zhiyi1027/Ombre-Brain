@@ -1,4 +1,4 @@
-"""Real streamable-HTTP integration coverage for all 15 public MCP tools.
+"""Real streamable-HTTP integration coverage for all 16 public MCP tools.
 
 Run this file against an isolated Docker service by setting
 OMBRE_DOCKER_INTEGRATION_URL=http://ombre-brain:8000/mcp.
@@ -39,7 +39,10 @@ EXPECTED_TOOLS = {
     "letter_read",
     "I",
     "dream",
+    "media_catalog",
     "media_read",
+    "raw_day",
+    "raw_search",
 }
 
 EXPECTED_TOOL_PROPERTIES = {
@@ -110,7 +113,10 @@ EXPECTED_TOOL_PROPERTIES = {
     "letter_read": {"query", "limit", "author", "date_from", "date_to"},
     "I": {"content", "aspect", "read", "limit"},
     "dream": {"window_hours", "catalog"},
+    "media_catalog": {"query"},
     "media_read": {"bucket_id", "index"},
+    "raw_day": {"date", "page", "thinking"},
+    "raw_search": {"query", "max_results", "thinking", "speaker"},
 }
 
 EXPECTED_REQUIRED_PROPERTIES = {
@@ -255,7 +261,7 @@ def _hold(mcp_client: MCPClient, marker: str, **overrides) -> str:
     )
 
 
-def test_manifest_exposes_exactly_the_documented_15_tools(mcp_client):
+def test_manifest_exposes_exactly_the_documented_16_tools(mcp_client):
     tools = mcp_client.list_tools()
     tools_by_name = {tool["name"]: tool for tool in tools}
     assert set(tools_by_name) == EXPECTED_TOOLS

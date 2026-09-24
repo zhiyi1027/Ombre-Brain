@@ -8,8 +8,9 @@ DecayEngine / EmbeddingEngine / ImportEngine，把它们注入 tools._runtime �
 web._shared，然后以 @mcp.tool() 注册薄封装（真正的实现在 src/tools/<工具>/ 下面）。
 
 关键行为：
-- 启动后暴露 15 个 MCP 工具：breath/breath_search/breath_advanced/hold/grow/
-  trace/anchor/release/pulse/plan/letter_write/letter_read/dream/I/media_read；每个入口
+- 启动后暴露 18 个 MCP 工具：breath/breath_search/breath_advanced/hold/grow/
+  trace/anchor/release/pulse/plan/letter_write/letter_read/dream/I/media_catalog/
+  media_read/raw_day/raw_search；每个入口
       ≤ 10 行，只负责转发。breath 拆成 breath()(0 参数)+breath_search(4 参数)+
   breath_advanced(9 参数) 三级，是因为 claude.ai 按需加载工具时会跳过参数
   复杂的工具，全塞一个 breath() 会导致它常年加载不上（见 issue #17）。
@@ -23,7 +24,7 @@ web._shared，然后以 @mcp.tool() 注册薄封装（真正的实现在 src/too
 - 不写 HTTP 路由处理（全在 web/* 下）；不写 LLM prompt（dehydrator 负责）
 - 不直接读写桶文件（bucket_manager 负责）
 
-对外暴露：mcp/mcp_extra 两个实例 + 15 个 @mcp*.tool() 函数；HTTP 路由在 src/web/*
+对外暴露：mcp/mcp_extra 两个实例 + 18 个 @mcp*.tool() 函数；HTTP 路由在 src/web/*
 ========================================
 """
 
@@ -68,6 +69,7 @@ from tools import plan as _t_plan
 from tools import dream as _t_dream
 from tools import i as _t_i
 from tools import media as _t_media
+from tools import raw as _t_raw
 
 # --- Load config & init logging / 加载配置 & 初始化日志 ---
 config = load_config()
@@ -941,6 +943,17 @@ async def I(
 
 
 @mcp_extra.tool()
+async def media_catalog(query: Optional[str] = "") -> str:
+    """列出所有带图片的记忆桶；query 可按正文、标签、图片标题/备注或桶 ID 过滤。只返回日期、关键词、桶 ID 和张数，不加载图片本体；确定目标后再调用 media_read。"""
+    safe_query = "" if query is None else query
+    return await _with_notice(
+        _t_media.catalog(query=safe_query),
+        op="media_catalog",
+        args={"query": safe_query},
+    )
+
+
+@mcp_extra.tool()
 async def media_read(bucket_id: str, index: Optional[int] = 0) -> Image:
     """按 bucket_id 和序号读取一张已存图片。只在明确需要看原图时调用；不会把图片自动塞进 breath/dream。index 从 0 开始。"""
     safe_index = 0 if index is None else index
@@ -956,6 +969,36 @@ async def media_read(bucket_id: str, index: Optional[int] = 0) -> Image:
     data, image_format = result
     _log_op_ok("media_read", f"image/{image_format} {len(data)} bytes")
     return Image(data=data, format=image_format)
+
+
+@mcp_extra.tool()
+async def raw_day(date: str, page: Optional[int] = 0, thinking: Optional[bool] = False) -> str:
+    """按北京时间日期（YYYY-MM-DD）翻那天的聊天原文，每页 40 条，page 从 0 开始；thinking=True 连当时的思考一起看。原文不是记忆桶，只在想对证原话时用，不要为了浮现而调用。"""
+    return await _with_notice(
+        _t_raw.day(date=date, page=0 if page is None else page, thinking=bool(thinking)),
+        op="raw_day",
+        args={"date": date, "page": page, "thinking": thinking},
+    )
+
+
+@mcp_extra.tool()
+async def raw_search(
+    query: str,
+    max_results: Optional[int] = 8,
+    thinking: Optional[bool] = False,
+    speaker: Optional[str] = "",
+) -> str:
+    """在聊天原文里逐字搜原话，返回命中句和前后各一句，带日期和对话名。speaker 可填“知知”或“顾凛”只看一方；thinking=True 也搜当时的思考。适合“她当时原话怎么说的”；想找记忆用 breath_search。"""
+    return await _with_notice(
+        _t_raw.search(
+            query=query,
+            max_results=8 if max_results is None else max_results,
+            thinking=bool(thinking),
+            speaker=speaker or "",
+        ),
+        op="raw_search",
+        args={"query": query, "max_results": max_results, "thinking": thinking, "speaker": speaker},
+    )
 
 
 @mcp.tool()
@@ -1028,9 +1071,9 @@ if __name__ == "__main__":
 
     # iter 2.2：合并为单连接器 /mcp。
     # 当初（iter 2.1）拆 /mcp + /mcp-extra 是因为 claude.ai 连接器存在 5 工具上限；
-    # 该上限现已解除，15 个工具全部挂在主实例 mcp 上对外暴露一条 /mcp 即可，
+    # 该上限现已解除，16 个工具全部挂在主实例 mcp 上对外暴露一条 /mcp 即可，
     # 顺带消除「第二个连接器」在 Claude.ai 侧的 OAuth/连接器校验疑难。
-    # mcp_extra 仅作历史工具分组容器保留（8 个 @mcp_extra.tool()），
+    # mcp_extra 仅作历史工具分组容器保留（9 个 @mcp_extra.tool()），
     # 这里把它的工具回灌进 mcp，让 stdio / sse / streamable-http 三种 transport 一致。
     # 依赖 FastMCP._tool_manager 私有结构；若未来版本变化，降级为仅暴露主集 7 工具。
     from server_app import (
@@ -1089,7 +1132,7 @@ if __name__ == "__main__":
             lifecycle=_runtime_lifecycle,
         )
         if transport == "streamable-http":
-            logger.info("MCP 单连接器 /mcp：15 个工具统一对外暴露")
+            logger.info("MCP 单连接器 /mcp：16 个工具统一对外暴露")
         logger.info("CORS middleware enabled for remote transport / 已启用 CORS 中间件")
         logger.info(
             "MCP request body limit: %s",
