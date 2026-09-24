@@ -68,6 +68,7 @@ from tools import plan as _t_plan
 from tools import dream as _t_dream
 from tools import i as _t_i
 from tools import media as _t_media
+from tools import raw as _t_raw
 
 # --- Load config & init logging / 加载配置 & 初始化日志 ---
 config = load_config()
@@ -956,6 +957,36 @@ async def media_read(bucket_id: str, index: Optional[int] = 0) -> Image:
     data, image_format = result
     _log_op_ok("media_read", f"image/{image_format} {len(data)} bytes")
     return Image(data=data, format=image_format)
+
+
+@mcp_extra.tool()
+async def raw_day(date: str, page: Optional[int] = 0, thinking: Optional[bool] = False) -> str:
+    """按北京时间日期（YYYY-MM-DD）翻那天的聊天原文，每页 40 条，page 从 0 开始；thinking=True 连当时的思考一起看。原文不是记忆桶，只在想对证原话时用，不要为了浮现而调用。"""
+    return await _with_notice(
+        _t_raw.day(date=date, page=0 if page is None else page, thinking=bool(thinking)),
+        op="raw_day",
+        args={"date": date, "page": page, "thinking": thinking},
+    )
+
+
+@mcp_extra.tool()
+async def raw_search(
+    query: str,
+    max_results: Optional[int] = 8,
+    thinking: Optional[bool] = False,
+    speaker: Optional[str] = "",
+) -> str:
+    """在聊天原文里逐字搜原话，返回命中句和前后各一句，带日期和对话名。speaker 可填“知知”或“顾凛”只看一方；thinking=True 也搜当时的思考。适合“她当时原话怎么说的”；想找记忆用 breath_search。"""
+    return await _with_notice(
+        _t_raw.search(
+            query=query,
+            max_results=8 if max_results is None else max_results,
+            thinking=bool(thinking),
+            speaker=speaker or "",
+        ),
+        op="raw_search",
+        args={"query": query, "max_results": max_results, "thinking": thinking, "speaker": speaker},
+    )
 
 
 @mcp.tool()

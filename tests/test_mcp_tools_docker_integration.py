@@ -40,6 +40,8 @@ EXPECTED_TOOLS = {
     "I",
     "dream",
     "media_read",
+    "raw_day",
+    "raw_search",
 }
 
 EXPECTED_TOOL_PROPERTIES = {
@@ -111,6 +113,8 @@ EXPECTED_TOOL_PROPERTIES = {
     "I": {"content", "aspect", "read", "limit"},
     "dream": {"window_hours", "catalog"},
     "media_read": {"bucket_id", "index"},
+    "raw_day": {"date", "page", "thinking"},
+    "raw_search": {"query", "max_results", "thinking", "speaker"},
 }
 
 EXPECTED_REQUIRED_PROPERTIES = {
