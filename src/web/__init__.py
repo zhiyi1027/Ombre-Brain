@@ -38,6 +38,7 @@ from . import nightly_dreams
 from . import private_continuity
 from . import domain_audit
 from . import raw_import
+from . import album_raw
 
 
 _WEB_MODULES = (
@@ -65,6 +66,7 @@ _WEB_MODULES = (
     ("web.private_continuity", private_continuity.register),
     ("web.domain_audit", domain_audit.register),
     ("web.raw_import", raw_import.register),
+    ("web.album_raw", album_raw.register),
 )
 
 

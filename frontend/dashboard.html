@@ -1533,6 +1533,24 @@
     25%,75% { box-shadow: 0 0 0 3px var(--accent-glow); }
   }
   .field-flash { animation: field-flash 1.6s ease-in-out; border-radius: 8px; }
+  .album-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:14px; margin-top:8px; }
+  .album-card { background:var(--surface); border:1px solid var(--border); border-radius:2px; overflow:hidden; cursor:pointer; box-shadow:4px 4px 10px var(--shadow-dark-subtle), -4px -4px 10px var(--shadow-light); }
+  .album-card img { width:100%; aspect-ratio:1/1; object-fit:cover; display:block; background:var(--bg); }
+  .album-card .cap { padding:8px 10px; font-size:11px; color:var(--text-dim); line-height:1.5; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .album-lightbox { position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:18px; }
+  .album-lightbox-card { position:relative; background:var(--surface); max-width:760px; width:100%; max-height:92vh; overflow:auto; padding:18px; border-radius:2px; }
+  .album-lightbox-card img { width:100%; height:auto; display:block; margin-bottom:10px; }
+  .album-close { position:absolute; right:10px; top:10px; padding:4px 10px; }
+  .album-meta { font-size:11px; color:var(--text-dim); margin:6px 0; }
+  .album-text { white-space:pre-wrap; font-size:13px; line-height:1.8; }
+  .raw-list { display:flex; flex-direction:column; gap:8px; margin-top:8px; }
+  .raw-conv { font-size:11px; color:var(--text-dim); margin-top:10px; letter-spacing:.05em; }
+  .raw-line { padding:8px 12px; border-left:2px solid var(--border); font-size:13px; line-height:1.75; white-space:pre-wrap; }
+  .raw-line.zhizhi { border-left-color:var(--accent); }
+  .raw-line .who { font-size:11px; color:var(--text-dim); margin-right:6px; }
+  .raw-line .think { display:block; margin-top:6px; padding:6px 10px; font-size:12px; color:var(--text-dim); background:var(--bg); }
+  .raw-line.hit { background:var(--bg); }
+  .raw-ctx { opacity:.6; }
   @media (prefers-reduced-motion: reduce) { .field-flash { animation: none; outline: 2px solid var(--accent); } }
 
   /* ====== ⓪ 版本 & 更新 面板 ====== */
@@ -2379,6 +2397,8 @@
   <div class="tab" data-tab="network"><span>记忆网络</span><span class="tab-en">Network</span></div>
   <div class="tab" data-tab="plan"><span>计划</span><span class="tab-en">Plans</span></div>
   <div class="tab" data-tab="letters"><span>信</span><span class="tab-en">Letters</span></div>
+  <div class="tab" data-tab="album"><span>相册</span><span class="tab-en">Album</span></div>
+  <div class="tab" data-tab="raw"><span>原文</span><span class="tab-en">Transcript</span></div>
   <div class="tab" data-tab="daily"><span>日印象</span><span class="tab-en">Daily</span></div>
   <div class="tab" data-tab="dream"><span>梦境</span><span class="tab-en">Dreams</span></div>
   <div class="tab" data-tab="continuity"><span>冲突</span><span class="tab-en">Continuity</span></div>
@@ -2823,6 +2843,52 @@
       <div id="letters-list" style="display:flex;flex-direction:column;gap:14px;margin-top:6px;">
         <div style="text-align:center;color:var(--text-dim);padding:36px 0;font-size:13px;">点击「刷新」加载信件…</div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- 相册：挂了图的记忆桶 -->
+<div class="content" id="album-view" style="display:none">
+  <div style="max-width:1080px;margin:0 auto;">
+    <div class="config-section">
+      <h3>相册 <span class="en">Album</span></h3>
+      <div class="config-row">
+        <input type="text" id="album-filter" placeholder="按描述或关键词筛选" oninput="renderAlbum()" />
+        <button class="btn-secondary" onclick="loadAlbum()" title="刷新" style="padding:8px 14px;font-size:12px;"><i data-lucide="refresh-cw"></i></button>
+        <span id="album-count" style="font-size:11px;color:var(--text-dim);margin-left:auto;"></span>
+      </div>
+      <div id="album-grid" class="album-grid"></div>
+    </div>
+  </div>
+</div>
+<div id="album-lightbox" class="album-lightbox" style="display:none" onclick="if(event.target===this)closeAlbum()">
+  <div class="album-lightbox-card">
+    <button class="btn-secondary album-close" onclick="closeAlbum()" title="关闭">×</button>
+    <div id="album-lightbox-images"></div>
+    <div id="album-lightbox-meta" class="album-meta"></div>
+    <div id="album-lightbox-text" class="album-text"></div>
+  </div>
+</div>
+
+<!-- 原文：官 app 聊天原话（只读） -->
+<div class="content" id="raw-view" style="display:none">
+  <div style="max-width:920px;margin:0 auto;">
+    <div class="config-section">
+      <h3>原文 <span class="en">Transcript</span></h3>
+      <div class="config-row">
+        <label>日子</label>
+        <select id="raw-day" onchange="loadRawDay(0)" style="flex:0 0 220px;"></select>
+        <label style="flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;"><input type="checkbox" id="raw-thinking" onchange="rerenderRaw()"> 看思考</label>
+        <span id="raw-stats" style="font-size:11px;color:var(--text-dim);margin-left:auto;"></span>
+      </div>
+      <div class="config-row">
+        <label>搜原话</label>
+        <input type="text" id="raw-query" placeholder="逐字搜，至少两个字" onkeydown="if(event.key==='Enter')searchRaw()" />
+        <select id="raw-speaker" style="flex:0 0 110px;"><option value="">双方</option><option value="知知">知知</option><option value="顾凛">顾凛</option></select>
+        <button class="btn-secondary" onclick="searchRaw()" style="padding:8px 14px;font-size:12px;">搜</button>
+      </div>
+      <div id="raw-list" class="raw-list"></div>
+      <div id="raw-pager" style="display:flex;gap:10px;justify-content:center;margin-top:12px;"></div>
     </div>
   </div>
 </div>
@@ -5239,6 +5305,8 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.getElementById('dream-view').style.display = target === 'dream' ? '' : 'none';
     document.getElementById('continuity-view').style.display = target === 'continuity' ? '' : 'none';
     document.getElementById('anchors-view').style.display = target === 'anchors' ? '' : 'none';
+    document.getElementById('album-view').style.display = target === 'album' ? '' : 'none';
+    document.getElementById('raw-view').style.display = target === 'raw' ? '' : 'none';
     document.getElementById('about-view').style.display = target === 'about' ? '' : 'none';
     if (target !== 'network' && _netRAF) { cancelAnimationFrame(_netRAF); _netRAF = null; }
     if (target === 'network') loadNetwork();
@@ -5268,6 +5336,8 @@ document.querySelectorAll('.tab').forEach(tab => {
     if (target === 'dream') loadNightlyDreams();
     if (target === 'continuity') loadPrivateContinuity();
     if (target === 'anchors') loadAnchorsView();
+    if (target === 'album') loadAlbum();
+    if (target === 'raw') loadRawDays();
     if (target === 'about') loadAbout();
   });
 });
@@ -10756,6 +10826,129 @@ async function toggleAnchor(bucketId, value) {
 async function releaseAnchor(bucketId) {
   await toggleAnchor(bucketId, false);
   loadAnchorsView();
+}
+
+// ---------- 相册 ----------
+let _albumItems = [];
+async function loadAlbum() {
+  const grid = document.getElementById('album-grid');
+  grid.innerHTML = '<div style="color:var(--text-dim);padding:24px;">加载中…</div>';
+  try {
+    const r = await fetch(BASE + '/api/album');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    _albumItems = (await r.json()).items || [];
+    renderAlbum();
+  } catch (e) {
+    grid.innerHTML = '<div style="color:var(--negative);padding:18px;">加载失败：' + esc(e.message) + '</div>';
+  }
+}
+function renderAlbum() {
+  const grid = document.getElementById('album-grid');
+  const q = (document.getElementById('album-filter').value || '').trim().toLowerCase();
+  const items = _albumItems.filter(it => !q || (it.content + ' ' + (it.keywords || []).join(' ') + ' ' + (it.name || '')).toLowerCase().includes(q));
+  document.getElementById('album-count').textContent = items.length + ' 个桶 · ' + items.reduce((n, it) => n + it.count, 0) + ' 张';
+  if (!items.length) { grid.innerHTML = '<div style="color:var(--text-dim);padding:36px 0;">还没有图片记忆</div>'; return; }
+  grid.innerHTML = items.map(it => `<div class="album-card" onclick="openAlbum('${escAttr(it.id)}')">
+      <img loading="lazy" src="${BASE}/api/album/${encodeURIComponent(it.id)}/0" alt="">
+      <div class="cap">${esc((it.created || '').slice(0, 10))}${it.count > 1 ? ' · ' + it.count + ' 张' : ''}<br>${esc((it.keywords || []).join(' / '))}</div>
+    </div>`).join('');
+}
+function openAlbum(id) {
+  const it = _albumItems.find(x => x.id === id);
+  if (!it) return;
+  let imgs = '';
+  for (let i = 0; i < it.count; i++) imgs += `<img loading="lazy" src="${BASE}/api/album/${encodeURIComponent(it.id)}/${i}" alt="">`;
+  document.getElementById('album-lightbox-images').innerHTML = imgs;
+  document.getElementById('album-lightbox-meta').textContent = (it.created || '') + ' · ' + it.id;
+  document.getElementById('album-lightbox-text').textContent = it.content || '';
+  document.getElementById('album-lightbox').style.display = 'flex';
+}
+function closeAlbum() { document.getElementById('album-lightbox').style.display = 'none'; }
+
+// ---------- 原文 ----------
+let _rawMode = null;
+async function loadRawDays() {
+  const sel = document.getElementById('raw-day');
+  try {
+    const r = await fetch(BASE + '/api/raw/days');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const days = (await r.json()).days || [];
+    const total = days.reduce((n, d) => n + d.n, 0);
+    document.getElementById('raw-stats').textContent = days.length ? days.length + ' 天 · ' + total + ' 句' : '';
+    if (!days.length) {
+      sel.innerHTML = '';
+      document.getElementById('raw-list').innerHTML = '<div style="color:var(--text-dim);padding:36px 0;text-align:center;">原文抽屉还是空的</div>';
+      return;
+    }
+    const keep = sel.value;
+    sel.innerHTML = days.map(d => `<option value="${escAttr(d.day)}">${esc(d.day)} · ${d.n} 句</option>`).join('');
+    if (keep && days.some(d => d.day === keep)) sel.value = keep;
+    if (!_rawMode) loadRawDay(0);
+  } catch (e) {
+    document.getElementById('raw-list').innerHTML = '<div style="color:var(--negative);padding:18px;">加载失败：' + esc(e.message) + '</div>';
+  }
+}
+function _rawLine(row, cls) {
+  const who = row.speaker === '知知' ? 'zhizhi' : 'grey';
+  const think = document.getElementById('raw-thinking').checked && row.thinking ? `<span class="think">${esc(row.thinking)}</span>` : '';
+  return `<div class="raw-line ${who} ${cls || ''}"><span class="who">${esc((row.at || '').slice(11, 16))} ${esc(row.speaker)}</span>${esc(row.text)}${think}</div>`;
+}
+function rerenderRaw() {
+  if (!_rawMode) return;
+  if (_rawMode.kind === 'day') renderRawDay(_rawMode.data); else renderRawSearch(_rawMode.data);
+}
+async function loadRawDay(page) {
+  const day = document.getElementById('raw-day').value;
+  if (!day) return;
+  const list = document.getElementById('raw-list');
+  list.innerHTML = '<div style="color:var(--text-dim);padding:24px;">加载中…</div>';
+  try {
+    const r = await fetch(BASE + '/api/raw/day?date=' + encodeURIComponent(day) + '&page=' + page);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    _rawMode = { kind: 'day', data: d };
+    renderRawDay(d);
+  } catch (e) {
+    list.innerHTML = '<div style="color:var(--negative);padding:18px;">加载失败：' + esc(e.message) + '</div>';
+  }
+}
+function renderRawDay(d) {
+  let html = '', conv = null;
+  (d.rows || []).forEach(row => {
+    if (row.conv_uuid !== conv) { conv = row.conv_uuid; html += `<div class="raw-conv">— ${esc(row.conv_name || '未命名对话')} —</div>`; }
+    html += _rawLine(row);
+  });
+  document.getElementById('raw-list').innerHTML = html || '<div style="color:var(--text-dim);padding:24px;">这天没有原话</div>';
+  const pages = Math.max(1, Math.ceil(d.total / d.page_size));
+  const pager = document.getElementById('raw-pager');
+  pager.innerHTML = pages > 1 ? `${d.page > 0 ? `<button class="btn-secondary" onclick="loadRawDay(${d.page - 1})">上一页</button>` : ''}
+    <span style="font-size:12px;color:var(--text-dim);align-self:center;">${d.page + 1} / ${pages}</span>
+    ${d.page + 1 < pages ? `<button class="btn-secondary" onclick="loadRawDay(${d.page + 1})">下一页</button>` : ''}` : '';
+}
+async function searchRaw() {
+  const q = document.getElementById('raw-query').value.trim();
+  if (q.length < 2) return;
+  const list = document.getElementById('raw-list');
+  list.innerHTML = '<div style="color:var(--text-dim);padding:24px;">搜索中…</div>';
+  const thinking = document.getElementById('raw-thinking').checked ? '1' : '';
+  const speaker = document.getElementById('raw-speaker').value;
+  try {
+    const r = await fetch(BASE + '/api/raw/search?q=' + encodeURIComponent(q) + '&thinking=' + thinking + '&speaker=' + encodeURIComponent(speaker));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    _rawMode = { kind: 'search', data: d };
+    renderRawSearch(d);
+  } catch (e) {
+    list.innerHTML = '<div style="color:var(--negative);padding:18px;">搜索失败：' + esc(e.message) + '</div>';
+  }
+}
+function renderRawSearch(d) {
+  const hits = d.hits || [];
+  document.getElementById('raw-pager').innerHTML = '';
+  document.getElementById('raw-list').innerHTML = hits.length ? hits.map(h => `<div class="raw-conv">${esc(h.day)} · ${esc(h.conv_name || '未命名对话')}</div>` +
+      (h.before ? `<div class="raw-ctx">${_rawLine(h.before)}</div>` : '') + _rawLine(h, 'hit') +
+      (h.after ? `<div class="raw-ctx">${_rawLine(h.after)}</div>` : '')).join('')
+    : `<div style="color:var(--text-dim);padding:24px;">原话里没搜到「${esc(d.q)}」</div>`;
 }
 
 async function loadLetters() {
