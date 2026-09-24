@@ -132,6 +132,32 @@ def _created_sort_key(bucket: dict) -> tuple[float, str]:
     return stamp, str(bucket.get("id") or "")
 
 
+async def album_items() -> list[dict]:
+    """Every non-deleted image bucket, newest first, for the dashboard album."""
+    items = []
+    for bucket in await rt.bucket_mgr.list_all(include_archive=True):
+        meta = bucket.get("metadata") or {}
+        if meta.get("deleted_at"):
+            continue
+        media = [
+            entry for entry in (meta.get("media") or [])
+            if isinstance(entry, dict) and entry.get("path")
+        ]
+        if not media:
+            continue
+        items.append({
+            "id": str(bucket.get("id") or ""),
+            "created": str(meta.get("created_at") or meta.get("created") or ""),
+            "name": _clean_text(meta.get("name")),
+            "content": str(bucket.get("content") or ""),
+            "count": len(media),
+            "keywords": _keywords_for_bucket(bucket),
+            "_sort": _created_sort_key(bucket),
+        })
+    items.sort(key=lambda item: item.pop("_sort"), reverse=True)
+    return items
+
+
 async def catalog(query: str = "") -> str:
     """List every non-deleted image bucket, optionally filtered by keywords."""
     raw_query = _SPACE.sub(" ", str(query or "").strip())

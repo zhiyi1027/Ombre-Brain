@@ -94,6 +94,13 @@ class RawArchive:
             ).fetchone()
         return dict(row)
 
+    def days(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT day, COUNT(*) n FROM raw_messages GROUP BY day ORDER BY day"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def day(self, day: str, offset: int = 0, limit: int = 40) -> tuple[list[dict[str, Any]], int]:
         with self._connect() as conn:
             total = conn.execute("SELECT COUNT(*) FROM raw_messages WHERE day=?", (day,)).fetchone()[0]
