@@ -146,6 +146,7 @@ _LARGE_UPLOAD_PATHS = {
     "/api/import/preflight",
     "/api/import/upload",
     "/api/migrate/upload",
+    "/api/raw/import",  # 自带 32MB 上限，见 web/raw_import.py
 }
 
 
