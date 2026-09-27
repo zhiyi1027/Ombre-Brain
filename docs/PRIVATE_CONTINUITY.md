@@ -45,16 +45,21 @@ python3 scripts/sync-private-continuity.py \
 上传器先读取远端 revision，再带条件写入；两个客户端同时修改时，后写者收到
 冲突错误而不是静默覆盖。写入响应和内部 GET 都不回显私有正文。
 
-### 二号机自动上传
+### 双机自动上传
 
-在二号机的 root 终端运行一次安装脚本。它先用现有
+在每台机器的 root 终端各运行一次安装脚本。它先用本机现有的
 `/home/node/grey-ws/.ob-daily-note-token` 验证私有接口，再把上传器复制到 CC
-的脚本目录，做一次初始同步，最后安装每分钟运行的 cron。令牌不会进入命令行、
-cron 文件或日志。
+的脚本目录，做一次初始同步，最后安装每分钟运行的 root cron；两台机器分别
+标记 `cc-grey1` 和 `cc-grey2`。cron 同步写入持久卷的 `crontab.live`，容器重启
+时会由现有 boot/setup 流程恢复。令牌不会进入命令行、cron 文件或日志。
 
 ```bash
 sh /home/node/codex-ws/grey-codex/.worktrees/ob-upstream-backports/scripts/install-private-continuity-sync.sh
 ```
+
+一号机如果没有这份 OB 仓库，先把当前 `main` 克隆到持久卷，例如
+`/home/node/ob-private-sync`，再从该目录执行同名安装脚本。二号机从旧版安装
+升级时，也要重新运行一次脚本，迁移旧的 `/etc/cron.d` 规则到持久 crontab。
 
 CC 仍要在确认有未解决冲突时建立或更新
 `/home/node/grey-ws/.conflict-unresolved`；上传、后续修改同步和新窗口的
