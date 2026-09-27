@@ -45,6 +45,30 @@ python3 scripts/sync-private-continuity.py \
 上传器先读取远端 revision，再带条件写入；两个客户端同时修改时，后写者收到
 冲突错误而不是静默覆盖。写入响应和内部 GET 都不回显私有正文。
 
+### 二号机自动上传
+
+在二号机的 root 终端运行一次安装脚本。它先用现有
+`/home/node/grey-ws/.ob-daily-note-token` 验证私有接口，再把上传器复制到 CC
+的脚本目录，做一次初始同步，最后安装每分钟运行的 cron。令牌不会进入命令行、
+cron 文件或日志。
+
+```bash
+sh /home/node/codex-ws/grey-codex/.worktrees/ob-upstream-backports/scripts/install-private-continuity-sync.sh
+```
+
+CC 仍要在确认有未解决冲突时建立或更新
+`/home/node/grey-ws/.conflict-unresolved`；上传、后续修改同步和新窗口的
+`breath()` 提醒会自动完成。定时任务只在本地正文改变时上传。文件消失只清理
+本地同步标记，**不会**替双方宣告和好，也不会删除 OB 中的状态。双方确认解决时，
+用 Dashboard 的「双方确认已解决」或明确运行上面的 `--resolve --confirm RESOLVE`，
+并删除本地文件。Dashboard 已解决而旧文件仍在时，定时任务不会把它重新打开。
+
+自动同步的状态只有正文 SHA-256 和 OB revision，保存在 root 可读的
+`/home/node/grey-ws/.conflict-sync-state.json`。若 Dashboard 与本地文件各自修改，
+定时任务拒绝覆盖并在 `/home/node/grey-ws/logs/private-continuity-sync.log` 留错误；
+需人工对照后决定保留哪一版。当前 CC 会话不会因为上传立即重新读取 OB，
+新窗口的 `breath()` 会读到它。
+
 同步地址默认必须使用 HTTPS；`http://localhost`、`127.0.0.1`、`::1` 可用于本机
 回环调试。其他明文 HTTP 会被拒绝，确有受控内网需求时才显式添加
 `--allow-insecure-http`。
