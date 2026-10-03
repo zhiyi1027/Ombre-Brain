@@ -203,28 +203,6 @@ def register(mcp) -> None:
             headers=_NO_STORE,
         )
 
-    @mcp.custom_route(
-        "/internal/private-continuity/conflict",
-        methods=["PUT"],
-    )
-    async def ingest_private_conflict(request):
-        if not _internal_authorized(request):
-            return JSONResponse(
-                {"error": "Unauthorized"},
-                status_code=401,
-                headers=_NO_STORE,
-            )
-        return await _upsert(request, internal=True)
+    # 10-03：抽屉只能经 quarrel 工具（要她原话）或登录后的 Dashboard 改；
+    # 带钥匙的内部接口只剩 GET 查开没开，不能盲写、不能不带原话就关。
 
-    @mcp.custom_route(
-        "/internal/private-continuity/conflict",
-        methods=["DELETE"],
-    )
-    async def resolve_private_conflict(request):
-        if not _internal_authorized(request):
-            return JSONResponse(
-                {"error": "Unauthorized"},
-                status_code=401,
-                headers=_NO_STORE,
-            )
-        return await _resolve(request, internal=True)

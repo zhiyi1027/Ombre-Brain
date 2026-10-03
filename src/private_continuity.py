@@ -26,6 +26,9 @@ DEFAULT_MAX_CONTENT_CHARS = 12_000
 DEFAULT_MAX_BREATH_TOKENS = 1_800
 MAX_DOCUMENT_BYTES = 1 * 1024 * 1024
 MAX_SOURCE_CLIENT_CHARS = 32
+# Kept only in the recovery snapshot, never in the open drawer, so it cannot
+# push a full conflict over the breath budget.
+MAX_RESOLUTION_NOTE_CHARS = 600
 _CLIENT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 
 
@@ -211,8 +214,11 @@ class PrivateContinuityService:
         *,
         reason: str,
         archived_at: str,
+        note: str = "",
     ) -> None:
         metadata, content = current
+        if note:
+            content = f"{content}\n\n{note}"
         archived = dict(metadata)
         archived.update(
             {
@@ -338,6 +344,7 @@ class PrivateContinuityService:
         *,
         source_client: Any = "unknown",
         expected_revision: Any = None,
+        resolution_note: Any = "",
     ) -> dict[str, Any]:
         if not self.enabled:
             raise PrivateContinuityError("private continuity is disabled")
@@ -348,7 +355,10 @@ class PrivateContinuityService:
             self._assert_expected(current, expected_revision)
             if current is None:
                 raise PrivateContinuityError("no unresolved conflict exists")
-            self._archive_current(current, reason="resolved", archived_at=now)
+            note = str(resolution_note or "").strip()[:MAX_RESOLUTION_NOTE_CHARS]
+            self._archive_current(
+                current, reason="resolved", archived_at=now, note=note
+            )
             self.active_path.unlink()
             return {
                 "ok": True,

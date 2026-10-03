@@ -252,27 +252,18 @@ async def test_internal_route_uses_token_revision_and_never_echoes_body(
     private_web.register(mcp)
 
     get_handler = mcp.routes[("GET", "/internal/private-continuity/conflict")]
-    put_handler = mcp.routes[("PUT", "/internal/private-continuity/conflict")]
+    assert ("PUT", "/internal/private-continuity/conflict") not in mcp.routes
+    assert ("DELETE", "/internal/private-continuity/conflict") not in mcp.routes
     denied = await get_handler(JsonRequest())
+    service.upsert(content="不能从钥匙接口读到的冲突正文", source_client="cc", expected_revision=0)
     state = await get_handler(
         JsonRequest(headers={"authorization": "Bearer secret"})
     )
-    accepted = await put_handler(
-        JsonRequest(
-            {
-                "content": "不能在写入响应里回显的冲突正文",
-                "source_client": "cc",
-                "expected_revision": 0,
-            },
-            headers={"authorization": "Bearer secret"},
-        )
-    )
 
     assert denied.status_code == 401
-    assert json.loads(state.body)["revision"] == 0
-    assert accepted.status_code == 200
-    assert json.loads(accepted.body)["revision"] == 1
-    assert "不能在" not in accepted.body.decode("utf-8")
+    assert json.loads(state.body)["revision"] == 1
+    assert json.loads(state.body)["open"] is True
+    assert "不能从" not in state.body.decode("utf-8")
 
 
 @pytest.mark.asyncio
@@ -337,38 +328,3 @@ def test_dashboard_contains_private_continuity_surface():
     assert "双方确认已解决" in dashboard
     assert "expected_revision" in dashboard
     assert "恢复上一版本" in dashboard
-
-
-def _load_sync_module():
-    path = ROOT / "scripts" / "sync-private-continuity.py"
-    spec = importlib.util.spec_from_file_location("sync_private_continuity", path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_sync_requires_https_except_loopback_or_explicit_override():
-    module = _load_sync_module()
-    assert module._validate_url(
-        "https://ob.example/internal/private-continuity/conflict",
-        allow_insecure_http=False,
-    ).startswith("https://")
-    assert module._validate_url(
-        "http://127.0.0.1:8282/internal/private-continuity/conflict",
-        allow_insecure_http=False,
-    ).startswith("http://127.0.0.1")
-    with pytest.raises(module.SyncError, match="cleartext HTTP"):
-        module._validate_url(
-            "http://ob.example/internal/private-continuity/conflict",
-            allow_insecure_http=False,
-        )
-    assert module._validate_url(
-        "http://ob.example/internal/private-continuity/conflict",
-        allow_insecure_http=True,
-    ).startswith("http://")
-    with pytest.raises(module.SyncError, match="must not contain credentials"):
-        module._validate_url(
-            "https://token@ob.example/internal/private-continuity/conflict",
-            allow_insecure_http=False,
-        )

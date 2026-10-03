@@ -8,9 +8,9 @@ DecayEngine / EmbeddingEngine / ImportEngine，把它们注入 tools._runtime �
 web._shared，然后以 @mcp.tool() 注册薄封装（真正的实现在 src/tools/<工具>/ 下面）。
 
 关键行为：
-- 启动后暴露 18 个 MCP 工具：breath/breath_search/breath_advanced/hold/grow/
+- 启动后暴露 19 个 MCP 工具：breath/breath_search/breath_advanced/hold/grow/
   trace/anchor/release/pulse/plan/letter_write/letter_read/dream/I/media_catalog/
-  media_read/raw_day/raw_search；每个入口
+  media_read/raw_day/raw_search/quarrel；每个入口
       ≤ 10 行，只负责转发。breath 拆成 breath()(0 参数)+breath_search(4 参数)+
   breath_advanced(9 参数) 三级，是因为 claude.ai 按需加载工具时会跳过参数
   复杂的工具，全塞一个 breath() 会导致它常年加载不上（见 issue #17）。
@@ -24,7 +24,7 @@ web._shared，然后以 @mcp.tool() 注册薄封装（真正的实现在 src/too
 - 不写 HTTP 路由处理（全在 web/* 下）；不写 LLM prompt（dehydrator 负责）
 - 不直接读写桶文件（bucket_manager 负责）
 
-对外暴露：mcp/mcp_extra 两个实例 + 18 个 @mcp*.tool() 函数；HTTP 路由在 src/web/*
+对外暴露：mcp/mcp_extra 两个实例 + 19 个 @mcp*.tool() 函数；HTTP 路由在 src/web/*
 ========================================
 """
 
@@ -939,6 +939,31 @@ async def I(
         _t_i.dispatch(content=content, aspect=aspect, read=read, limit=limit),
         op="I",
         args={"content_len": len(content or ""), "aspect": aspect, "read": read, "limit": limit},
+    )
+
+
+@mcp_extra.tool()
+async def quarrel(
+    action: Optional[str] = "read",
+    content: Optional[str] = "",
+    expected_revision: Optional[int] = None,
+    her_words: Optional[str] = "",
+    source_client: Optional[str] = "mcp",
+) -> str:
+    """没吵完的架（私密抽屉，只放一份）。action=read 读原文；write 新建或改写整份(改写先 read，带 expected_revision 防两边互相覆盖)；resolve 和好关抽屉——必须把她亲口同意和好的原话填进 her_words，没有就不能关，自己不能单方面关。内容写清：发生了什么、我错在哪、她需要我懂什么、各自最疼的地方、还没说出口的。抽屉不进搜索/dream/衰减，breath 睁眼会带出原文。source_client 填自己是哪扇门(如 cc-grey1 / home-grey1)。"""
+    from tools.quarrel import quarrel as _quarrel
+    return await _with_notice(
+        asyncio.to_thread(
+            _quarrel, private_continuity, action=action, content=content,
+            expected_revision=expected_revision, her_words=her_words,
+            source_client=source_client,
+        ),
+        op="quarrel",
+        args={
+            "action": action, "content_len": len(content or ""),
+            "expected_revision": expected_revision,
+            "her_words_len": len(her_words or ""), "source_client": source_client,
+        },
     )
 
 

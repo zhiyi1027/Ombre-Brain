@@ -43,6 +43,7 @@ EXPECTED_TOOLS = {
     "media_read",
     "raw_day",
     "raw_search",
+    "quarrel",
 }
 
 EXPECTED_TOOL_PROPERTIES = {
@@ -117,6 +118,7 @@ EXPECTED_TOOL_PROPERTIES = {
     "media_read": {"bucket_id", "index"},
     "raw_day": {"date", "page", "thinking"},
     "raw_search": {"query", "max_results", "thinking", "speaker"},
+    "quarrel": {"action", "content", "expected_revision", "her_words", "source_client"},
 }
 
 EXPECTED_REQUIRED_PROPERTIES = {

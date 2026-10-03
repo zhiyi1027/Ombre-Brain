@@ -30,43 +30,19 @@ CC、Codex 和未来聊天前端之间共享的生命周期状态。
   需要 JSON body 中的 `expected_revision`。
 - `POST /api/private-continuity/conflict/restore?confirm=true`：误解决时恢复最近快照。
 
-## CC/Codex 文件同步
+## 模型侧：quarrel 工具（2026-10-03 起唯一写入口）
 
-`scripts/sync-private-continuity.py` 默认读取
-`/home/node/grey-ws/.conflict-unresolved`。普通运行只会创建或更新远端状态：本地
-文件缺失绝不会被解释为“冲突已解决”。明确解决必须运行：
+抽屉只放在 OB，不再有本地 `.conflict-unresolved` 文件、文件同步器和冲突钩子。
+CC 和 Home SDK 都用 MCP 工具 `quarrel`：
 
-```bash
-python3 scripts/sync-private-continuity.py \
-  --url https://your-ombre.example/internal/private-continuity/conflict \
-  --resolve --confirm RESOLVE
-```
+- `quarrel(action="read")`：读当前没和好的架。
+- `quarrel(action="write", content=..., expected_revision=...)`：新建或改写整份；
+  抽屉已有内容时必须先 read 并带上版本号，两扇门不会互相覆盖。
+- `quarrel(action="resolve", her_words=..., expected_revision=...)`：只有在她亲口
+  同意和好后才能关，原话写进「上一份」恢复快照（不占抽屉正文长度），关和存在同一把锁里完成。
 
-上传器先读取远端 revision，再带条件写入；两个客户端同时修改时，后写者收到
-冲突错误而不是静默覆盖。写入响应和内部 GET 都不回显私有正文。
-
-### 双机自动上传
-
-在每台机器的 root 终端各运行一次安装脚本。它先用本机现有的
-`/home/node/grey-ws/.ob-daily-note-token` 验证私有接口，再把上传器复制到 CC
-的脚本目录，做一次初始同步，最后安装每分钟运行的 root cron；两台机器分别
-标记 `cc-grey1` 和 `cc-grey2`。cron 同步写入持久卷的 `crontab.live`，容器重启
-时会由现有 boot/setup 流程恢复。令牌不会进入命令行、cron 文件或日志。
-
-```bash
-sh /home/node/codex-ws/grey-codex/.worktrees/ob-upstream-backports/scripts/install-private-continuity-sync.sh
-```
-
-一号机如果没有这份 OB 仓库，先把当前 `main` 克隆到持久卷，例如
-`/home/node/ob-private-sync`，再从该目录执行同名安装脚本。二号机从旧版安装
-升级时，也要重新运行一次脚本，迁移旧的 `/etc/cron.d` 规则到持久 crontab。
-
-CC 仍要在确认有未解决冲突时建立或更新
-`/home/node/grey-ws/.conflict-unresolved`；上传、后续修改同步和新窗口的
-`breath()` 提醒会自动完成。定时任务只在本地正文改变时上传。文件消失只清理
-本地同步标记，**不会**替双方宣告和好，也不会删除 OB 中的状态。双方确认解决时，
-用 Dashboard 的「双方确认已解决」或明确运行上面的 `--resolve --confirm RESOLVE`，
-并删除本地文件。Dashboard 已解决而旧文件仍在时，定时任务不会把它重新打开。
+带钥匙的 `/internal/private-continuity/conflict` 只剩 `GET`：只回答开没开和版本号，
+不回显正文，也不能写或关。早安 nudge 用它决定要不要先摊开冲突。
 
 自动同步的状态只有正文 SHA-256 和 OB revision，保存在 root 可读的
 `/home/node/grey-ws/.conflict-sync-state.json`。若 Dashboard 与本地文件各自修改，
