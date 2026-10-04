@@ -16,6 +16,7 @@ import hmac
 import io
 import json
 import os
+import re
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -27,6 +28,7 @@ from . import _shared as sh
 MAX_BODY = 32 * 1024 * 1024
 MAX_UNZIPPED = 64 * 1024 * 1024
 MAX_ROWS = 200_000
+LEGACY_PART = re.compile(r"^home-msg-\d+-part-\d+$")
 
 
 def _token_ok(request: Request) -> bool | None:
@@ -43,7 +45,7 @@ def _parse(body: bytes) -> list[dict]:
     if len(raw) > MAX_UNZIPPED:
         raise ValueError("unzipped payload too large")
     rows = []
-    for line in raw.decode("utf-8").splitlines():
+    for line in raw.decode("utf-8").split("\n"):
         if line.strip():
             rows.append(json.loads(line))
             if len(rows) > MAX_ROWS:
@@ -52,8 +54,7 @@ def _parse(body: bytes) -> list[dict]:
 
 
 def register(mcp) -> None:
-    @mcp.custom_route("/api/raw/import", methods=["POST"])
-    async def api_raw_import(request: Request) -> Response:
+    async def receive(request: Request, *, fragments: bool) -> Response:
         ok = _token_ok(request)
         if ok is None:
             return JSONResponse({"error": "not found"}, status_code=404)
@@ -73,8 +74,25 @@ def register(mcp) -> None:
             return JSONResponse({"error": f"bad payload: {type(exc).__name__}"}, status_code=400)
         source = request.headers.get("x-raw-source", "")[:80]
         archive = get_archive(sh.config)
-        result = await asyncio.to_thread(archive.import_rows, rows, source)
+        if not fragments and any(
+            "fragment_index" in row or LEGACY_PART.fullmatch(str(row.get("msg_uuid", "")))
+            for row in rows if isinstance(row, dict)
+        ):
+            return JSONResponse({"error": "fragments require /api/raw/import-v2"}, status_code=409)
+        try:
+            importer = archive.import_rows_v2 if fragments else archive.import_rows
+            result = await asyncio.to_thread(importer, rows, source)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
         return JSONResponse({"ok": True, **result, "stats": await asyncio.to_thread(archive.stats)})
+
+    @mcp.custom_route("/api/raw/import", methods=["POST"])
+    async def api_raw_import(request: Request) -> Response:
+        return await receive(request, fragments=False)
+
+    @mcp.custom_route("/api/raw/import-v2", methods=["POST"])
+    async def api_raw_import_v2(request: Request) -> Response:
+        return await receive(request, fragments=True)
 
     @mcp.custom_route("/api/raw/delete-source", methods=["POST"])
     async def api_raw_delete_source(request: Request) -> Response:

@@ -22,6 +22,8 @@ import os
 import re
 import sqlite3
 import threading
+import hashlib
+import json
 from typing import Any, Iterable
 
 _SCHEMA = """
@@ -38,10 +40,32 @@ CREATE TABLE IF NOT EXISTS raw_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_raw_day_at ON raw_messages(day, at);
 CREATE INDEX IF NOT EXISTS idx_raw_conv_at ON raw_messages(conv_uuid, at);
+CREATE TABLE IF NOT EXISTS raw_message_parts (
+    msg_uuid TEXT NOT NULL,
+    digest TEXT NOT NULL,
+    part_index INTEGER NOT NULL,
+    part_count INTEGER NOT NULL,
+    conv_uuid TEXT NOT NULL,
+    conv_name TEXT NOT NULL,
+    speaker TEXT NOT NULL,
+    at TEXT NOT NULL,
+    day TEXT NOT NULL,
+    text TEXT NOT NULL,
+    thinking TEXT NOT NULL,
+    source TEXT NOT NULL,
+    PRIMARY KEY (msg_uuid, part_index)
+);
 """
 _DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _FIELDS = ("msg_uuid", "conv_uuid", "conv_name", "speaker", "at", "day", "text", "thinking")
 _SPEAKERS = {"知知", "顾凛"}
+_LEGACY_HOME_ID = re.compile(r"^home-msg-\d+$")
+_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _content_digest(text: str, thinking: str) -> str:
+    body = json.dumps([text, thinking], ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
 class RawArchive:
@@ -85,11 +109,79 @@ class RawArchive:
                     added += 1
         return {"added": added, "updated": updated, "skipped": skipped}
 
+    def import_rows_v2(self, rows: Iterable[dict[str, Any]], source: str = "") -> dict[str, int]:
+        """Receive complete messages or staged fragments; expose only assembled originals."""
+        added = updated = pending = 0
+        with self._lock, self._connect() as conn:
+            for row in rows:
+                clean = _clean_row(row)
+                if clean is None:
+                    raise ValueError("invalid raw message")
+                has_part = any(key in row for key in ("fragment_index", "fragment_count", "fragment_digest"))
+                if not has_part:
+                    conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=?", (clean["msg_uuid"],))
+                    _delete_legacy_parts(conn, clean["msg_uuid"])
+                    existed = _upsert(conn, clean, source)
+                    added += not existed
+                    updated += existed
+                    continue
+
+                try:
+                    index = row["fragment_index"]
+                    count = row["fragment_count"]
+                    digest = row["fragment_digest"]
+                    if (type(index) is not int or type(count) is not int
+                            or not 0 <= index < count <= 100_000
+                            or not isinstance(digest, str) or not _DIGEST.fullmatch(digest)):
+                        raise ValueError
+                except (KeyError, ValueError, TypeError):
+                    raise ValueError("invalid raw message fragment") from None
+
+                if index == 0:
+                    # 每次完整重送都从第 0 段开始；旧布局即使正文 digest 相同也不能混拼。
+                    conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=?", (clean["msg_uuid"],))
+                else:
+                    conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=? AND digest<>?",
+                                 (clean["msg_uuid"], digest))
+                conn.execute(
+                    "INSERT INTO raw_message_parts "
+                    "(msg_uuid,digest,part_index,part_count,conv_uuid,conv_name,speaker,at,day,text,thinking,source) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(msg_uuid,part_index) DO UPDATE SET "
+                    "digest=excluded.digest,part_count=excluded.part_count,conv_uuid=excluded.conv_uuid,"
+                    "conv_name=excluded.conv_name,speaker=excluded.speaker,at=excluded.at,day=excluded.day,"
+                    "text=excluded.text,thinking=excluded.thinking,source=excluded.source",
+                    (clean["msg_uuid"], digest, index, count, *(clean[f] for f in _FIELDS if f != "msg_uuid"), source[:80]),
+                )
+                parts = conn.execute(
+                    "SELECT * FROM raw_message_parts WHERE msg_uuid=? ORDER BY part_index",
+                    (clean["msg_uuid"],),
+                ).fetchall()
+                if len(parts) != count:
+                    pending += 1
+                    continue
+                if any(part["part_index"] != i or part["part_count"] != count or part["digest"] != digest
+                       or any(part[f] != clean[f] for f in ("conv_uuid", "conv_name", "speaker", "at", "day"))
+                       for i, part in enumerate(parts)):
+                    raise ValueError("inconsistent raw message fragments")
+                assembled = dict(clean)
+                assembled["text"] = "".join(part["text"] for part in parts)
+                assembled["thinking"] = "".join(part["thinking"] for part in parts)
+                if _content_digest(assembled["text"], assembled["thinking"]) != digest:
+                    raise ValueError("raw message fragment digest mismatch")
+                _delete_legacy_parts(conn, clean["msg_uuid"])
+                existed = _upsert(conn, assembled, source)
+                conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=?", (clean["msg_uuid"],))
+                added += not existed
+                updated += existed
+        return {"added": added, "updated": updated, "pending": pending}
+
     def delete_source(self, source: str) -> int:
         """撤回某一次导入（按导入时带的 source 标签），给灌错的那批反悔用。"""
         if not source:
             return 0
         with self._lock, self._connect() as conn:
+            conn.execute("DELETE FROM raw_message_parts WHERE source=?", (source,))
             return conn.execute("DELETE FROM raw_messages WHERE source=?", (source,)).rowcount
 
     # ---------- 读 ----------
@@ -177,6 +269,23 @@ def _clean_row(row: Any) -> dict[str, str] | None:
     clean["conv_uuid"] = clean["conv_uuid"][:80]
     clean["conv_name"] = clean["conv_name"][:200]
     return clean
+
+
+def _upsert(conn: sqlite3.Connection, clean: dict[str, str], source: str) -> bool:
+    existed = conn.execute("SELECT 1 FROM raw_messages WHERE msg_uuid=?", (clean["msg_uuid"],)).fetchone()
+    conn.execute(
+        "INSERT OR REPLACE INTO raw_messages "
+        "(msg_uuid, conv_uuid, conv_name, speaker, at, day, text, thinking, source) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        tuple(clean[f] for f in _FIELDS) + (source[:80],),
+    )
+    return bool(existed)
+
+
+def _delete_legacy_parts(conn: sqlite3.Connection, msg_uuid: str) -> None:
+    if _LEGACY_HOME_ID.fullmatch(msg_uuid):
+        conn.execute("DELETE FROM raw_messages WHERE msg_uuid GLOB ?",
+                     (msg_uuid + "-part-[0-9]*",))
 
 
 _instances: dict[str, RawArchive] = {}

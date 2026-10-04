@@ -45,6 +45,63 @@ def test_import_is_idempotent_and_rejects_bad_rows(archive):
     assert archive.stats()["n"] == 3
 
 
+def _fragments(text="前半X" + "Y后半", msg_uuid="home-msg-9"):
+    base = rows()[0] | {"msg_uuid": msg_uuid, "text": text, "thinking": ""}
+    split = len(text) // 2
+    digest = raw_archive._content_digest(text, "")
+    return [base | {"text": part, "fragment_index": index, "fragment_count": 2,
+                    "fragment_digest": digest}
+            for index, part in enumerate((text[:split], text[split:]))]
+
+
+def test_v2_fragments_become_one_searchable_message_only_when_complete(archive):
+    first, second = _fragments()
+    assert archive.import_rows_v2([first])["pending"] == 1
+    assert archive.stats()["n"] == 0
+    assert archive.rows_for_days(["2026-05-18"]) == []
+    assert archive.import_rows_v2([second])["added"] == 1
+    assert archive.stats()["n"] == 1
+    assert archive.rows_for_days(["2026-05-18"])[0]["text"] == "前半XY后半"
+    assert archive.search("XY")[0]["text"] == "前半XY后半"
+    assert archive.import_rows_v2([first, second])["updated"] == 1
+    assert archive.stats()["n"] == 1
+
+
+def test_v2_shorter_revision_clears_legacy_parts(archive):
+    first, second = _fragments(msg_uuid="home-msg-7")
+    archive.import_rows([first | {"msg_uuid": "home-msg-7", "text": "旧开头"},
+                         second | {"msg_uuid": "home-msg-7-part-000002", "text": "旧结尾"}])
+    assert archive.stats()["n"] == 2
+    archive.import_rows_v2([rows()[0] | {"msg_uuid": "home-msg-7", "text": "新短句"}])
+    assert archive.stats()["n"] == 1
+    assert archive.rows_for_days(["2026-05-18"])[0]["text"] == "新短句"
+    assert archive.search("旧结尾") == []
+
+
+def test_v2_rejects_inconsistent_fragments_without_exposing_half_message(archive):
+    first, second = _fragments()
+    archive.import_rows_v2([first])
+    with pytest.raises(ValueError, match="digest mismatch"):
+        archive.import_rows_v2([second | {"text": "篡改"}])
+    assert archive.stats()["n"] == 0
+
+
+def test_v2_new_first_fragment_discards_an_old_partial_layout(archive):
+    first, second = _fragments()
+    archive.import_rows_v2([first])
+    text = first["text"] + second["text"]
+    digest = raw_archive._content_digest(text, "")
+    new_parts = [first | {"text": text[:2], "fragment_index": 0, "fragment_count": 3,
+                          "fragment_digest": digest},
+                 first | {"text": text[2:4], "fragment_index": 1, "fragment_count": 3,
+                          "fragment_digest": digest},
+                 first | {"text": text[4:], "fragment_index": 2, "fragment_count": 3,
+                          "fragment_digest": digest}]
+    archive.import_rows_v2(new_parts)
+    assert archive.stats()["n"] == 1
+    assert archive.rows_for_days(["2026-05-18"])[0]["text"] == text
+
+
 @pytest.mark.asyncio
 async def test_raw_day_pages_by_day_and_marks_itself_as_data(archive):
     archive.import_rows(rows())
@@ -129,6 +186,36 @@ def test_import_route_checks_token_and_imports(tmp_path, monkeypatch):
     assert ok.json()["added"] == 3 and ok.json()["stats"]["n"] == 3
     bad = client.post("/api/raw/import", content=b"not gzip", headers={"X-Raw-Import-Token": "sesame"})
     assert bad.status_code == 400
+
+
+def test_v2_route_requires_token_and_assembles_across_requests(tmp_path, monkeypatch):
+    monkeypatch.setenv("OB_RAW_IMPORT_TOKEN", "sesame")
+    client = _client(tmp_path, monkeypatch)
+    first, second = _fragments()
+
+    def payload(part):
+        return gzip.compress(json.dumps(part, ensure_ascii=False).encode())
+
+    headers = {"X-Raw-Import-Token": "sesame"}
+    assert client.post("/api/raw/import-v2", content=payload(first)).status_code == 401
+    assert client.post("/api/raw/import", content=payload(first), headers=headers).status_code == 409
+    legacy = first | {"msg_uuid": "home-msg-9-part-000002"}
+    assert client.post("/api/raw/import", content=payload(legacy), headers=headers).status_code == 409
+    one = client.post("/api/raw/import-v2", content=payload(first), headers=headers)
+    assert one.status_code == 200 and one.json()["stats"]["n"] == 0
+    two = client.post("/api/raw/import-v2", content=payload(second), headers=headers)
+    assert two.status_code == 200 and two.json()["stats"]["n"] == 1
+
+
+def test_v2_route_preserves_unicode_line_separator_inside_original(tmp_path, monkeypatch):
+    monkeypatch.setenv("OB_RAW_IMPORT_TOKEN", "sesame")
+    client = _client(tmp_path, monkeypatch)
+    original = rows()[0] | {"text": "上句\u2028下句"}
+    payload = gzip.compress(json.dumps(original, ensure_ascii=False).encode())
+    response = client.post("/api/raw/import-v2", content=payload,
+                           headers={"X-Raw-Import-Token": "sesame"})
+    assert response.status_code == 200
+    assert get_archive({"buckets_dir": str(tmp_path / "vault")}).day("2026-05-18")[0][0]["text"] == "上句\u2028下句"
 
 
 @pytest.mark.asyncio
