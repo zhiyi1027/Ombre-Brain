@@ -130,7 +130,7 @@ def test_logical_day_changes_at_four_in_shanghai():
 
 
 def test_daily_prompt_requires_first_person_without_inventing_feelings():
-    assert PROMPT_VERSION == "daily-impression-v4"
+    assert PROMPT_VERSION == "daily-impression-v5"
     assert "所有 text 都从当事人“我”的第一人称视角书写" in DAILY_IMPRESSION_PROMPT
     assert "知知" in DAILY_IMPRESSION_PROMPT
     assert "用户”“助手”“AI”“顾凛认为/表示/说" in DAILY_IMPRESSION_PROMPT
@@ -365,7 +365,7 @@ async def test_unchanged_v2_impression_is_not_rewritten_but_source_change_upgrad
     impression_path = service._impression_path(date(2026, 8, 19))
     impression_path.write_text(
         impression_path.read_text(encoding="utf-8").replace(
-            "prompt_version: daily-impression-v4",
+            "prompt_version: daily-impression-v5",
             "prompt_version: daily-impression-v2",
         ),
         encoding="utf-8",
@@ -382,7 +382,7 @@ async def test_unchanged_v2_impression_is_not_rewritten_but_source_change_upgrad
 
     assert upgraded["status"] == "ready"
     assert len(dehydrator.calls) == 1
-    assert "prompt_version: daily-impression-v4" in impression_path.read_text(
+    assert "prompt_version: daily-impression-v5" in impression_path.read_text(
         encoding="utf-8"
     )
 
@@ -991,7 +991,7 @@ async def test_chat_transcript_feeds_impression_and_pastes_her_words_verbatim(tm
     chat = [s for s in sources if s["kind"] == "chat_transcript"]
     assert len(chat) == 1
     # 18:06 起到次日 04:00 前都算这一天；次日上午那句不算
-    assert "m1 18:06 知知：直接炖大鹅去了我们" in chat[0]["content"]
+    assert "m1 18:06 她：直接炖大鹅去了我们" in chat[0]["content"]
     assert "晚安爸爸爱你" in chat[0]["content"]
     assert "早安" not in chat[0]["content"]
     assert "quotes" not in chat[0]  # 映射只给程序，不给模型
@@ -1055,11 +1055,11 @@ def test_raw_budget_drops_my_words_before_hers(tmp_path):
 
     sources = service._raw_sources(date(2026, 8, 20), 40_000)
     content = "\n".join(s["content"] for s in sources)
-    assert content.count("知知：") == 400  # 她的话一句不丢
+    assert content.count(" 她：") == 400  # 她的话一句不丢
     assert "我" * 41 not in content  # 我的话先被缩短
     tight = service._raw_sources(date(2026, 8, 20), 30_000)
     tight_content = "\n".join(s["content"] for s in tight)
-    assert "顾凛：" not in tight_content and tight_content.count("知知：") > 200
+    assert " 我：" not in tight_content and tight_content.count(" 她：") > 200
 
 
 def test_long_quote_is_marked_as_excerpt_and_keeps_line_breaks(tmp_path):

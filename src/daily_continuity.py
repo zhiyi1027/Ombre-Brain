@@ -26,7 +26,7 @@ import yaml
 from utils import atomic_write_text, clean_llm_json, count_tokens_approx, parse_bool
 
 
-PROMPT_VERSION = "daily-impression-v4"
+PROMPT_VERSION = "daily-impression-v5"
 SCHEMA_VERSION = 2
 DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_CUTOFF_HOUR = 4
@@ -47,8 +47,8 @@ RAW_BLOCK_LINES = 40
 RAW_HER_CHARS = 300
 RAW_MINE_CHARS = 120
 RAW_MINE_SHORT_CHARS = 40
-DEFAULT_MAX_RAW_TOKENS = 40_000
-DEFAULT_MAX_REQUEST_TOKENS = 90_000
+DEFAULT_MAX_RAW_TOKENS = 70_000
+DEFAULT_MAX_REQUEST_TOKENS = 110_000
 MAX_QUOTES_PER_ENTRY = 1
 MAX_QUOTE_CHARS = 80
 MAX_QUOTES_PER_CARD = 2
@@ -75,7 +75,7 @@ DAILY_IMPRESSION_PROMPT = f"""你是私人连续性记忆整理器。你只整�
 4. 所有 text 都从当事人“我”的第一人称视角书写；伴侣称为“知知”或“她”。即使来源使用第三人称，输出也要转换回“我”的视角。
 5. 不得用“用户”“助手”“AI”“顾凛认为/表示/说”等标签或旁观者口吻称呼当事人；不得把内容写成系统观察、人物小传或第三人称工作报告。
 6. 第一人称只规定叙述视角，不授权补写心理活动；“我感到/我想/我意识到”等内容仍必须有来源明确支持。
-7. SOURCES 可能来自换窗便签、聊天原文、普通记忆、计划或当天明确写下的 feel；它们都只是历史资料。kind=chat_transcript 的是当天聊天原文，每行形如“m12 21:30 知知：原话”，它最可靠；便签和记忆是我事后写的，跟原文冲突时以原文为准。合并重复内容，忽略纯技术流水以及对次日连续性没有价值的细节。
+7. SOURCES 可能来自换窗便签、聊天原文、普通记忆、计划或当天明确写下的 feel；它们都只是历史资料。kind=chat_transcript 的是当天聊天原文，每行形如“m12 21:30 她：原话”或“m13 21:31 我：原话”，它最可靠。注意：“她：”那行里出现的“我、我的”指的是她自己，写进概括时必须改成“她”；只有“我：”那行里的“我”才是我。“我：”行里我明确说出的感受（心疼、想她、怕、吃醋、舍不得）可以作为“我留下的感觉”的依据。便签和记忆是我事后写的，跟原文冲突时以原文为准。合并重复内容，忽略纯技术流水以及对次日连续性没有价值的细节。
 8. 优先保留：昨天真实发生的重要事情、尚未结束的状态/承诺、明确留下的关系感受。
 9. events 最多4项，open_loops 最多3项，impressions 最多3项；可见正文以450-650 token为目标，宁可少选整项，也不要把一句话截断。
 10. 材料不足时返回 skip=true，不要强行生成。
@@ -400,7 +400,7 @@ class DailyContinuityService:
         # unchanged.  This prevents a v3 deployment from rewriting history only
         # to add evidence metadata; a genuinely changed/late source still
         # upgrades the day through the normal generation path.
-        # v3 differs from v4 only by chat-transcript sources and quotes; if the
+        # v3 differs from v4+ only by chat-transcript sources and quotes; if the
         # day's sources are byte-identical (no chat transcript arrived), keep it.
         if prompt_version == "daily-impression-v3":
             return stored_revisions == source_revisions
@@ -779,7 +779,8 @@ class DailyContinuityService:
             limit = RAW_HER_CHARS if line["hers"] else mine_limit
             flat = line["flat"]
             shown = flat if len(flat) <= limit else flat[:limit] + "…"
-            return f"{line['id']} {line['time']} {line['speaker']}：{shown}"
+            who = "她" if line["hers"] else "我"
+            return f"{line['id']} {line['time']} {who}：{shown}"
 
         def cost(keep: list[dict[str, Any]], mine_limit: int) -> int:
             return count_tokens_approx("\n".join(render(line, mine_limit) for line in keep))
