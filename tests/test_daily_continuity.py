@@ -997,7 +997,7 @@ async def test_chat_transcript_feeds_impression_and_pastes_her_words_verbatim(tm
     assert "quotes" not in chat[0]  # 映射只给程序，不给模型
     body = service.read_day("2026-08-20")
     # 只贴她的原话：m2 是我说的、m99 不存在，都丢掉
-    assert "她说：「直接炖大鹅去了我们」" in body
+    assert "她的原话（18:06）：直接炖大鹅去了我们" in body
     assert "铁锅炖大鹅" not in body
 
 
@@ -1008,3 +1008,66 @@ def test_pending_days_include_chat_transcript_day(tmp_path):
         raw_days=["2026-08-21"],
     )
     assert date(2026, 8, 21) in days and date(2026, 8, 20) in days
+
+
+@pytest.mark.asyncio
+async def test_quote_must_come_from_a_cited_block_and_text_cannot_impersonate_her(tmp_path):
+    from raw_archive import get_archive
+
+    dehydrator = FakeDehydrator(
+        {
+            "skip": False,
+            "events": [
+                {"text": "她说：今天不想理我。", "source_ids": ["chat:2026-08-20:m1"], "quote_ids": ["m1"]},
+                {"text": "她在外面吃饭。", "source_ids": ["note:cc:2026-08-20"], "quote_ids": ["m1"]},
+                {"text": "她回家后跟我道了晚安。", "source_ids": ["chat:2026-08-20:m1"], "quote_ids": ["m3"]},
+            ],
+            "open_loops": [],
+            "impressions": [],
+        }
+    )
+    service = make_service(tmp_path, dehydrator=dehydrator)
+    service.ingest_note(note_payload("# 2026-08-20 便签（周四）\n正文"))
+    get_archive(service.config).import_rows(_raw_rows())
+
+    await service.generate_day("2026-08-20")
+    body = service.read_day("2026-08-20")
+
+    assert "不想理我" not in body  # 概括冒充原话，整项丢
+    assert "她在外面吃饭。" in body
+    assert body.count("她的原话") == 1  # 第二项引的块它没引用，不给贴
+    assert "她的原话（01:30）：晚安爸爸爱你" in body
+
+
+def test_raw_budget_drops_my_words_before_hers(tmp_path):
+    from raw_archive import get_archive
+
+    service = make_service(tmp_path)
+    rows = []
+    for i in range(400):
+        rows.append({"msg_uuid": f"h{i}", "conv_uuid": "c", "conv_name": "Grey", "speaker": "知知",
+                     "at": f"2026-08-20T{10 + i // 60:02d}:{i % 60:02d}:00+08:00", "day": "2026-08-20",
+                     "text": "她" * 60, "thinking": ""})
+        rows.append({"msg_uuid": f"g{i}", "conv_uuid": "c", "conv_name": "Grey", "speaker": "顾凛",
+                     "at": f"2026-08-20T{10 + i // 60:02d}:{i % 60:02d}:30+08:00", "day": "2026-08-20",
+                     "text": "我" * 200, "thinking": ""})
+    get_archive(service.config).import_rows(rows)
+
+    sources = service._raw_sources(date(2026, 8, 20), 40_000)
+    content = "\n".join(s["content"] for s in sources)
+    assert content.count("知知：") == 400  # 她的话一句不丢
+    assert "我" * 41 not in content  # 我的话先被缩短
+    tight = service._raw_sources(date(2026, 8, 20), 30_000)
+    tight_content = "\n".join(s["content"] for s in tight)
+    assert "顾凛：" not in tight_content and tight_content.count("知知：") > 200
+
+
+def test_long_quote_is_marked_as_excerpt_and_keeps_line_breaks(tmp_path):
+    entries = DailyContinuityService._normalize_entries(
+        [{"text": "她发了一大段。", "source_ids": ["chat:x:m1"], "quote_ids": ["m1"]}],
+        allowed_sources={"chat:x:m1"},
+        limit=4,
+        quotes={"chat:x:m1": {"m1": "21:00｜第一行\n第二行" + "字" * 400}},
+    )
+    quote = entries[0]["quotes"][0]
+    assert quote.startswith("21:00｜第一行\n第二行") and quote.endswith("…（节选）")
