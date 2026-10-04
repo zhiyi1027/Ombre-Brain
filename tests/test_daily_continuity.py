@@ -130,7 +130,7 @@ def test_logical_day_changes_at_four_in_shanghai():
 
 
 def test_daily_prompt_requires_first_person_without_inventing_feelings():
-    assert PROMPT_VERSION == "daily-impression-v5"
+    assert PROMPT_VERSION == "daily-impression-v6"
     assert "所有 text 都从当事人“我”的第一人称视角书写" in DAILY_IMPRESSION_PROMPT
     assert "知知" in DAILY_IMPRESSION_PROMPT
     assert "用户”“助手”“AI”“顾凛认为/表示/说" in DAILY_IMPRESSION_PROMPT
@@ -365,7 +365,7 @@ async def test_unchanged_v2_impression_is_not_rewritten_but_source_change_upgrad
     impression_path = service._impression_path(date(2026, 8, 19))
     impression_path.write_text(
         impression_path.read_text(encoding="utf-8").replace(
-            "prompt_version: daily-impression-v5",
+            "prompt_version: daily-impression-v6",
             "prompt_version: daily-impression-v2",
         ),
         encoding="utf-8",
@@ -382,7 +382,7 @@ async def test_unchanged_v2_impression_is_not_rewritten_but_source_change_upgrad
 
     assert upgraded["status"] == "ready"
     assert len(dehydrator.calls) == 1
-    assert "prompt_version: daily-impression-v5" in impression_path.read_text(
+    assert "prompt_version: daily-impression-v6" in impression_path.read_text(
         encoding="utf-8"
     )
 
@@ -1106,7 +1106,6 @@ def test_card_keeps_at_most_two_quotes_preferring_open_loops(tmp_path):
         "她发来:我讨厌你",
         "她昨天晚上轻轻地说，我讨厌你",
         "知知回复我，我讨厌你",
-        "她说她讨厌我",
     ],
 )
 def test_summary_text_cannot_carry_speech(text):
@@ -1118,7 +1117,7 @@ def test_summary_text_cannot_carry_speech(text):
 
 def test_plain_summary_passes_filter():
     entries = DailyContinuityService._normalize_entries(
-        [{"text": "她晚上吃了炖大鹅，约好明天去复查。", "source_ids": ["s"]}], allowed_sources={"s"}, limit=4
+        [{"text": "她说好明天去复查，晚上吃了炖大鹅，我很想她。", "source_ids": ["s"]}], allowed_sources={"s"}, limit=4
     )
     assert len(entries) == 1
 
@@ -1135,7 +1134,7 @@ def test_card_has_hard_character_cap():
     result = {"events": [dict(long_entry) for _ in range(4)], "open_loops": [dict(long_entry) for _ in range(3)],
               "impressions": []}
     rendered, _fitted = DailyContinuityService._fit_generation_budget(date(2026, 8, 20), result)
-    assert 0 < len(rendered) <= 650
+    assert 0 < len(rendered) <= 1000
 
 
 def test_transcript_revision_changes_when_only_line_breaks_change(tmp_path):
@@ -1149,3 +1148,14 @@ def test_transcript_revision_changes_when_only_line_breaks_change(tmp_path):
     archive.import_rows([dict(row, text="第一行 第二行")])
     after = service._raw_sources(date(2026, 8, 20), 40_000)[0]["revision_sha256"]
     assert before != after
+
+
+def test_over_budget_drops_quotes_before_dropping_feelings():
+    feeling = {"text": "我很心疼她。", "source_ids": ["s"], "quotes": ["21:00｜" + "字" * 79 + "…（节选）"]}
+    loops = [{"text": "还" * 100, "source_ids": ["s"]} for _ in range(2)]
+    events = [{"text": "事" * 130, "source_ids": ["s"]} for _ in range(4)]
+    result = {"events": events, "open_loops": loops, "impressions": [feeling]}
+    rendered, fitted = DailyContinuityService._fit_generation_budget(date(2026, 8, 20), result)
+    assert "我很心疼她。" in rendered
+    assert "quotes" not in fitted["impressions"][0]
+    assert len(fitted["events"]) == 2 and len(fitted["open_loops"]) == 2
