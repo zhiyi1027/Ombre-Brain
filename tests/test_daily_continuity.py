@@ -1071,3 +1071,19 @@ def test_long_quote_is_marked_as_excerpt_and_keeps_line_breaks(tmp_path):
     )
     quote = entries[0]["quotes"][0]
     assert quote.startswith("21:00｜第一行\n第二行") and quote.endswith("…（节选）")
+
+
+def test_card_keeps_at_most_two_quotes_preferring_open_loops(tmp_path):
+    service = make_service(tmp_path)
+    quotes = {"chat:x:m1": {f"m{i}": f"21:0{i}｜第{i}句" for i in range(1, 6)}}
+    raw = json.dumps({
+        "events": [{"text": "事件", "source_ids": ["chat:x:m1"], "quote_ids": ["m1"]}],
+        "open_loops": [{"text": "没哄好", "source_ids": ["chat:x:m1"], "quote_ids": ["m2"]}],
+        "impressions": [
+            {"text": "感觉一", "source_ids": ["chat:x:m1"], "quote_ids": ["m3"]},
+            {"text": "感觉二", "source_ids": ["chat:x:m1"], "quote_ids": ["m4"]},
+        ],
+    }, ensure_ascii=False)
+    result = service._parse_generation(raw, allowed_sources={"chat:x:m1"}, quotes=quotes)
+    quoted = [e["text"] for k in ("events", "open_loops", "impressions") for e in result[k] if e.get("quotes")]
+    assert quoted == ["没哄好", "感觉一"]
