@@ -1104,6 +1104,9 @@ def test_card_keeps_at_most_two_quotes_preferring_open_loops(tmp_path):
         "她说了一句：我讨厌你",
         "知知：我讨厌你",
         "她发来:我讨厌你",
+        "她昨天晚上轻轻地说，我讨厌你",
+        "知知回复我，我讨厌你",
+        "她说她讨厌我",
     ],
 )
 def test_summary_text_cannot_carry_speech(text):
@@ -1115,7 +1118,7 @@ def test_summary_text_cannot_carry_speech(text):
 
 def test_plain_summary_passes_filter():
     entries = DailyContinuityService._normalize_entries(
-        [{"text": "她叫我老公，晚上吃了炖大鹅。", "source_ids": ["s"]}], allowed_sources={"s"}, limit=4
+        [{"text": "她晚上吃了炖大鹅，约好明天去复查。", "source_ids": ["s"]}], allowed_sources={"s"}, limit=4
     )
     assert len(entries) == 1
 
