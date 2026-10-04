@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import raw_archive
-from raw_archive import RawArchive, get_archive
+from raw_archive import get_archive
 from tools import _runtime as rt
 from tools.raw import day, search
 
