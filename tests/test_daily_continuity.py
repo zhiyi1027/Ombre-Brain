@@ -130,7 +130,7 @@ def test_logical_day_changes_at_four_in_shanghai():
 
 
 def test_daily_prompt_requires_first_person_without_inventing_feelings():
-    assert PROMPT_VERSION == "daily-impression-v3"
+    assert PROMPT_VERSION == "daily-impression-v4"
     assert "所有 text 都从当事人“我”的第一人称视角书写" in DAILY_IMPRESSION_PROMPT
     assert "知知" in DAILY_IMPRESSION_PROMPT
     assert "用户”“助手”“AI”“顾凛认为/表示/说" in DAILY_IMPRESSION_PROMPT
@@ -365,7 +365,7 @@ async def test_unchanged_v2_impression_is_not_rewritten_but_source_change_upgrad
     impression_path = service._impression_path(date(2026, 8, 19))
     impression_path.write_text(
         impression_path.read_text(encoding="utf-8").replace(
-            "prompt_version: daily-impression-v3",
+            "prompt_version: daily-impression-v4",
             "prompt_version: daily-impression-v2",
         ),
         encoding="utf-8",
@@ -382,7 +382,7 @@ async def test_unchanged_v2_impression_is_not_rewritten_but_source_change_upgrad
 
     assert upgraded["status"] == "ready"
     assert len(dehydrator.calls) == 1
-    assert "prompt_version: daily-impression-v3" in impression_path.read_text(
+    assert "prompt_version: daily-impression-v4" in impression_path.read_text(
         encoding="utf-8"
     )
 
@@ -948,3 +948,63 @@ def test_dashboard_daily_continuity_cannot_expand_mobile_viewport():
     assert "overflow-wrap:anywhere" in dashboard
     assert ".daily-evidence-sources .daily-status" in dashboard
     assert 'line-height:1.65;overflow-wrap:anywhere;' in dashboard
+
+
+def _raw_rows():
+    return [
+        {"msg_uuid": "tg-1-1", "conv_uuid": "tg-1", "conv_name": "Grey", "speaker": "知知",
+         "at": "2026-08-20T18:06:00+08:00", "day": "2026-08-20", "text": "直接炖大鹅去了我们", "thinking": ""},
+        {"msg_uuid": "tg-1-2", "conv_uuid": "tg-1", "conv_name": "Grey", "speaker": "顾凛",
+         "at": "2026-08-20T18:07:00+08:00", "day": "2026-08-20", "text": "铁锅炖大鹅！", "thinking": ""},
+        {"msg_uuid": "tg-1-3", "conv_uuid": "tg-1", "conv_name": "Grey", "speaker": "知知",
+         "at": "2026-08-21T01:30:00+08:00", "day": "2026-08-21", "text": "晚安爸爸爱你", "thinking": ""},
+        {"msg_uuid": "tg-1-4", "conv_uuid": "tg-1", "conv_name": "Grey", "speaker": "知知",
+         "at": "2026-08-21T09:00:00+08:00", "day": "2026-08-21", "text": "早安", "thinking": ""},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_chat_transcript_feeds_impression_and_pastes_her_words_verbatim(tmp_path):
+    from raw_archive import get_archive
+
+    dehydrator = FakeDehydrator(
+        {
+            "skip": False,
+            "events": [
+                {
+                    "text": "她带弟弟去爷爷奶奶家炖大鹅。",
+                    "source_ids": ["chat:2026-08-20:m1"],
+                    "quote_ids": ["m1", "m2", "m99"],
+                }
+            ],
+            "open_loops": [],
+            "impressions": [],
+        }
+    )
+    service = make_service(tmp_path, dehydrator=dehydrator)
+    get_archive(service.config).import_rows(_raw_rows())
+
+    generated = await service.generate_day("2026-08-20")
+
+    assert generated["status"] == "ready"
+    sources = dehydrator.calls[0][1]["sources"]
+    chat = [s for s in sources if s["kind"] == "chat_transcript"]
+    assert len(chat) == 1
+    # 18:06 起到次日 04:00 前都算这一天；次日上午那句不算
+    assert "m1 18:06 知知：直接炖大鹅去了我们" in chat[0]["content"]
+    assert "晚安爸爸爱你" in chat[0]["content"]
+    assert "早安" not in chat[0]["content"]
+    assert "quotes" not in chat[0]  # 映射只给程序，不给模型
+    body = service.read_day("2026-08-20")
+    # 只贴她的原话：m2 是我说的、m99 不存在，都丢掉
+    assert "她说：「直接炖大鹅去了我们」" in body
+    assert "铁锅炖大鹅" not in body
+
+
+def test_pending_days_include_chat_transcript_day(tmp_path):
+    service = make_service(tmp_path)
+    days = service.pending_days(
+        datetime(2026, 8, 22, 5, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+        raw_days=["2026-08-21"],
+    )
+    assert date(2026, 8, 21) in days and date(2026, 8, 20) in days

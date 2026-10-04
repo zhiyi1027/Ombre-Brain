@@ -108,6 +108,20 @@ class RawArchive:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def rows_for_days(self, days: list[str]) -> list[dict[str, Any]]:
+        """Every message on the given calendar days, oldest first (for the daily impression)."""
+        wanted = [d for d in days if _DAY.match(d)]
+        if not wanted:
+            return []
+        marks = ",".join("?" for _ in wanted)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT msg_uuid, conv_name, speaker, at, day, text FROM raw_messages "
+                f"WHERE day IN ({marks}) ORDER BY at, conv_uuid, msg_uuid",
+                wanted,
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def day(self, day: str, offset: int = 0, limit: int = 40) -> tuple[list[dict[str, Any]], int]:
         with self._connect() as conn:
             total = conn.execute("SELECT COUNT(*) FROM raw_messages WHERE day=?", (day,)).fetchone()[0]
