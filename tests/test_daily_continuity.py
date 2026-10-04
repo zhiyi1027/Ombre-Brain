@@ -1099,6 +1099,11 @@ def test_card_keeps_at_most_two_quotes_preferring_open_loops(tmp_path):
         "她说'我讨厌你'",
         "知知又说，我讨厌你",
         "小猫回：讨厌",
+        "她告诉我：我讨厌你",
+        "小猫回复：我讨厌你",
+        "她说了一句：我讨厌你",
+        "知知：我讨厌你",
+        "她发来:我讨厌你",
     ],
 )
 def test_summary_text_cannot_carry_speech(text):
