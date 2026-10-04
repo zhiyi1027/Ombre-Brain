@@ -140,3 +140,20 @@ async def test_raw_tools_are_registered_read_only():
     assert listed["raw_day"]["required"] == ["date"]
     assert set(listed["raw_search"]["properties"]) == {"query", "max_results", "thinking", "speaker"}
     assert listed["raw_search"]["required"] == ["query"]
+
+
+def test_delete_source_takes_back_one_import_only(tmp_path, monkeypatch):
+    monkeypatch.setenv("OB_RAW_IMPORT_TOKEN", "sesame")
+    client = _client(tmp_path, monkeypatch)
+    client.post("/api/raw/import", content=_payload(),
+                headers={"X-Raw-Import-Token": "sesame", "X-Raw-Source": "keep"})
+    assert client.post("/api/raw/delete-source", json={"source": "x"},
+                       headers={"X-Raw-Import-Token": "wrong"}).status_code == 401
+    assert client.post("/api/raw/delete-source", json={},
+                       headers={"X-Raw-Import-Token": "sesame"}).status_code == 400
+    gone = client.post("/api/raw/delete-source", json={"source": "other"},
+                       headers={"X-Raw-Import-Token": "sesame"})
+    assert gone.json()["deleted"] == 0 and gone.json()["stats"]["n"] == 3
+    gone = client.post("/api/raw/delete-source", json={"source": "keep"},
+                       headers={"X-Raw-Import-Token": "sesame"})
+    assert gone.json()["deleted"] == 3 and gone.json()["stats"]["n"] == 0

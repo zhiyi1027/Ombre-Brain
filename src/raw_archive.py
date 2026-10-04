@@ -85,6 +85,13 @@ class RawArchive:
                     added += 1
         return {"added": added, "updated": updated, "skipped": skipped}
 
+    def delete_source(self, source: str) -> int:
+        """撤回某一次导入（按导入时带的 source 标签），给灌错的那批反悔用。"""
+        if not source:
+            return 0
+        with self._lock, self._connect() as conn:
+            return conn.execute("DELETE FROM raw_messages WHERE source=?", (source,)).rowcount
+
     # ---------- 读 ----------
     def stats(self) -> dict[str, Any]:
         with self._connect() as conn:

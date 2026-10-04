@@ -76,6 +76,23 @@ def register(mcp) -> None:
         result = await asyncio.to_thread(archive.import_rows, rows, source)
         return JSONResponse({"ok": True, **result, "stats": await asyncio.to_thread(archive.stats)})
 
+    @mcp.custom_route("/api/raw/delete-source", methods=["POST"])
+    async def api_raw_delete_source(request: Request) -> Response:
+        ok = _token_ok(request)
+        if ok is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if not ok:
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        try:
+            source = str((await request.json()).get("source", "")).strip()[:80]
+        except Exception:
+            source = ""
+        if not source:
+            return JSONResponse({"error": "source required"}, status_code=400)
+        archive = get_archive(sh.config)
+        deleted = await asyncio.to_thread(archive.delete_source, source)
+        return JSONResponse({"ok": True, "deleted": deleted, "stats": await asyncio.to_thread(archive.stats)})
+
     @mcp.custom_route("/api/raw/stats", methods=["GET"])
     async def api_raw_stats(request: Request) -> Response:
         err = sh._require_auth(request)
