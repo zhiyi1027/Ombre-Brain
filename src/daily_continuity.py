@@ -41,6 +41,7 @@ MAX_SOURCE_CLIENT_CHARS = 32
 MAX_SOURCE_ID_CHARS = 160
 MAX_ENTRY_CHARS = 280
 MAX_RENDER_TOKENS = 900
+MAX_RENDER_CHARS = 650  # 成卡硬上限，按字数数，不靠估算
 # 聊天原文（原文库 raw_messages）当素材：一块40句，她的话留300字、我的话留120字
 RAW_BLOCK_LINES = 40
 RAW_HER_CHARS = 300
@@ -52,7 +53,11 @@ MAX_QUOTES_PER_ENTRY = 1
 MAX_QUOTE_CHARS = 80
 MAX_QUOTES_PER_CARD = 2
 # 概括里不许出现引号或“她说：”——原话只能由程序按编号贴，模型写的永远只是标签
-_QUOTE_LIKE_RE = re.compile(r"[「」『』“”\"]|(?:她|知知)(?:说|讲|问|喊)(?:过|了|道)?[:：]")
+_QUOTE_LIKE_RE = re.compile(
+    r"[「」『』“”‘’\"'＂＇]"
+    r"|原话"
+    r"|(?:她|知知|Lyra|小猫|宝宝)(?:又|还|就|也|都)?(?:说|讲|问|喊|叫|回|道)(?:过|了|着|道)?\s*[:：，,]"
+)
 
 _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _CLIENT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
@@ -800,7 +805,10 @@ class DailyContinuityService:
                     "source_id": f"chat:{memory_day.isoformat()}:{block[0]['id']}",
                     "kind": "chat_transcript",
                     "content": content,
-                    "revision_sha256": _content_hash(content),
+                    # 版本号连原句（含换行）一起算，原文只改了排版也会重算
+                    "revision_sha256": _content_hash(
+                        content + "\x00" + "\x00".join(line["original"] for line in block)
+                    ),
                     "quotes": {
                         line["id"]: f"{line['time']}｜{line['original']}"
                         for line in block
@@ -874,9 +882,11 @@ class DailyContinuityService:
         impressions = self._normalize_entries(
             value.get("impressions"), allowed_sources=allowed_sources, limit=3, quotes=quotes
         )
-        # 原话是配角：整张最多 MAX_QUOTES_PER_CARD 句，先到先得（还停在哪里、感觉优先于事件）
+        # 原话是配角：整张最多 MAX_QUOTES_PER_CARD 句，先到先得（只给还停在哪里和感觉，事件不贴）
+        for entry in events:
+            entry.pop("quotes", None)  # 事件那格只放概括
         remaining = MAX_QUOTES_PER_CARD
-        for entry in [*open_loops, *impressions, *events]:
+        for entry in [*open_loops, *impressions]:
             if entry.get("quotes") and remaining > 0:
                 remaining -= len(entry["quotes"])
             else:
@@ -910,13 +920,17 @@ class DailyContinuityService:
         return "\n\n".join(parts)
 
     @staticmethod
+    def _render_fits(rendered: str) -> bool:
+        return len(rendered) <= MAX_RENDER_CHARS and count_tokens_approx(rendered) <= MAX_RENDER_TOKENS
+
+    @staticmethod
     def _fit_generation_budget(
         memory_day: date,
         result: dict[str, Any],
     ) -> tuple[str, dict[str, Any]]:
         fitted = copy.deepcopy(result)
         rendered = DailyContinuityService._render_impression(memory_day, fitted)
-        if count_tokens_approx(rendered) <= MAX_RENDER_TOKENS:
+        if DailyContinuityService._render_fits(rendered):
             return rendered, fitted
         # Preserve whole entries.  Optional feeling/open-loop tails go first;
         # never slice prose mid-sentence merely to hit an estimate.
@@ -924,7 +938,7 @@ class DailyContinuityService:
             while fitted.get(key):
                 fitted[key].pop()
                 rendered = DailyContinuityService._render_impression(memory_day, fitted)
-                if count_tokens_approx(rendered) <= MAX_RENDER_TOKENS:
+                if DailyContinuityService._render_fits(rendered):
                     return rendered, fitted
         return "", {"skip": True, "events": [], "open_loops": [], "impressions": []}
 

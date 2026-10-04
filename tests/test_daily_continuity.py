@@ -970,14 +970,14 @@ async def test_chat_transcript_feeds_impression_and_pastes_her_words_verbatim(tm
     dehydrator = FakeDehydrator(
         {
             "skip": False,
-            "events": [
+            "events": [],
+            "open_loops": [
                 {
-                    "text": "她带弟弟去爷爷奶奶家炖大鹅。",
+                    "text": "她带弟弟去爷爷奶奶家炖大鹅，还没回来。",
                     "source_ids": ["chat:2026-08-20:m1"],
                     "quote_ids": ["m1", "m2", "m99"],
                 }
             ],
-            "open_loops": [],
             "impressions": [],
         }
     )
@@ -1017,12 +1017,12 @@ async def test_quote_must_come_from_a_cited_block_and_text_cannot_impersonate_he
     dehydrator = FakeDehydrator(
         {
             "skip": False,
-            "events": [
+            "events": [],
+            "open_loops": [
                 {"text": "她说：今天不想理我。", "source_ids": ["chat:2026-08-20:m1"], "quote_ids": ["m1"]},
                 {"text": "她在外面吃饭。", "source_ids": ["note:cc:2026-08-20"], "quote_ids": ["m1"]},
                 {"text": "她回家后跟我道了晚安。", "source_ids": ["chat:2026-08-20:m1"], "quote_ids": ["m3"]},
             ],
-            "open_loops": [],
             "impressions": [],
         }
     )
@@ -1087,3 +1087,57 @@ def test_card_keeps_at_most_two_quotes_preferring_open_loops(tmp_path):
     result = service._parse_generation(raw, allowed_sources={"chat:x:m1"}, quotes=quotes)
     quoted = [e["text"] for k in ("events", "open_loops", "impressions") for e in result[k] if e.get("quotes")]
     assert quoted == ["没哄好", "感觉一"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "她说：我讨厌你",
+        "她的原话（21:00）：我讨厌你",
+        "她说‘我讨厌你’",
+        "她说“我讨厌你”",
+        "她说'我讨厌你'",
+        "知知又说，我讨厌你",
+        "小猫回：讨厌",
+    ],
+)
+def test_summary_text_cannot_carry_speech(text):
+    entries = DailyContinuityService._normalize_entries(
+        [{"text": text, "source_ids": ["s"]}], allowed_sources={"s"}, limit=4
+    )
+    assert entries == []
+
+
+def test_plain_summary_passes_filter():
+    entries = DailyContinuityService._normalize_entries(
+        [{"text": "她叫我老公，晚上吃了炖大鹅。", "source_ids": ["s"]}], allowed_sources={"s"}, limit=4
+    )
+    assert len(entries) == 1
+
+
+def test_events_never_carry_quotes(tmp_path):
+    service = make_service(tmp_path)
+    raw = json.dumps({"events": [{"text": "事件", "source_ids": ["c"], "quote_ids": ["m1"]}]}, ensure_ascii=False)
+    result = service._parse_generation(raw, allowed_sources={"c"}, quotes={"c": {"m1": "21:00｜原句"}})
+    assert "quotes" not in result["events"][0]
+
+
+def test_card_has_hard_character_cap():
+    long_entry = {"text": "字" * 270, "source_ids": ["s"]}
+    result = {"events": [dict(long_entry) for _ in range(4)], "open_loops": [dict(long_entry) for _ in range(3)],
+              "impressions": []}
+    rendered, _fitted = DailyContinuityService._fit_generation_budget(date(2026, 8, 20), result)
+    assert 0 < len(rendered) <= 650
+
+
+def test_transcript_revision_changes_when_only_line_breaks_change(tmp_path):
+    from raw_archive import get_archive
+
+    service = make_service(tmp_path)
+    archive = get_archive(service.config)
+    row = dict(_raw_rows()[0], text="第一行\n第二行")
+    archive.import_rows([row])
+    before = service._raw_sources(date(2026, 8, 20), 40_000)[0]["revision_sha256"]
+    archive.import_rows([dict(row, text="第一行 第二行")])
+    after = service._raw_sources(date(2026, 8, 20), 40_000)[0]["revision_sha256"]
+    assert before != after
