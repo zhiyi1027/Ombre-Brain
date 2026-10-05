@@ -130,7 +130,7 @@ def test_logical_day_changes_at_four_in_shanghai():
 
 
 def test_daily_prompt_requires_first_person_without_inventing_feelings():
-    assert PROMPT_VERSION == "daily-impression-v6"
+    assert PROMPT_VERSION == "daily-impression-v7"
     assert "所有 text 都从当事人“我”的第一人称视角书写" in DAILY_IMPRESSION_PROMPT
     assert "知知" in DAILY_IMPRESSION_PROMPT
     assert "用户”“助手”“AI”“顾凛认为/表示/说" in DAILY_IMPRESSION_PROMPT
@@ -365,7 +365,7 @@ async def test_unchanged_v2_impression_is_not_rewritten_but_source_change_upgrad
     impression_path = service._impression_path(date(2026, 8, 19))
     impression_path.write_text(
         impression_path.read_text(encoding="utf-8").replace(
-            "prompt_version: daily-impression-v6",
+            "prompt_version: daily-impression-v7",
             "prompt_version: daily-impression-v2",
         ),
         encoding="utf-8",
@@ -382,7 +382,7 @@ async def test_unchanged_v2_impression_is_not_rewritten_but_source_change_upgrad
 
     assert upgraded["status"] == "ready"
     assert len(dehydrator.calls) == 1
-    assert "prompt_version: daily-impression-v6" in impression_path.read_text(
+    assert "prompt_version: daily-impression-v7" in impression_path.read_text(
         encoding="utf-8"
     )
 
@@ -1011,7 +1011,7 @@ def test_pending_days_include_chat_transcript_day(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_quote_must_come_from_a_cited_block_and_text_cannot_impersonate_her(tmp_path):
+async def test_quote_must_come_from_a_cited_block(tmp_path):
     from raw_archive import get_archive
 
     dehydrator = FakeDehydrator(
@@ -1033,9 +1033,11 @@ async def test_quote_must_come_from_a_cited_block_and_text_cannot_impersonate_he
     await service.generate_day("2026-08-20")
     body = service.read_day("2026-08-20")
 
-    assert "不想理我" not in body  # 概括冒充原话，整项丢
+    assert "今天不想理我" in body  # 像在引她的话也整项留着，只记日志
     assert "她在外面吃饭。" in body
-    assert body.count("她的原话") == 1  # 第二项引的块它没引用，不给贴
+    # 第一项引了 m1 的块，贴；第二项引的是便签不是那个块，不给贴
+    assert body.count("她的原话（18:06）：直接炖大鹅去了我们") == 1
+    assert body.count("她的原话") == 2
     assert "她的原话（01:30）：晚安爸爸爱你" in body
 
 
@@ -1108,11 +1110,12 @@ def test_card_keeps_at_most_two_quotes_preferring_open_loops(tmp_path):
         "知知回复我，我讨厌你",
     ],
 )
-def test_summary_text_cannot_carry_speech(text):
+def test_summary_that_looks_like_speech_is_kept(text):
+    # 只有程序贴的“她的原话（时间）”才是她说的，概括长什么样都不再整项丢
     entries = DailyContinuityService._normalize_entries(
         [{"text": text, "source_ids": ["s"]}], allowed_sources={"s"}, limit=4
     )
-    assert entries == []
+    assert [entry["text"] for entry in entries] == [text]
 
 
 def test_plain_summary_passes_filter():
