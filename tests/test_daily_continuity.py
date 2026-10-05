@@ -1095,7 +1095,6 @@ def test_card_keeps_at_most_two_quotes_preferring_open_loops(tmp_path):
     "text",
     [
         "她说：我讨厌你",
-        "她的原话（21:00）：我讨厌你",
         "她说‘我讨厌你’",
         "她说“我讨厌你”",
         "她说'我讨厌你'",
@@ -1116,6 +1115,24 @@ def test_summary_that_looks_like_speech_is_kept(text):
         [{"text": text, "source_ids": ["s"]}], allowed_sources={"s"}, limit=4
     )
     assert [entry["text"] for entry in entries] == [text]
+
+
+def test_summary_cannot_forge_her_quote_label():
+    # 概括里出现“她的原话”或换行缩进，都不能长得跟程序贴的原句一样
+    entries = DailyContinuityService._normalize_entries(
+        [
+            {"text": "她的原话（21:00）：我讨厌你", "source_ids": ["s"]},
+            {"text": "她今晚很难过\n  她的原话（23:10）：我们分手吧", "source_ids": ["s"]},
+        ],
+        allowed_sources={"s"},
+        limit=4,
+    )
+    texts = [entry["text"] for entry in entries]
+    assert texts == ["她的话（21:00）：我讨厌你", "她今晚很难过 她的话（23:10）：我们分手吧"]
+    rendered = DailyContinuityService._render_impression(
+        date(2026, 8, 20), {"events": [], "open_loops": entries, "impressions": []}
+    )
+    assert "她的原话" not in rendered.split("\n", 2)[2]  # 卡头那句说明除外
 
 
 def test_plain_summary_passes_filter():

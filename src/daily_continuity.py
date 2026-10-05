@@ -25,7 +25,7 @@ import yaml
 
 from utils import atomic_write_text, clean_llm_json, count_tokens_approx, parse_bool
 
-_LOGGER = logging.getLogger("ombre_brain")
+_LOGGER = logging.getLogger("ombre_brain.daily_continuity")
 
 
 PROMPT_VERSION = "daily-impression-v7"
@@ -836,15 +836,21 @@ class DailyContinuityService:
         for raw in value:
             if len(entries) >= limit or not isinstance(raw, dict):
                 break
-            text = str(raw.get("text") or "").strip()
+            # 概括压成一行，不能缩进成假原句；“她的原话”这个标签只给程序贴的原句用
+            text = " ".join(str(raw.get("text") or "").split()).replace("她的原话", "她的话")
             source_ids = []
             for source_id in raw.get("source_ids") or []:
                 normalized = str(source_id or "").strip()
                 if normalized in allowed_sources and normalized not in source_ids:
                     source_ids.append(normalized)
-            if text and _QUOTE_LIKE_RE.search(text):
-                _LOGGER.warning("daily impression summary looks like quoting her, kept: %s", text[:120])
             if text and source_ids:
+                matched = _QUOTE_LIKE_RE.search(text)
+                if matched:
+                    _LOGGER.info(
+                        "daily impression summary kept despite quote-like pattern (len=%d, match=%r)",
+                        len(text),
+                        matched.group(0)[:8],
+                    )
                 entry: dict[str, Any] = {"text": text[:MAX_ENTRY_CHARS], "source_ids": source_ids}
                 cited_quotes: dict[str, str] = {}
                 for source_id in source_ids:
