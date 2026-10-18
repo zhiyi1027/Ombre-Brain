@@ -91,8 +91,8 @@ def test_desktop_management_api_first_run_and_authenticated_flow():
         config = client.get("/api/config")
         assert config.status_code == 200
         config_payload = config.json()
-        assert config_payload["transport"] == "streamable-http"
-        assert config_payload["mcp_require_auth"] is False
+        assert config_payload["transport_effective"] == "streamable-http"
+        assert config_payload["mcp_require_auth_effective"] is False
         assert "api_key" not in config_payload.get("dehydration", {})
         assert "api_key" not in config_payload.get("embedding", {})
 
