@@ -103,7 +103,12 @@ Ombre Brain 的使用者是**模型自己**，不是它背后的人。所以这�
 ```bash
 git clone https://github.com/zhiyi1027/Ombre-Brain.git
 cd Ombre-Brain
-# 先在 deploy/.env 配好 OMBRE_DASHBOARD_PASSWORD 和模型所需配置
+cp .env.example deploy/.env
+```
+
+打开 `deploy/.env`：将 `OMBRE_COMPRESS_API_KEY=change-me` 换成实际 Key；取消 `OMBRE_DASHBOARD_PASSWORD` 行的注释并设置强密码。需要语义检索时再填写向量化 Key；暂不用时把示例 `OMBRE_EMBED_API_KEY=change-me` 注释掉。数据目录默认是仓库根目录的 `buckets/`，需要换位置才取消 `OMBRE_HOST_VAULT_DIR` 行的注释并填写真实绝对路径。
+
+```bash
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 ```
 
@@ -119,7 +124,7 @@ curl http://localhost:18001/health
 
 浏览器打开 Dashboard：`http://localhost:18001`
 
-> 第一次访问会弹出密码设置向导，设好密码后所有 `/api/*` 端点都需要这个密码登录。
+> 使用源码版 Compose 时，首次访问会看到登录页，输入 `deploy/.env` 中设置的 Dashboard 密码。
 
 ### 接入 Claude
 
@@ -251,7 +256,7 @@ http(s)://<你的地址>:18001/mcp
 ```
 
 > **`<你的地址>` 填什么？**
-> - **本机访问**：`http://localhost:18001/mcp`（两种 compose 现已统一默认对外端口 18001 → 容器内 8000；想换端口在 `deploy/.env` 设 `OMBRE_HOST_PORT`）
+> - **本机访问**：`http://localhost:18001/mcp`（源码版 Compose 默认对外端口 18001 → 容器内 8000；想换端口在 `deploy/.env` 设 `OMBRE_HOST_PORT`）
 > - **直连 VPS 公网 IP**：`http://你的服务器IP:18001/mcp`
 > - **用了 Cloudflare Tunnel / 自有域名**：把 `<你的地址>:18001` 整段换成你的网址，且通常不带端口、走 https，例如 `https://ombre.example.com/mcp`
 >
@@ -350,7 +355,12 @@ Ombre-MCP-Token: 你的Token
 ```bash
 git clone https://github.com/zhiyi1027/Ombre-Brain.git
 cd Ombre-Brain
-# 先在 deploy/.env 配好 OMBRE_DASHBOARD_PASSWORD 和模型所需配置
+cp .env.example deploy/.env
+```
+
+按上方「本机或 VPS（源码构建）」的说明填写 `deploy/.env` 中的密码和模型 Key，再启动：
+
+```bash
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 ```
 
@@ -423,7 +433,12 @@ python src/server.py
 ```bash
 git clone https://github.com/zhiyi1027/Ombre-Brain.git
 cd Ombre-Brain
-# 在 deploy/.env 配好 OMBRE_DASHBOARD_PASSWORD 和模型所需配置
+cp .env.example deploy/.env
+```
+
+按上方「本机或 VPS（源码构建）」的说明填写 `deploy/.env` 中的密码和模型 Key，再启动：
+
+```bash
 docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 ```
 
@@ -433,7 +448,7 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 
 ## Dashboard 功能概览
 
-启动后浏览器打开 `/`（根路径）进入，第一次会引导设置密码。
+启动后浏览器打开 `/`（根路径）进入。按上文源码版 Compose 预设密码时会显示登录页；未预设密码的其他部署方式才会引导设置密码。
 
 | 标签页 | 功能 |
 |---|---|
@@ -632,7 +647,7 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 - **切换向量化后端会全库重算**：云端 3072 维和本地 bge-m3 1024 维不通用，每次切换都会重算，别频繁来回切。
 - **热更新按钮看部署方式**：Docker（有 restart 策略）点完自动恢复；裸机/纯 Python 需要 systemd/pm2 等守护，否则更新后要手动重启。点之前先「导出记忆备份」。
 - **自有前端 / GPT / GLM 接入**：默认强制 OAuth，会卡住非 Claude 客户端；设 `OMBRE_MCP_REQUIRE_AUTH=false` 关掉（注意别裸奔公网）。
-- **首次访问先设密码**：设完之后所有 `/api/*` 都要登录；忘了密码可用设置里的安全问题急救。
+- **按部署方式设置密码**：源码版 Compose 先在 `deploy/.env` 预设密码，首次访问直接登录；其他未预设密码的部署方式会引导创建密码。忘了密码可用设置里的安全问题急救。
 
 ---
 
