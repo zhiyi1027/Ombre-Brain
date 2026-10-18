@@ -208,7 +208,8 @@ class RawArchive:
         marks = ",".join("?" for _ in wanted)
         with self._connect() as conn:
             rows = conn.execute(
-                f"SELECT msg_uuid, conv_name, speaker, at, day, text FROM raw_messages "
+                # Only parameter placeholders are interpolated; day values stay bound.
+                f"SELECT msg_uuid, conv_name, speaker, at, day, text FROM raw_messages "  # nosec B608
                 f"WHERE day IN ({marks}) ORDER BY at, conv_uuid, msg_uuid",
                 wanted,
             ).fetchall()
@@ -234,7 +235,9 @@ class RawArchive:
             params.append(speaker)
         with self._connect() as conn:
             hits = conn.execute(
-                f"SELECT * FROM raw_messages WHERE {where} ORDER BY at LIMIT ?", (*params, limit)
+                # where uses fixed SQL fragments; search values stay bound.
+                f"SELECT * FROM raw_messages WHERE {where} ORDER BY at LIMIT ?",  # nosec B608
+                (*params, limit),
             ).fetchall()
             results = []
             for hit in hits:
