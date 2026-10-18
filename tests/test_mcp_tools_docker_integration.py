@@ -130,6 +130,7 @@ EXPECTED_REQUIRED_PROPERTIES = {
     "plan": {"content"},
     "letter_write": {"author", "content"},
     "media_read": {"bucket_id"},
+    "raw_day": {"date"},
 }
 
 
@@ -263,7 +264,7 @@ def _hold(mcp_client: MCPClient, marker: str, **overrides) -> str:
     )
 
 
-def test_manifest_exposes_exactly_the_documented_16_tools(mcp_client):
+def test_manifest_exposes_exactly_the_documented_19_tools(mcp_client):
     tools = mcp_client.list_tools()
     tools_by_name = {tool["name"]: tool for tool in tools}
     assert set(tools_by_name) == EXPECTED_TOOLS
@@ -658,12 +659,12 @@ def test_dream_returns_recent_complete_memory(mcp_client):
     assert marker in result
 
 
-@pytest.mark.parametrize(("window_hours", "expected_window"), [(-100, 1), (1000, 336)])
-def test_dream_clamps_window_to_documented_bounds(mcp_client, window_hours, expected_window):
-    marker = _marker(f"dream-{expected_window}")
+@pytest.mark.parametrize("window_hours", [-100, 1000])
+def test_dream_keeps_fixed_48_hour_window_for_legacy_argument(mcp_client, window_hours):
+    marker = _marker(f"dream-{window_hours}")
     _hold(mcp_client, marker)
     result = mcp_client.call("dream", {"window_hours": window_hours})
-    assert f"过去 {expected_window} 小时" in result
+    assert "过去 48 小时" in result
     assert marker in result
 
 
