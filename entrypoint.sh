@@ -10,7 +10,7 @@
 #   /app/config.yaml 于是是个**目录**而非文件，应用读它直接 IsADirectoryError 崩溃。
 #   更糟的是：bind mount 的挂载点在容器内**删不掉**（rm 报 "Device or resource busy"）。
 #   根治办法是不再单文件挂载 config，改用 $OMBRE_CONFIG_PATH 把配置放进已经是目录挂载
-#   的数据卷里（见 docker-compose.user.yml）。本脚本是最后一道防线。
+#   的数据卷里（见 deploy/docker-compose.yml）。本脚本是最后一道防线。
 #
 # 处理逻辑：
 #   1. 配置路径取 $OMBRE_CONFIG_PATH，未设则退回 /app/config.yaml（老行为，兼容现有部署）。

@@ -7,7 +7,7 @@
 # 敏感 key 通过 deploy/.env 或环境变量传入（不要写进此文件）：
 #   OMBRE_COMPRESS_API_KEY / OMBRE_EMBED_API_KEY / OMBRE_DASHBOARD_PASSWORD
 #
-# 存储约定（与 docker-compose.user.yml 一致，不再有 VPS 专属特殊路径）：
+# 存储约定：
 #   - 记忆库 + 配置都落在数据卷 ./buckets（容器内 /app/buckets）。
 #   - 配置走镜像默认 OMBRE_CONFIG_PATH=/app/buckets/config.yaml，首启自动生成、
 #     Dashboard 改动持久化、重启不丢。**不要**再单文件挂载 config.yaml（宿主缺文件时
@@ -32,7 +32,6 @@ services:
     environment:
       - OMBRE_TRANSPORT=streamable-http
       - OMBRE_CONFIG_PATH=/app/buckets/config.yaml
-      - OMBRE_EMBED_BACKEND=${OMBRE_EMBED_BACKEND:-api}
       - OMBRE_COMPRESS_API_KEY=${OMBRE_COMPRESS_API_KEY}
       - OMBRE_COMPRESS_BASE_URL=${OMBRE_COMPRESS_BASE_URL:-}
       - OMBRE_COMPRESS_MODEL=${OMBRE_COMPRESS_MODEL:-}
@@ -55,3 +54,15 @@ services:
       - type: bind
         source: ${OMBRE_HOST_VAULT_DIR:-../buckets}
         target: /app/buckets
+
+  # 仅自托管需要本地向量化时启用：--profile local。
+  ombre-ollama:
+    image: ollama/ollama:latest
+    container_name: ombre-ollama
+    restart: unless-stopped
+    profiles: ["local"]
+    volumes:
+      - ollama-data:/root/.ollama
+
+volumes:
+  ollama-data:

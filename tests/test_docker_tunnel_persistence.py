@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import pytest
 import yaml
 
 from web import tunnel
@@ -32,19 +31,8 @@ def _environment(service: dict) -> dict[str, str]:
     return result
 
 
-@pytest.mark.parametrize(
-    ("compose_name", "service_name", "source"),
-    [
-        ("docker-compose.yml", "ombre-brain", "${OMBRE_HOST_VAULT_DIR:-../buckets}"),
-        ("docker-compose.user.yml", "ombre-brain", "${OMBRE_HOST_VAULT_DIR:-./buckets}"),
-    ],
-)
-def test_single_instance_compose_has_dns_fallback_and_persistent_bind(
-    compose_name: str,
-    service_name: str,
-    source: str,
-):
-    service = _compose(compose_name)["services"][service_name]
+def test_source_compose_has_dns_fallback_and_persistent_bind():
+    service = _compose("docker-compose.yml")["services"]["ombre-brain"]
     environment = _environment(service)
 
     assert environment["TUNNEL_EDGE"] == EDGE_DEFAULT
@@ -52,28 +40,14 @@ def test_single_instance_compose_has_dns_fallback_and_persistent_bind(
     assert environment["OMBRE_TRUSTED_PROXY_CIDRS"] == TRUSTED_PROXY_DEFAULT
     assert environment["OMBRE_HOST_VAULT_DIR"] == "${OMBRE_HOST_VAULT_DIR:-}"
     assert service["volumes"] == [
-        {"type": "bind", "source": source, "target": "/app/buckets"}
+        {"type": "bind", "source": "${OMBRE_HOST_VAULT_DIR:-../buckets}", "target": "/app/buckets"}
     ]
 
 
-def test_multi_instance_compose_keeps_vaults_isolated_and_uses_dns_fallback():
-    services = _compose("docker-compose.multi.yml")["services"]
-
-    for owner, source_var in (
-        ("ming", "OMBRE_MING_VAULT_DIR"),
-        ("hong", "OMBRE_HONG_VAULT_DIR"),
-    ):
-        service = services[owner]
-        environment = _environment(service)
-        assert environment["TUNNEL_EDGE"] == EDGE_DEFAULT
-        assert environment["TUNNEL_TRANSPORT_PROTOCOL"] == "${TUNNEL_TRANSPORT_PROTOCOL:-http2}"
-        assert environment["OMBRE_TRUSTED_PROXY_CIDRS"] == TRUSTED_PROXY_DEFAULT
-        assert environment["OMBRE_HOST_VAULT_DIR"] == f"${{{source_var}:-}}"
-        assert service["volumes"] == [{
-            "type": "bind",
-            "source": f"${{{source_var}:-./buckets-{owner}}}",
-            "target": "/app/buckets",
-        }]
+def test_local_ollama_remains_opt_in():
+    ollama = _compose("docker-compose.yml")["services"]["ombre-ollama"]
+    assert ollama["profiles"] == ["local"]
+    assert ollama["volumes"] == ["ollama-data:/root/.ollama"]
 
 
 def test_tunnel_token_config_lives_inside_persistent_buckets(monkeypatch, tmp_path):

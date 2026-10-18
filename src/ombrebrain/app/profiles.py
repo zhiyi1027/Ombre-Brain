@@ -141,7 +141,7 @@ def build_default_legacy_profiles() -> LegacyModuleRegistry:
         ),
         LegacyModuleProfile(
             module="deploy.*",
-            files=("deploy/*", "deploy/**", "render.yaml", "zbpack.json"),
+            files=("deploy/*", "deploy/**", "zbpack.json"),
             responsibilities=("self-host-deployment", "paas-entrypoints"),
             side_effects=("host-port-mapping", "container-env-mapping"),
             protected_surfaces=("deployment-user-overrides", "bucket-volume"),

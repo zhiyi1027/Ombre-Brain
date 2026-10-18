@@ -3487,7 +3487,7 @@
     <div class="config-section" id="sec-mcp" data-sgroup="advanced">
       <h3>MCP 配置 <span class="sec-en">MCP Setup</span></h3>
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:16px;line-height:1.7;">
-        生成 Claude Desktop / claude.ai 的 MCP 连接配置。16 个工具全在一个端点 /mcp 上，只需连这一条。
+        生成 Claude Desktop / claude.ai 的 MCP 连接配置。19 个工具全在一个端点 /mcp 上，只需连这一条。
       </div>
       <div style="margin-bottom:16px;padding:12px 14px;border:1px solid var(--border);border-radius:11px;background:var(--surface-solid);font-size:12px;line-height:1.7;">
         不确定 OAuth、端口和持久目录怎么选？
@@ -3533,7 +3533,7 @@
             <button onclick="copyMcpUrl('main')" title="复制 / Copy" style="padding:3px 8px;font-size:11px;white-space:nowrap;background:none;border:1px solid var(--border);border-radius:3px;cursor:pointer;color:var(--text-dim);"><i data-lucide="copy"></i></button>
           </div>
         </div>
-        <div style="margin-top:6px;font-size:11px;color:var(--text-light);">16 个工具已合并到单一连接器 /mcp，只需连这一条。</div>
+        <div style="margin-top:6px;font-size:11px;color:var(--text-light);">19 个工具已合并到单一连接器 /mcp，只需连这一条。</div>
         <div id="mcp-copy-msg" style="margin-top:4px;font-size:11px;color:var(--positive);min-height:16px;"></div>
       </div>
 
@@ -7766,7 +7766,7 @@ async function loadLocalEmbStatus() {
       (d.models && d.models.length ? '<br><span style="color:var(--text-light)">已装：' + d.models.map(esc).join(', ') + '</span>' : '');
     var hint = document.getElementById('local-emb-hint');
     if (hint) {
-      if (envD && envD.in_docker) hint.innerHTML = _SV.warn + ' Docker 部署：启用自带的本地向量化容器 <code>docker compose -f docker-compose.user.yml --profile local up -d</code>（容器内无法给宿主装运行时），起好后回来「下载 bge-m3」→「切本地」。';
+      if (envD && envD.in_docker) hint.innerHTML = _SV.warn + ' Docker 部署：启用自带的本地向量化容器 <code>docker compose --env-file deploy/.env -f deploy/docker-compose.yml --profile local up -d</code>（容器内无法给宿主装运行时），起好后回来「下载 bge-m3」→「切本地」。';
       else if (!d.reachable && envD && !envD.installed) hint.innerHTML = _SV.info + ' 还没装本地运行时。点「一键本地化」或「1·安装运行时」自动装（免管理员 / sudo）。';
       else if (!d.reachable) hint.innerHTML = _SV.info + ' 运行时已装但没在跑，点「2·启动」。';
       else hint.textContent = '提示：切换云端↔本地会全库重算（Gemini 3072 维 ↔ bge-m3 1024 维不通用），重算期间检索暂用旧库，不影响使用。';
@@ -7959,7 +7959,7 @@ async function oneClickLocal() {
   var env = await readJsonSafe(er);
   if (!env || !env.ok) { alert('环境检测失败，请稍后重试。 / Environment check failed, please retry later.'); return; }
   if (env.in_docker) {
-    alert('检测到 OB 运行在 Docker 容器里。\n\n本地向量化请启用自带的 ollama 容器（容器内无法给宿主装运行时）：\n\n  docker compose -f docker-compose.user.yml --profile local up -d\n\n起好后回来：「下载 bge-m3」→「切本地」即可。\n\nDetected OB is running inside a Docker container.\n\nFor local embeddings, enable the bundled ollama container (a container cannot install a runtime onto the host):\n\n  docker compose -f docker-compose.user.yml --profile local up -d\n\nOnce it is up, come back and click "Download bge-m3" → "Switch to local".');
+    alert('检测到 OB 运行在 Docker 容器里。\n\n本地向量化请启用自带的 ollama 容器（容器内无法给宿主装运行时）：\n\n  docker compose --env-file deploy/.env -f deploy/docker-compose.yml --profile local up -d\n\n起好后回来：「下载 bge-m3」→「切本地」即可。\n\nDetected OB is running inside a Docker container.\n\nFor local embeddings, enable the bundled ollama container (a container cannot install a runtime onto the host):\n\n  docker compose --env-file deploy/.env -f deploy/docker-compose.yml --profile local up -d\n\nOnce it is up, come back and click "Download bge-m3" → "Switch to local".');
     return;
   }
   var osName = ({ windows:'Windows', linux:'Linux', macos:'macOS' })[env.os] || env.os;
@@ -8659,7 +8659,7 @@ loadVersionBadge();
         cmdEl.textContent = '请在 Render Dashboard 中触发正式部署\n或更新所连接 Git 仓库的 main 分支';
       } else if (info.is_docker) {
         var cname = info.container_name || 'ombre-brain';
-        cmdEl.textContent = 'docker pull p0luz/ombre-brain:latest\ndocker restart ' + cname;
+        cmdEl.textContent = 'Zeabur：从 GitHub main 重新部署\n自托管：从源码重建镜像并重建容器；容器名 ' + cname;
       } else {
         cmdEl.textContent = 'cd /path/to/ombre-brain\ngit pull origin main\n# 然后重启服务（systemctl / pm2 / screen 等）';
       }
@@ -8814,7 +8814,7 @@ loadVersionBadge();
       let latestText = '';
       try {
         const rApi = await fetch(
-          'https://api.github.com/repos/P0luz/Ombre-Brain/contents/VERSION?ref=main',
+          'https://api.github.com/repos/zhiyi1027/Ombre-Brain/contents/VERSION?ref=main',
           { cache: 'no-store', headers: { 'Accept': 'application/vnd.github.raw' } }
         );
         if (rApi.ok) latestText = await rApi.text();
@@ -8822,7 +8822,7 @@ loadVersionBadge();
 
       if (!latestText.trim()) {
         const rRaw = await fetch(
-          'https://raw.githubusercontent.com/P0luz/Ombre-Brain/main/VERSION?t=' + Date.now(),
+          'https://raw.githubusercontent.com/zhiyi1027/Ombre-Brain/main/VERSION?t=' + Date.now(),
           { cache: 'no-store' }
         );
         if (!rRaw.ok) throw new Error('无法读取 GitHub VERSION 文件（' + rRaw.status + '）');
@@ -8835,7 +8835,7 @@ loadVersionBadge();
       // 尝试读 Release 说明（无 Release 时静默忽略）
       var ghRelease = {};
       try {
-        const rRel = await fetch('https://api.github.com/repos/P0luz/Ombre-Brain/releases/latest',
+        const rRel = await fetch('https://api.github.com/repos/zhiyi1027/Ombre-Brain/releases/latest',
           { headers: { 'Accept': 'application/vnd.github.v3+json' } });
         if (rRel.ok) ghRelease = await rRel.json();
       } catch(_) {}

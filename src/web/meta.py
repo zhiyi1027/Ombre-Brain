@@ -91,8 +91,8 @@ _AUTHOR_NOTE = {
 
 # --- 热更新来源与依赖安装的安全闸门（安全加固 #2）---
 # do-update 会把远端 zip 覆盖到 src/ 并 pip install，等于把「谁能改 config.update」
-# 直接放大成 RCE。默认只信官方仓；fork/自建源需显式 env 放行。自动 pip 默认关闭。
-_TRUSTED_UPDATE_REPOS = ("p0luz/ombre-brain",)
+# 直接放大成 RCE。默认只信知知的生产仓；其他来源需显式 env 放行。自动 pip 默认关闭。
+_TRUSTED_UPDATE_REPOS = ("zhiyi1027/ombre-brain",)
 _MAX_UPDATE_ARCHIVE_BYTES = 64 * 1024 * 1024
 _MAX_UPDATE_MEMBERS = 5_000
 _MAX_UPDATE_MEMBER_BYTES = 16 * 1024 * 1024
@@ -868,15 +868,15 @@ def register(mcp) -> None:
                 yield "data: 正在连接 GitHub…\n\n"
                 await _asyncio.sleep(0.1)
 
-                # #4a ③：更新源可配（update.repo / update.ref），默认官方 main。
+                # #4a ③：更新源可配（update.repo / update.ref），默认生产仓 main。
                 _ucfg = getattr(sh, "config", {}) or {}
                 _ucfg = _ucfg.get("update") or {}
-                _repo = str(_ucfg.get("repo") or "P0luz/Ombre-Brain").strip().strip("/")
+                _repo = str(_ucfg.get("repo") or "zhiyi1027/Ombre-Brain").strip().strip("/")
                 _ref  = str(_ucfg.get("ref")  or "main").strip()
-                # 安全闸门 #2：非官方更新源必须显式放行，否则拒绝——防止「改 config.update.repo
+                # 安全闸门 #2：非生产仓更新源必须显式放行，否则拒绝——防止「改 config.update.repo
                 # 指向恶意仓 → 覆盖 src → 重启执行」这条 RCE 链在默认配置下成立。
                 if not _update_repo_allowed(_repo):
-                    yield (f"data: ERROR:更新源 {_repo} 不在可信白名单（默认只允许官方 "
+                    yield (f"data: ERROR:更新源 {_repo} 不在可信白名单（默认只允许生产仓 "
                            f"{_TRUSTED_UPDATE_REPOS[0]}）。如确需从 fork/自建源更新，请设置 "
                            f"OMBRE_ALLOW_CUSTOM_UPDATE_REPO=1 后重试。\n\n")
                     return

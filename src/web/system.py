@@ -40,6 +40,7 @@ from ombrebrain.maintenance import (
     MigrationPreservationContract,
     MigrationTraceRecord,
     VNextPreflightReportBuilder,
+    preflight_cli_diagnostics_check,
 )
 from ombrebrain.observability import ObservabilityMetricBoundary, process_memory
 from ombrebrain.policy import RedLineContract, RedLineFeatureSpec, SurfaceDecision
@@ -537,44 +538,6 @@ def _build_surface_context_diagnostics() -> dict[str, Any]:
     }
 
 
-def _build_preflight_cli_diagnostics(repo_root: str) -> dict[str, Any]:
-    root = str(repo_root or "")
-    cli_path = os.path.join(root, "tools", "vnext_preflight.py")
-    diagnostics_path = os.path.join(root, "src", "web", "system.py")
-    required_files = (cli_path, diagnostics_path)
-    missing_files = [_rel_path(path, root) for path in required_files if not os.path.isfile(path)]
-
-    cli_text = _read_text_file(cli_path) if os.path.isfile(cli_path) else ""
-    diagnostics_text = _read_text_file(diagnostics_path) if os.path.isfile(diagnostics_path) else ""
-    required_cli_snippets = (
-        "def build_parser",
-        "--buckets-dir",
-        "--output",
-        "--coverage-only",
-        "LegacyRuntime.from_config",
-        "VNextPreflightReportBuilder(runtime).build()",
-    )
-    required_diagnostics_snippets = (
-        "vnext_preflight",
-        "VNextPreflightReportBuilder(runtime).build()",
-        "Run tools/vnext_preflight.py",
-    )
-    missing_cli_snippets = [snippet for snippet in required_cli_snippets if snippet not in cli_text]
-    missing_diagnostics_snippets = [
-        snippet for snippet in required_diagnostics_snippets if snippet not in diagnostics_text
-    ]
-    ok = not missing_files and not missing_cli_snippets and not missing_diagnostics_snippets
-    return {
-        "ok": ok,
-        "status": "ok" if ok else "error",
-        "cli_path": _rel_path(cli_path, root),
-        "diagnostics_path": _rel_path(diagnostics_path, root),
-        "missing_files": missing_files,
-        "missing_cli_snippets": missing_cli_snippets,
-        "missing_diagnostics_snippets": missing_diagnostics_snippets,
-    }
-
-
 def _build_preflight_report_self_diagnostics(vnext_preflight: dict[str, Any]) -> dict[str, Any]:
     checks = vnext_preflight.get("checks") if isinstance(vnext_preflight.get("checks"), dict) else {}
     self_check = checks.get("preflight_report_self") if isinstance(checks, dict) else None
@@ -611,18 +574,6 @@ def _build_vnext_coverage_diagnostics(vnext_preflight: dict[str, Any]) -> dict[s
     data["top_level_schema"] = vnext_preflight.get("schema", "")
     data["top_level_check_count"] = vnext_preflight.get("check_count", 0)
     return data
-
-
-def _read_text_file(path: str) -> str:
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
-
-
-def _rel_path(path: str, root: str) -> str:
-    try:
-        return os.path.relpath(path, root) if root else path
-    except ValueError:
-        return path
 
 
 def _read_persisted_runtime_config() -> tuple[str, dict[str, Any]]:
@@ -1081,7 +1032,7 @@ async def build_system_diagnostics() -> dict[str, Any]:
         ))
 
     try:
-        preflight_cli_report = _build_preflight_cli_diagnostics(sh.repo_root)
+        preflight_cli_report = preflight_cli_diagnostics_check(sh.repo_root)
         checks.append(_check(
             "preflight_cli_diagnostics",
             "Preflight CLI",

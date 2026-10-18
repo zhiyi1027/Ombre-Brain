@@ -62,7 +62,7 @@ python tools/check_buckets.py --json
 2. 准备一个全新的临时 vault/测试实例，不要直接覆盖唯一的生产目录。
 3. 在迁移页面上传 ZIP。新包应显示“备份清单与 SHA-256 校验通过”；旧包会显示“未验证”。
 4. 检查 bucket 数、冲突决策和 embedding 模型/维度，再执行导入。
-5. 导入完成后运行 `python tools/check_buckets.py`，并用 `breath(query=...)` 抽查可检索性。
+5. 导入完成后运行 `python tools/check_buckets.py`，并用 `breath_search(query=...)` 抽查可检索性。
 6. 确认 outbox 待处理数最终回到 0。模型离线时允许保持 pending，但 Markdown 必须完整可读。
 
 导入冲突的语义：
@@ -119,20 +119,16 @@ v2.7.0 的热更新和重启按钮本身也是 POST，因此可能一起被旧 C
 CSRF，直接从宿主机升级：
 
 ```bash
-# 预构建镜像部署
-docker compose -f deploy/docker-compose.user.yml pull
-docker compose -f deploy/docker-compose.user.yml up -d --force-recreate
-
-# 源码构建部署则先 git pull，再重建
+# 从本仓库源码部署：先更新代码，再重建镜像
 git pull --ff-only origin main
-docker compose -f deploy/docker-compose.yml up -d --build --force-recreate
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build --force-recreate
 ```
 
 ## 访问控制
 
 - Dashboard 会话默认 30 天过期，可通过 `OMBRE_DASHBOARD_SESSION_DAYS` 调整为 1-365 天。认证文件与 token 文件使用原子写入，并在支持的系统上限制为仅文件所有者可读写。
-- 登录和 OAuth 授权共用失败限流。`X-Forwarded-For` / `X-Forwarded-Proto` / `X-Forwarded-Host` 只在请求确实来自可信反代时采用；内置 Tunnel 使用回环地址，外置 nginx/Caddy/容器反代应通过 `OMBRE_TRUSTED_PROXY_CIDRS` 添加直接连接 OB 的最后一跳代理 CIDR，不能使用 `0.0.0.0/0`。三个官方 Compose 模板都会把该变量从 `.env` 传入容器。
-- 内置 JSON OAuth 状态按单进程部署设计。官方 Docker/Render 启动方式使用单 worker；自行部署时不要启动多个 Web worker 或多个共享同一数据卷的副本，否则授权状态不具备跨进程事务保证。
+- 登录和 OAuth 授权共用失败限流。`X-Forwarded-For` / `X-Forwarded-Proto` / `X-Forwarded-Host` 只在请求确实来自可信反代时采用；内置 Tunnel 使用回环地址，外置 nginx/Caddy/容器反代应通过 `OMBRE_TRUSTED_PROXY_CIDRS` 添加直接连接 OB 的最后一跳代理 CIDR，不能使用 `0.0.0.0/0`。保留的源码版 Compose 会把该变量从 `.env` 传入容器。
+- 内置 JSON OAuth 状态按单进程部署设计。不要启动多个 Web worker 或多个共享同一数据卷的副本，否则授权状态不具备跨进程事务保证。
 - `limits.max_management_request_bytes` 限制普通 Dashboard/OAuth 写请求；导入文本和迁移 ZIP 仍使用各自更大的流式上限。
 - `/api/update-info` 包含数据目录和容器信息，因此需要 Dashboard 登录；公开健康检查仅使用 `/health` 和 `/api/version`。
 
@@ -165,6 +161,8 @@ docker compose -f deploy/docker-compose.yml up -d --build --force-recreate
 `entrypoint.sh` 本身来自镜像，不在 Dashboard 热更新覆盖范围内。升级到带有新播种逻辑的版本时必须先拉取/重建镜像一次，不能只点击 Dashboard 更新。
 
 Dashboard 热更新会限制下载包、成员数、单文件大小、总解压量和压缩率。建立 `_prev` 回滚点失败时不会继续覆盖；逐文件写入采用原子替换。若 `requirements.txt` 有变化且未显式开启 `OMBRE_UPDATE_ALLOW_PIP=1`，热更新会回滚并要求重建镜像，避免“代码更新成功但重启后缺包”。
+
+这个分支的版本检查与热更新默认指向 `zhiyi1027/Ombre-Brain`。旧配置如果显式把 `update.repo` 设成 `P0luz/Ombre-Brain`，热更新会被来源白名单拒绝；核对后将该配置改为生产仓，或清除覆盖值使用默认值。Zeabur 的正式更新仍由所连接的 GitHub 仓库构建，Dashboard 热更新不能替代正式部署。
 
 若希望代码与记忆目录彻底分离，生产环境优先使用命名卷或 bind mount，不要依赖无法稳定重新挂载的临时目录。例如：
 

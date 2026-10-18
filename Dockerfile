@@ -10,7 +10,7 @@
 #     -e OMBRE_EMBED_API_KEY=your-gemini-key \
 #     -e OMBRE_DASHBOARD_PASSWORD=xxx \
 #     -p 18001:8000 ombre-brain          # 对外 18001 → 容器内 8000
-# 推荐用 deploy/docker-compose.yml（开发）或 deploy/docker-compose.user.yml（用户）启动。
+# 自托管可用 deploy/docker-compose.yml 从本仓库源码构建。
 # ============================================================
 
 FROM python:3.12-slim
@@ -56,7 +56,7 @@ RUN chmod +x ./entrypoint.sh
 # 导致「给 Claude 的使用指南」（README）指向的 docs/CLAUDE_PROMPT.md 拿不到，
 # 出现「服务装完了但模型没拿到使用约定」的 onboarding 断点。内部设计稿
 # （docs/superpowers、docs/secrets 等）不在此列，仍被 .dockerignore 挡在外面。
-COPY docs/CLAUDE_PROMPT.md docs/ENVIRONMENT_VARIABLES.md docs/INTERNALS.md docs/MULTI_OWNER.md docs/OPERATIONS.md ./docs/
+COPY docs/CLAUDE_PROMPT.md docs/ENVIRONMENT_VARIABLES.md docs/INTERNALS.md docs/OPERATIONS.md ./docs/
 COPY README.md ./README.md
 COPY CHANGELOG.md ./CHANGELOG.md
 
@@ -72,15 +72,12 @@ ENV OMBRE_TRANSPORT=streamable-http
 ENV OMBRE_PORT=8000
 ENV OMBRE_BUCKETS_DIR=/app/buckets
 # config 默认落在持久卷 /app/buckets 里，而不是镜像可写层 /app/config.yaml。
-# 关键：很多 PaaS（Zeabur / 部分 Render 配置等）用**只读根文件系统**，只有挂载的卷可写——
+# 关键：托管平台可能使用**只读根文件系统**，只有挂载的卷可写——
 # 这时 entrypoint 往 /app/config.yaml 写默认配置会 "Read-only file system" 失败 → FATAL →
 # 无限崩溃重启（本地 root + 可写 /app 复现不出，平台上才炸）。放到 /app/buckets 既避开只读根，
-# 又让 Dashboard 改的 key 落在卷上、重启/重部署不丢。VPS（deploy/docker-compose.yml）显式覆盖回
-# /app/config.yaml 保持原有文件挂载不变。
+# 又让 Dashboard 改的 key 落在卷上、重启/重部署不丢。源码版 Compose 也使用这个路径。
 ENV OMBRE_CONFIG_PATH=/app/buckets/config.yaml
-# Embedding 使用 API 后端（Gemini）
-# 必须通过运行时 -e 或 docker-compose environment 传入 OMBRE_EMBED_API_KEY
-ENV OMBRE_EMBED_BACKEND=api
+# 云端向量化需要在运行时配置 OMBRE_EMBED_API_KEY；本地 Ollama 走兼容 API。
 
 EXPOSE 8000
 
