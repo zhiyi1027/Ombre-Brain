@@ -131,6 +131,7 @@ EXPECTED_REQUIRED_PROPERTIES = {
     "letter_write": {"author", "content"},
     "media_read": {"bucket_id"},
     "raw_day": {"date"},
+    "raw_search": {"query"},
 }
 
 
