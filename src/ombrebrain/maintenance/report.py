@@ -109,7 +109,7 @@ class VNextPreflightReportBuilder:
             "surface_context": _surface_context_check(self.runtime),
             "adr_requirements": _adr_requirements_check(),
             "red_lines": _red_lines_check(red_line_features),
-            "preflight_cli_diagnostics": _preflight_cli_diagnostics_check(),
+            "preflight_cli_diagnostics": preflight_cli_diagnostics_check(),
         }
         checks["preflight_coverage_expansion"] = _preflight_coverage_expansion_check(checks)
         checks["preflight_report_self"] = _preflight_report_self_check(checks)
@@ -843,15 +843,16 @@ def _red_lines_check(
     return RedLineContract.default().evaluate_manifest(candidates).to_dict()
 
 
-def _preflight_cli_diagnostics_check() -> dict[str, Any]:
-    repo_root = Path(__file__).resolve().parents[3]
+def preflight_cli_diagnostics_check(repo_root: str | Path | None = None) -> dict[str, Any]:
+    """Check the preflight CLI and Dashboard hook from one shared definition."""
+    repo_root = Path(repo_root) if repo_root is not None else Path(__file__).resolve().parents[3]
     cli_path = repo_root / "tools" / "vnext_preflight.py"
     diagnostics_path = repo_root / "src" / "web" / "system.py"
     required_files = (cli_path, diagnostics_path)
-    missing_files = [str(path.relative_to(repo_root)) for path in required_files if not path.exists()]
+    missing_files = [str(path.relative_to(repo_root)) for path in required_files if not path.is_file()]
 
-    cli_text = cli_path.read_text(encoding="utf-8") if cli_path.exists() else ""
-    diagnostics_text = diagnostics_path.read_text(encoding="utf-8") if diagnostics_path.exists() else ""
+    cli_text = cli_path.read_text(encoding="utf-8") if cli_path.is_file() else ""
+    diagnostics_text = diagnostics_path.read_text(encoding="utf-8") if diagnostics_path.is_file() else ""
     required_cli_snippets = (
         "def build_parser",
         "--buckets-dir",

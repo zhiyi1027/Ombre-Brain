@@ -101,9 +101,10 @@ jobs:
             sleep 1
           done
 
-      - name: Run 14-tool Docker MCP integration suite
+      - name: Run 19-tool Docker MCP integration suite
         env:
           OMBRE_DOCKER_INTEGRATION_URL: http://127.0.0.1:18084/mcp
+          OMBRE_DOCKER_EXPECT_COMPRESSION_PROVIDER: '1'
         run: >-
           python -m pytest tests/test_mcp_tools_docker_integration.py -q
           --timeout=60

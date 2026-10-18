@@ -59,11 +59,10 @@ Ombre-Brain/
 ├── src/                # 所有运行期 Python 源码（server.py / bucket_manager / dehydrator / ...）
 ├── tools/              # CLI 一次性脚本：backfill / migrate / reclassify / check_*
 ├── tests/              # pytest 测试套件（unit / integration / regression）
-├── docs/               # INTERNALS / BEHAVIOR_SPEC / ENV_VARS / CLAUDE_PROMPT
+├── docs/               # INTERNALS / ENVIRONMENT_VARIABLES / CLAUDE_PROMPT
 ├── frontend/           # dashboard.html
-├── deploy/             # docker-compose.yml / docker-compose.user.yml
+├── deploy/             # docker-compose.yml（自托管源码构建）
 ├── Dockerfile          # 根目录保留（平台自动识别）
-├── render.yaml         # 根目录保留（Render 自动识别）
 ├── zbpack.json         # 根目录保留（Zeabur 自动识别）
 ├── requirements.txt / requirements.lock.txt  # 直接依赖源 / 发布安装锁
 ├── requirements-dev.in / requirements-dev.lock.txt  # CI 与审计工具源 / 锁
@@ -84,7 +83,7 @@ Ombre-Brain/
            ▼                                              ▼
   ┌─────────────────────────────┐      ┌───────────────────────────────┐
   │ src/tools/ MCP 业务包（薄封装→子包）│      │ src/web/ HTTP/Dashboard 路由层      │
-  │   breath/ hold/ grow/ dream/         │      │   16 个域模块，每个 register(mcp)   │
+  │   breath/ hold/ grow/ dream/         │      │   25 个域模块，每个 register(mcp)   │
   │   trace/ anchor/ plan/ i/            │      │   config_api/embedding/buckets/... │
   │   _runtime.py · _common.py           │      │   ollama_local/github/...           │
   └───────────┬─────────────────────┘      │   共享依赖见 web/_shared.py          │
@@ -107,9 +106,9 @@ Ombre-Brain/
 
 每个模块「干什么、边界在哪、依赖谁」：
 
-- **server.py**（约 1000 行）— MCP 服务入口。创建所有组件后调 `tools._runtime.init(...)` 注入依赖；以 `@mcp.tool()` / `@mcp_extra.tool()` 注册 **15 个薄封装**（每个只负责转发和协议适配）；启动入口处把 `mcp_extra` 的 8 个工具回灌进 `mcp`，对外只暴露 **单连接器 `/mcp`**（15 工具全在这一条，详见 §3 抬头）；启动段调 `web.register_all(mcp)` 装配所有 HTTP 路由，并起 `mcp.streamable_http_app()` 一个 uvicorn 进程。**不写业务逻辑，也不再直接定义 HTTP 路由**——后者已全部迁到 `web/`。
+- **server.py**（约 1200 行）— MCP 服务入口。创建所有组件后调 `tools._runtime.init(...)` 注入依赖；以 `@mcp.tool()` / `@mcp_extra.tool()` 注册 **19 个工具入口**（每个只负责转发和协议适配）；启动入口处把 `mcp_extra` 的 12 个工具回灌进 `mcp`，对外只暴露 **单连接器 `/mcp`**（19 个工具全在这一条，详见 §3 抬头）；启动段调 `web.register_all(mcp)` 装配所有 HTTP 路由，并起 `mcp.streamable_http_app()` 一个 uvicorn 进程。**不写业务逻辑，也不再直接定义 HTTP 路由**——后者已全部迁到 `web/`。
 - **tools/**（MCP 工具应用层）— 详见下面「1.x tools/ 包结构」。
-- **web/**（HTTP/Dashboard 路由层）— 详见下面「1.y web/ 包结构」。从旧 server.py 巨石里拆出的 16 个域模块，每个导出 `register(mcp)`；cookie/CSRF/会话鉴权等共享依赖在 `web/_shared.py`（类比 `tools/_runtime.py`）。
+- **web/**（HTTP/Dashboard 路由层）— 详见下面「1.y web/ 包结构」。从旧 server.py 巨石里拆出的 25 个域模块，每个导出 `register(mcp)`；cookie/CSRF/会话鉴权等共享依赖在 `web/_shared.py`（类比 `tools/_runtime.py`）。
 - **bucket_manager.py** — 桶 CRUD + 多维加权搜索 + `touch()` 激活刷新 + `_time_ripple()` 时间涟漪 + 文件搬运（archive/permanent 之间）。
 - **decay_engine.py** — `calculate_score(metadata)` 单桶活跃度评分；`run_decay_cycle()` 周期扫描 → auto-resolve / archive；后台 asyncio 循环。
 - **dehydrator.py** — 通过 OpenAI 兼容 LLM API 做四件事：`analyze()` 自动打标、`merge()` 内容融合、`digest()` 日记拆分、`dehydrate()` 摘要压缩；外加 `judge_plan_resolution()` 给 plan 自动结案做 LLM 双判。带 SQLite 缓存避免重复 API 调用。
@@ -183,7 +182,7 @@ src/web/
 
 ### 辅助脚本
 
-`tools/backfill_embeddings.py`（为存量桶补 embedding）、`src/write_memory.py`（CLI 直写记忆，绕过 MCP）、`tools/reclassify_domains.py` / `src/reclassify_api.py`（重新打标）、`tools/check_buckets.py`（数据完整性检查）、`tools/check_icloud_conflicts.py`（iCloud 同步冲突文件清理）、`tools/evaluate_retrieval.py`（用显式 query→bucket 期望只读计算 Hit@K / Recall@K / MRR，默认不调用 embedding）。
+`tools/backfill_embeddings.py`（为存量桶补 embedding）、`src/write_memory.py`（CLI 直写记忆，绕过 MCP）、`tools/reclassify_domains.py` / `src/reclassify_api.py`（重新打标）、`tools/check_buckets.py`（数据完整性检查）、`tools/evaluate_retrieval.py`（用显式 query→bucket 期望只读计算 Hit@K / Recall@K / MRR，默认不调用 embedding）。
 
 ---
 
@@ -266,14 +265,14 @@ feel 桶自身：
 
 ---
 
-## 3. MCP 工具规格（共 15 个）
+## 3. MCP 工具规格（共 19 个）
 
-> **单连接器（iter 2.2）**：claude.ai 的 5 工具上限已解除，16 个工具合并回一个连接器 `/mcp`。
+> **单连接器（iter 2.2）**：claude.ai 的 5 工具上限已解除，19 个工具合并回一个连接器 `/mcp`。
 > 历史上（iter 2.1）曾因该上限拆成主 `mcp`（`/mcp`，5 个）+ 副 `mcp_extra`（`/mcp-extra`，7 个）两个 FastMCP 实例。
-> 现在 `mcp_extra` 仅作工具分组容器保留（8 个 `@mcp_extra.tool()`），启动入口处统一把它的工具
+> 现在 `mcp_extra` 仅作工具分组容器保留（12 个 `@mcp_extra.tool()`），启动入口处统一把它的工具
 > 回灌进 `mcp`，三种 transport（stdio / sse / streamable-http）都只对外暴露一条 `/mcp`。
 > - 高频 7 个 —— `breath` / `breath_search` / `breath_advanced` / `hold` / `grow` / `trace` / `dream`
-> - 低频 9 个 —— `anchor` / `release` / `pulse` / `plan` / `letter_write` / `letter_read` / `I` / `media_catalog` / `media_read`
+> - 低频 12 个 —— `anchor` / `release` / `pulse` / `plan` / `letter_write` / `letter_read` / `I` / `media_catalog` / `media_read` / `raw_day` / `raw_search` / `quarrel`
 
 ### 3.1 `breath` / `breath_search` / `breath_advanced` — 检索/浮现
 
@@ -487,7 +486,7 @@ feel 桶自身：
 | `/api/nightly-dreams` | GET | 🔒 | 列出最近夜间梦境状态；列表不批量返回梦境正文 |
 | `/api/nightly-dreams/{dream_day}` | GET | 🔒 | 查看某夜合成梦境与可追溯来源；只读，不提供生成或写回入口 |
 | `/internal/daily-notes` | POST | 🔑 | 幂等上传 CC/Codex 当日累计便签；只接受 `OMBRE_DAILY_NOTE_TOKEN`（或回退的 Hook Token）/ Dashboard 登录态，响应不回显正文 |
-| `/mcp/*` | — | 公开 | FastMCP 单连接器（iter 2.2）：全部 16 个工具 —— breath / breath_search / breath_advanced / hold / grow / dream / trace / anchor / release / pulse / plan / letter_write / letter_read / **I** / media_catalog / media_read |
+| `/mcp/*` | — | 公开 | FastMCP 单连接器（iter 2.2）：全部 19 个工具 —— breath / breath_search / breath_advanced / hold / grow / dream / trace / anchor / release / pulse / plan / letter_write / letter_read / **I** / media_catalog / media_read / raw_day / raw_search / quarrel |
 
 🔒 = 需要 cookie 认证，未认证返回 `JSON {error, setup_needed}` 状态码 401。
 
@@ -1432,7 +1431,6 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 | `OMBRE_EMBED_API_KEY` | — | 向量化（embedding）的 API Key；不设则语义检索不可用，桶仍可写入 |
 | `OMBRE_EMBED_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai/` | 覆盖 `embedding.base_url` |
 | `OMBRE_EMBED_MODEL` | `gemini-embedding-001` | 覆盖 `embedding.model` |
-| `OMBRE_EMBED_BACKEND` | （已废弃） | 旧的本地后端选择（bge-small-zh/bge-m3 sentence-transformers）已移除；现在统一走 `api` 后端，本地离线靠 `OMBRE_EMBED_BASE_URL` 指向 Ollama 边车 + 填本地模型名 |
 | `OMBRE_TRANSPORT` | `stdio` | 覆盖 `transport` |
 | `OMBRE_PORT` | `8000` | HTTP/SSE 监听端口 |
 | `OMBRE_BUCKETS_DIR` | `./buckets` | 覆盖 `buckets_dir`（Docker volume 必设） |
@@ -1440,11 +1438,11 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 | `OMBRE_HOOK_URL` | — | Webhook 推送地址；空则不推送 |
 | `OMBRE_HOOK_SKIP` | `false` | `1`/`true`/`yes` 跳过推送 |
 | `OMBRE_DASHBOARD_PASSWORD` | — | 预设 Dashboard 密码（覆盖文件密码，UI 改密码功能禁用） |
-| `OMBRE_HOST_VAULT_DIR` | `./buckets` | docker-compose 用：宿主机持久目录；源码版写 `deploy/.env`，独立用户版写 compose 同目录 `.env`，挂载到 `/app/buckets` |
+| `OMBRE_HOST_VAULT_DIR` | `./buckets` | docker-compose 用：宿主机持久目录；源码版写 `deploy/.env`，挂载到 `/app/buckets` |
 | `TUNNEL_EDGE` | 双 global region | Compose 默认 `region1.v2.argotunnel.com:7844,region2.v2.argotunnel.com:7844`，绕过不支持 SRV 的 VPN DNS；显式留空恢复原生 edge discovery |
 | `TUNNEL_TRANSPORT_PROTOCOL` | `http2`（Compose） | Tunnel 到 edge 的传输协议；特殊 VPN 默认 TCP/HTTP2，设 `auto` 恢复 cloudflared 自动选择 |
 
-优先级：**环境变量 > config.yaml > 内置默认值**。读取入口都在 `utils.load_config()`（`OMBRE_EMBED_BACKEND` 例外，直接在 `embedding_engine.py` 读取）。新增 env 变量必须在那里注入到 config dict。
+优先级：**环境变量 > config.yaml > 内置默认值**。读取入口都在 `utils.load_config()`。新增 env 变量必须在那里注入到 config dict。
 
 ---
 

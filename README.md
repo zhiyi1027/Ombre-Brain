@@ -56,9 +56,9 @@ Ombre Brain 的使用者是**模型自己**，不是它背后的人。所以这�
 
 ---
 
-## 它的 16 个工具 / The 16 Tools
+## 它的 19 个工具 / The 19 Tools
 
-16 个工具全部在**一个 MCP 连接器 `/mcp`** 上。连上 `/mcp` 即拥有全部能力。
+19 个工具全部在**一个 MCP 连接器 `/mcp`** 上。连上 `/mcp` 即拥有全部能力。
 
 ### 高频 7 个
 
@@ -72,7 +72,7 @@ Ombre Brain 的使用者是**模型自己**，不是它背后的人。所以这�
 | `trace` | 唯一的元数据写入口：resolved / pinned / 改情感坐标 / 替换正文 / 删除到档案 / 改 plan 状态。`superseded_by=新桶ID` 可显式确认一条普通记忆已被取代，`\clear` 撤销。 |
 | `dream` | `catalog=True` 轻量列出过去 48h 新记忆及 `resolved/digested` 状态；按 ID 精读后真有沉淀才写 feel。完整 dream 需要整体消化时再调。 |
 
-### 低频 9 个
+### 低频 12 个
 
 | 工具 | 一句话 |
 |---|---|
@@ -83,89 +83,38 @@ Ombre Brain 的使用者是**模型自己**，不是它背后的人。所以这�
 | `I` | 自我认知：写下 / 读取「我是什么」（本质 / 规律 / 立场 / 局限…）。不随普通 `breath` 浮现，每次对话开头自动附最近 3 条。 |
 | `media_catalog` | 列出全部图片记忆桶的日期、关键词、桶 ID 和张数，也可先按关键词过滤；不读取图片本体。 |
 | `media_read` | 按 `bucket_id` 与从 0 开始的 `index` 取回一张已持久化图片；只有明确要看原图时才调用，`breath` / `dream` 不会自动加载图片本体。 |
+| `raw_day` / `raw_search` | 按日期或关键词查找已归档的原始记录；调用时才读取。 |
+| `quarrel` | 处理独立的私有连续状态，不进入普通记忆检索。 |
 
 > 给模型的完整使用约定（含示例、边界、返回提示）见 [docs/CLAUDE_PROMPT.md](docs/CLAUDE_PROMPT.md)；逐工具技术规格见 [docs/INTERNALS.md](docs/INTERNALS.md) §3。
 
 ---
 
-## 快速开始 / Quick Start（Docker Hub 预构建镜像）
+## 快速开始 / Quick Start
 
-> 不需要 clone 代码，不需要 build。第一次完整跑通约 5 分钟。
+当前维护仓库是 `zhiyi1027/Ombre-Brain`。生产服务由 Zeabur 从这个仓库构建，并将持久卷挂到 `/app/buckets`。部署时要让记忆、配置和授权状态落在同一个持久卷；本仓库不发布上游 Docker Hub 镜像。
 
-> ### ⚠️ 部署前先认准一件事：要有「持久磁盘」
->
-> Ombre Brain 是**有状态**服务——记忆桶是磁盘上的 `.md` 文件 + SQLite 向量库，必须落在
-> 一块重启不丢的盘上。所以真正的判断标准不是「用哪个平台」，而是**这个平台有没有给你挂持久磁盘**：
->
-> - ❌ **没有持久盘 / 会休眠重置的免费层**（Render 免费层、Railway 无 volume、Zeabur 不挂
->   Volume 等）：容器一重启或休眠，记忆**全丢**——这不是 bug，是没挂盘。**别在这种配置上搭。**
-> - ✅ **挂了持久盘就完全可用**：Render 的 Starter（$7/mo，自动挂盘）、Zeabur 配 Volume、
->   自己的电脑 / NAS / VPS（数据落本地磁盘）——这些都没问题，下面各自有专门小节。
->
-> 选型建议（挑一条）：
->
-> 1. **在自己的机器 / 服务器上部署（最省心、推荐）**：跑在自己的电脑、NAS 或 VPS 上，数据在
->    你自己的盘。要给 Claude.ai 网页版用，就用内置的 **Cloudflare Tunnel** 一键拿一个公网
->    `https://…` 填进去（见「远程访问」）。家里电脑 + Tunnel，完全够用。
-> 2. **想用托管平台**：选**带持久磁盘**的档位（见下方 [Render](#render) / [Zeabur](#zeabur) 小节），
->    把 volume 挂到 buckets 目录即可，别用免费/无盘档。
-> 3. **只是没有 API Key**：去 [硅基流动 SiliconFlow](https://siliconflow.cn/) 领免费额度（OpenAI 兼容 +
->    免费 `BAAI/bge-m3`），或用本地 Ollama bge-m3（见「本地向量模型」），都零成本。
->
-> 一句话：**认准持久磁盘，缺模型用硅基流动免费层或本地 Ollama。** 平台不背锅，没挂盘才背锅。
+### 在 Zeabur 快速部署
 
-### 第零步：装 Docker Desktop
+在 Zeabur 选择 **Deploy from GitHub** 并连接本仓库，使用根目录的 `Dockerfile` 构建。给服务挂载 `/app/buckets` 持久卷、绑定 HTTPS 域名，再按下文 [Zeabur 部署步骤](#zeabur)设置鉴权与模型配置。不要把本地 `buckets/` 或导出包提交进 Git。
 
-打开 [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/)，下载对应你系统的版本，安装后启动。Windows 用户安装时会提示启用 WSL 2，点同意。
-
-### 第一步：打开终端
-
-| 系统 | 怎么打开 |
-|---|---|
-| **Mac** | `⌘ + 空格` → 输入 `终端` → 回车 |
-| **Windows** | `Win + R` → 输入 `cmd` → 回车 |
-| **Linux** | `Ctrl + Alt + T` |
-
-### 第二步：创建工作文件夹
+### 本机或 VPS（源码构建）
 
 ```bash
-mkdir ombre-brain && cd ombre-brain
+git clone https://github.com/zhiyi1027/Ombre-Brain.git
+cd Ombre-Brain
+cp .env.example deploy/.env
 ```
 
-### 第三步：下载 compose 文件并启动
-
-**不需要提前准备 API Key**——Ombre Brain 支持零配置启动，API Key 可以在 Dashboard 里随时填入并立即生效。
+打开 `deploy/.env`：将 `OMBRE_COMPRESS_API_KEY=change-me` 换成实际 Key；取消 `OMBRE_DASHBOARD_PASSWORD` 行的注释并设置强密码。需要语义检索时再填写向量化 Key；暂不用时把示例 `OMBRE_EMBED_API_KEY=change-me` 注释掉。数据目录默认是仓库根目录的 `buckets/`，需要换位置才取消 `OMBRE_HOST_VAULT_DIR` 行的注释并填写真实绝对路径。
 
 ```bash
-# 下载用户版 compose 文件
-curl -O https://raw.githubusercontent.com/P0luz/Ombre-Brain/main/deploy/docker-compose.user.yml
-
-# 拉取镜像并启动（第一次会下载约 500MB）
-docker compose -f docker-compose.user.yml up -d
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 ```
 
-启动后在 Dashboard → **③ 引擎** 里填入 Key 并点「保存 Key」，立即热更新生效，无需重启。
+`deploy/docker-compose.yml` 默认只在宿主机回环地址开放端口，数据目录默认是仓库根目录的 `buckets/`；需要换宿主机目录时在 `deploy/.env` 设置 `OMBRE_HOST_VAULT_DIR`。云端使用平台变量和卷，不需要这份 Compose。
 
-> 也可以提前在 `.env` 文件里写好 Key：
-> ```bash
-> echo "OMBRE_COMPRESS_API_KEY=your-key-here" > .env
-> echo "OMBRE_EMBED_API_KEY=your-embed-key" >> .env
-> echo "OMBRE_HOST_VAULT_DIR=D:/Ombre-Brain/buckets-data" >> .env
-> ```
-> `OMBRE_HOST_VAULT_DIR` 指向宿主机持久目录，其中同时保存记忆、`config.yaml` 和 Tunnel token；重建容器不会清空。
-
-**推荐免费方案：Google AI Studio**
-
-1. 打开 [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-2. 用 Google 账号登录 → 点 **Create API key** → 复制
-3. 推荐模型（均为免费额度，以官网实时信息为准）：
-   - 脱水/打标模型：`gemini-2.0-flash`（无思考开销，稳定，免费）
-   - 向量化模型：`gemini-embedding-001`（1500 req/day，3072 维，免费）
-   - Base URL：`https://generativelanguage.googleapis.com/v1beta/openai/`
-
-也支持任何 OpenAI 兼容接口：DeepSeek / SiliconFlow / Ollama / LM Studio / vLLM 等。
-
-### 第四步：验证
+### 本机验证
 
 ```bash
 curl http://localhost:18001/health
@@ -175,9 +124,9 @@ curl http://localhost:18001/health
 
 浏览器打开 Dashboard：`http://localhost:18001`
 
-> 第一次访问会弹出密码设置向导，设好密码后所有 `/api/*` 端点都需要这个密码登录。
+> 使用源码版 Compose 时，首次访问会看到登录页，输入 `deploy/.env` 中设置的 Dashboard 密码。
 
-### 第五步：接入 Claude
+### 接入 Claude
 
 ---
 
@@ -213,9 +162,9 @@ curl http://localhost:18001/health
 }
 ```
 
-重启 Claude Desktop，工具列表里会出现全部 16 个工具：`breath` / `breath_search` / `breath_advanced` / `hold` / `grow` / `trace` / `dream` / `anchor` / `release` / `pulse` / `plan` / `letter_write` / `letter_read` / `I` / `media_catalog` / `media_read`。
+重启 Claude Desktop，工具列表里会出现全部 19 个工具：`breath` / `breath_search` / `breath_advanced` / `hold` / `grow` / `trace` / `dream` / `anchor` / `release` / `pulse` / `plan` / `letter_write` / `letter_read` / `I` / `media_catalog` / `media_read` / `raw_day` / `raw_search` / `quarrel`。
 
-> 16 个工具全在同一连接器 `/mcp` 暴露，只配这一个即可。
+> 19 个工具全在同一连接器 `/mcp` 暴露，只配这一个即可。
 
 ---
 
@@ -292,13 +241,13 @@ Claude.ai                    Ombre Brain 服务器
 
 #### 步骤 3：连接端点
 
-16 个工具全在**一个 MCP 端点 `/mcp`** 上：
+19 个工具全在**一个 MCP 端点 `/mcp`** 上：
 
 | 端点 | 工具 | 说明 |
 |---|---|---|
-| `/mcp` | `breath` `breath_search` `breath_advanced` `hold` `grow` `dream` `trace` `anchor` `release` `pulse` `plan` `letter_write` `letter_read` `I` `media_catalog` `media_read` | 全部 16 个工具 |
+| `/mcp` | `breath` `breath_search` `breath_advanced` `hold` `grow` `dream` `trace` `anchor` `release` `pulse` `plan` `letter_write` `letter_read` `I` `media_catalog` `media_read` `raw_day` `raw_search` `quarrel` | 全部 19 个工具 |
 
-> 旧版曾使用第二连接器 `/mcp-extra`，该端点现已退役并返回 `404`；不要再单独添加。全部 16 个工具都在 `/mcp`。
+> 旧版曾使用第二连接器 `/mcp-extra`，该端点现已退役并返回 `404`；不要再单独添加。全部 19 个工具都在 `/mcp`。
 
 在 Claude.ai / 你的客户端里添加这一个连接器即可使用全部工具：
 
@@ -307,7 +256,7 @@ http(s)://<你的地址>:18001/mcp
 ```
 
 > **`<你的地址>` 填什么？**
-> - **本机访问**：`http://localhost:18001/mcp`（两种 compose 现已统一默认对外端口 18001 → 容器内 8000；想换端口在 `deploy/.env` 设 `OMBRE_HOST_PORT`）
+> - **本机访问**：`http://localhost:18001/mcp`（源码版 Compose 默认对外端口 18001 → 容器内 8000；想换端口在 `deploy/.env` 设 `OMBRE_HOST_PORT`）
 > - **直连 VPS 公网 IP**：`http://你的服务器IP:18001/mcp`
 > - **用了 Cloudflare Tunnel / 自有域名**：把 `<你的地址>:18001` 整段换成你的网址，且通常不带端口、走 https，例如 `https://ombre.example.com/mcp`
 >
@@ -404,9 +353,15 @@ Ombre-MCP-Token: 你的Token
 适合想自己改代码或部署到 VPS 的用户。
 
 ```bash
-git clone https://github.com/P0luz/Ombre-Brain.git
+git clone https://github.com/zhiyi1027/Ombre-Brain.git
 cd Ombre-Brain
-docker compose -f deploy/docker-compose.yml up -d
+cp .env.example deploy/.env
+```
+
+按上方「本机或 VPS（源码构建）」的说明填写 `deploy/.env` 中的密码和模型 Key，再启动：
+
+```bash
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 ```
 
 验证：
@@ -445,7 +400,7 @@ location / {
 ### 不用 Docker（纯 Python）
 
 ```bash
-git clone https://github.com/P0luz/Ombre-Brain.git
+git clone https://github.com/zhiyi1027/Ombre-Brain.git
 cd Ombre-Brain
 
 python -m venv .venv
@@ -462,134 +417,29 @@ python src/server.py
 
 ---
 
-## 一个大脑多人共用（记忆隔离）/ Multiple Owners
-
-同一套 OB 部署给多个人用，但**每个人的记忆完全隔离、互不可见**——A 写的东西 B 永远看不到，
-反之亦然。适合：一家人共用一台家庭服务器、一个小团队共享一套部署、给几个不同的 AI 角色各自
-一份独立记忆。
-
-### 它是怎么隔离的（先理解，再照做）
-
-**核心一句话：每个人 = 一个独立实例 = 一个独立数据目录 + 一个独立端口。**
-
-OB 的记忆桶（`.md` 文件）、向量库（`embeddings.db`）、脱水缓存、错误日志**全部落在各自的数据
-目录下**，所以只要两个人指向不同目录，记忆就天生互不相通——这不是加了一层权限过滤，而是物理上
-就是两套独立的库。不需要改一行核心代码，全靠下面几个环境变量：
-
-| 环境变量 | 作用 | 谁来设 |
-|---|---|---|
-| `OMBRE_VAULT_DIR` | 这个人的**数据目录**（记忆落这里；旧名 `OMBRE_BUCKETS_DIR` 仍兼容） | 每人各设一个，**必须互不相同** |
-| `OMBRE_PORT` | 这个人的**对外端口** | 每人各设一个，**必须互不相同** |
-| `OMBRE_OWNER_NAME` | 这个人的**显示名**（用于 Dashboard 顶部的归属徽标） | 每人设自己的 |
-| `OMBRE_OWNER_COUNT` | 共用这套 OB 的**总人数** | 所有人设成**相同**的值（= 人数） |
-
-**前端归属徽标规则**：Dashboard 顶部会显示「记忆归属：某某」的徽标，帮你一眼认清「现在看的是谁
-的记忆」。规则是——**只有 1 个人时不显示**（保持干净），**2 人及以上才显示**。这由 `OMBRE_OWNER_COUNT`
-控制（`>= 2` 才显示），徽标文字取 `OMBRE_OWNER_NAME`。
-
-> `OMBRE_OWNER_NAME` 只从进程环境读取，**不会**被写进共享的 `.env`，所以多个实例不会互相串名。
-
-### 用法一：本机一键启动器（跨平台，推荐单机多用户）
-
-1. 复制配置模板：
-   ```bash
-   cp deploy/owners.example.yaml deploy/owners.yaml
-   ```
-2. 编辑 `deploy/owners.yaml`，一人一段（名字 / 端口 / 数据目录都要唯一）：
-   ```yaml
-   owners:
-     - name: 小明
-       port: 18001
-       vault: ./buckets-ming
-     - name: 小红
-       port: 18002
-       vault: ./buckets-hong
-   ```
-3. 一键启动（Windows / macOS / Linux 通用，只依赖 Python + PyYAML）：
-   ```bash
-   python deploy/multi_owner.py
-   ```
-   启动器会**自动**按人数注入 `OMBRE_OWNER_COUNT`、为每人建好数据目录、拉起各自的实例、打印
-   「谁在哪个端口」。`Ctrl+C` 一次性停掉所有实例；任一实例异常退出会整体收摊，不留半死状态。
-4. 各自访问：小明 `http://localhost:18001`、小红 `http://localhost:18002`。
-
-### 用法二：Docker 多实例（推荐服务器 / VPS 长期在线）
-
-```bash
-docker compose -f deploy/docker-compose.multi.yml up -d --build
-```
-
-`deploy/docker-compose.multi.yml` 里每个人是一个 service（独立数据卷 + 独立端口 + 各自的
-`OMBRE_OWNER_NAME`）。敏感 key（API Key / 各自的 Dashboard 密码）走 `deploy/.env`。
-
-### 用法三：托管平台（Zeabur / Railway / Render 等）
-
-这些平台一个 project 就是一个实例。**给每个人开一个 project**，各自挂持久卷，在平台的环境变量面板里设：
-
-```
-OMBRE_VAULT_DIR   = /app/buckets      # 或平台的持久卷挂载路径
-OMBRE_OWNER_NAME  = 小明
-OMBRE_OWNER_COUNT = 2                  # 所有人填相同的总人数
-```
-
-端口和数据卷各 project 天生隔离，记忆自然不串。
-
-### 加第 N 个人
-
-- **启动器**：在 `owners.yaml` 里再加一段 `name/port/vault`（端口、目录保持唯一），重启启动器即可，
-  `OMBRE_OWNER_COUNT` 会自动重算。
-- **Docker Compose**：照抄一个 service 块，改 `container_name` / 端口 / 卷 / `OMBRE_OWNER_NAME`，
-  并把**每个** service 的 `OMBRE_OWNER_COUNT` 一起改成新的总人数。
-
-### 验证隔离生效
-
-- 在小明那份写一条记忆 → 只在小明的 Dashboard / `buckets-ming` 里出现，小红那份完全看不到。
-- 单人（`OMBRE_OWNER_COUNT=1` 或不设）→ 顶部无归属徽标；≥2 人 → 出现「记忆归属：<名字>」徽标。
-
-> ⚠️ **每个人的数据目录必须挂在各自的持久盘上**（同「快速开始」里的持久磁盘要求），否则重启记忆
-> 全丢。多人场景尤其别把两个人指到同一个目录——那样记忆会串在一起，违背隔离初衷。
-
-> 更细的排错与设计说明见 **[docs/MULTI_OWNER.md](docs/MULTI_OWNER.md)**。
-
----
-
 ## 部署到云平台 / Deploy to Cloud Platforms
-
-### Render
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/P0luz/Ombre-Brain)
-
-> ⚠️ **免费层不可用**：Render 免费层无持久化磁盘，重启后记忆会丢失，且无流量时会休眠。**必须使用 Starter（$7/mo）或以上**。
-
-仓库已包含 `render.yaml`。点按钮后：
-
-1. 设置环境变量 `OMBRE_COMPRESS_API_KEY`（必需）
-2. 可选 `OMBRE_COMPRESS_BASE_URL`（例如 `https://generativelanguage.googleapis.com/v1beta/openai/`）和 `OMBRE_EMBED_API_KEY`
-3. 持久化磁盘自动挂载到 `/opt/render/project/src/buckets`
-4. 部署后 Dashboard：`https://<服务名>.onrender.com`，MCP URL：`https://<服务名>.onrender.com/mcp`
-
-Render 自带 HTTPS，可直接在 Claude.ai 添加，无需额外 Tunnel。
 
 ### Zeabur
 
-[![Deploy on Zeabur](https://zeabur.com/button.svg)](https://zeabur.com/templates/OMBRE-BRAIN)
-
-1. Fork 本仓库 → Zeabur **New Project** → **Deploy from GitHub**；根目录 Dockerfile 会被自动识别。
+1. 在 Zeabur **New Project** → **Deploy from GitHub** 中连接 `zhiyi1027/Ombre-Brain`；根目录 Dockerfile 会被识别。
 2. Variables 只填模型所需的 Key（至少 `OMBRE_COMPRESS_API_KEY`）；不要额外设置 `OMBRE_MCP_REQUIRE_AUTH`，避免它覆盖 Dashboard。
 3. Volumes 新建 `data`，挂载路径必须是 `/app/buckets`。这是记忆、OAuth 客户端注册和 `config.yaml` 的共同持久目录。
 4. 绑定 HTTPS 域名后打开 Dashboard，进入 `/onboarding`，选择“公网安全模式”、填入域名并保存，然后在平台重启一次服务。
 
 如果“页面里明明开启 OAuth，重启后却仍显示未开启”，去 **系统体检 → 实际生效配置**：它会同时列出已保存值、当前进程值和覆盖来源。优先删除 Zeabur 中遗留的 `OMBRE_MCP_REQUIRE_AUTH=false`；环境变量优先级高于 `config.yaml`。
-4. Networking → Port `8000` → **Generate Domain**
 
 ### 自有 VPS
 
 ```bash
-git clone https://github.com/P0luz/Ombre-Brain.git
+git clone https://github.com/zhiyi1027/Ombre-Brain.git
 cd Ombre-Brain
-cp config.example.yaml config.yaml
-# 修改 config.yaml 设置 API key 和其他参数
-docker compose -f deploy/docker-compose.yml up -d
+cp .env.example deploy/.env
+```
+
+按上方「本机或 VPS（源码构建）」的说明填写 `deploy/.env` 中的密码和模型 Key，再启动：
+
+```bash
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 ```
 
 配合 nginx / Caddy 反代到 443 端口时使用上文完整的 Host、`X-Forwarded-*` 和可信代理 CIDR 配置，或直接使用 Dashboard 内置的 Cloudflare Tunnel 管理器。不要靠添加 CORS 头绕过 Dashboard 的来源校验。
@@ -598,7 +448,7 @@ docker compose -f deploy/docker-compose.yml up -d
 
 ## Dashboard 功能概览
 
-启动后浏览器打开 `/`（根路径）进入，第一次会引导设置密码。
+启动后浏览器打开 `/`（根路径）进入。按上文源码版 Compose 预设密码时会显示登录页；未预设密码的其他部署方式才会引导设置密码。
 
 | 标签页 | 功能 |
 |---|---|
@@ -665,9 +515,9 @@ docker compose -f deploy/docker-compose.yml up -d
 
 本地模型跑在一个独立的 `ollama` 容器里（OB 不直接管它，所以最稳）。两步：
 
-1. **启动自带的 ollama 容器**（一次性）。Docker 用户版 compose 已内置该服务（默认不启），加 `--profile local` 即可拉起：
+1. **启动自带的 ollama 容器**（一次性）。保留的源码版 Compose 已内置该服务（默认不启），加 `--profile local` 即可拉起：
    ```bash
-   docker compose -f docker-compose.user.yml --profile local up -d
+   docker compose --env-file deploy/.env -f deploy/docker-compose.yml --profile local up -d
    ```
    > 源码部署同理；或独立起一个（和 OB 同一 docker 网络、容器名 `ombre-ollama` 即可）：
    > ```bash
@@ -675,7 +525,7 @@ docker compose -f deploy/docker-compose.yml up -d
    >   --network <OB所在网络> -v ollama:/root/.ollama ollama/ollama
    > ```
    OB 在容器网络里通过 `ombre-ollama:11434` 自动连它（代码已内置该默认，无需额外配置）。
-2. **Dashboard → 设置 → 向量化 → 「🖥️ 本地向量模型」面板 → 点「🚀 一键本地化」**。它会自动：下载 bge-m3（约 1.2GB，带进度条）→ 切换后端 → 后台重算全库向量。期间照常使用，检索暂用旧库。
+2. **Dashboard → 设置 → 向量化 → 「🖥️ 本地向量模型」面板 →「下载 bge-m3」→「切本地」**。切换后会在后台重算全库向量；期间照常使用，检索暂用旧库。
    > 裸机 / 非 Docker 部署：同一个按钮会**直接在本机免提权安装 Ollama 运行时**（Win/Linux/mac），无需你手动起容器。
 
 > 🌐 **国内网络**：模型下载默认走 ollama 官方源。拉不动时，在面板「分步操作」里换下载镜像（选 ModelScope 或填自定义 registry 前缀），再点「仅下载」。
@@ -710,41 +560,31 @@ python tools/evaluate_retrieval.py retrieval-cases.json --top-k 5
 
 ## 把记忆挂到 Obsidian
 
-在 `docker-compose.user.yml` 同目录的 `.env` 中设置 Vault 路径，无需修改 compose 文件：
+自托管时在 `deploy/.env` 中设置 Vault 路径，无需修改源码版 Compose：
 
 ```env
 OMBRE_HOST_VAULT_DIR=/Users/你的用户名/Documents/Obsidian Vault/Ombre Brain
 ```
 
-然后执行 `docker compose -f docker-compose.user.yml up -d --force-recreate`。每条记忆会作为 Markdown 文件写入该目录，配置和 Tunnel token 也会一起持久化。
+然后执行 `docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build --force-recreate`。每条记忆会作为 Markdown 文件写入该目录，配置和 Tunnel token 也会一起持久化。
 
 ---
 
 ## 更新 / How to Update
 
-### Docker Hub 镜像用户
-
-```bash
-docker pull p0luz/ombre-brain:latest
-docker compose -f docker-compose.user.yml down
-docker compose -f docker-compose.user.yml up -d
-```
-
 ### 从源码部署用户
 
 ```bash
 cd Ombre-Brain
-git pull origin main
-docker compose -f deploy/docker-compose.yml down
-docker compose -f deploy/docker-compose.yml build
-docker compose -f deploy/docker-compose.yml up -d
+git pull --ff-only origin main
+docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build --force-recreate
 ```
 
 记忆数据在 volume 里，更新不会丢失。
 
 自行修改源码后重建镜像时，仍建议同步修改 `VERSION`，便于人类识别构建来源；但启动器不再只依赖版本字符串。它会记录镜像 `src/` + `frontend/` 的代码指纹，同一个 `VERSION` 下代码发生变化也会重新播种。镜像本身没有变化时，卷内 Dashboard 热更新会被识别为运行时覆盖并保留，不会在重启时被旧镜像冲掉。
 
-注意：`entrypoint.sh` 属于镜像启动层，旧版启动器不能通过 Dashboard 热更新替换自己。包含本修复的版本发布后，现有 Docker 部署必须至少执行一次 `docker pull` + 重建容器（源码部署则重新 `docker build`），之后指纹机制才会生效。
+注意：`entrypoint.sh` 属于镜像启动层，旧版启动器不能通过 Dashboard 热更新替换自己。包含本修复的版本发布后，现有 Docker 部署必须至少执行一次源码重建并重建容器，之后指纹机制才会生效。
 
 启动日志会明确打印当前活动代码目录和状态：
 
@@ -782,7 +622,7 @@ docker compose -f deploy/docker-compose.yml up -d
 | `hold` / `grow` 报 API key 错误 / `401 Invalid token` | LLM key 未配置或不对；**或**你既用 `-e OMBRE_COMPRESS_API_KEY=...` 传了 env、又在面板改过 key —— 见下一行 | Dashboard → ③ 引擎 填入 Key 点「保存 Key」；确认 base_url、model 正确后用「测试」按钮自查 |
 | **在面板改了 key/配置，重启后又变回旧值 / 不生效** | **env 变量优先级高于 config.yaml**。你启动时用 `-e OMBRE_XXX=...` 传的值，会在每次重启时盖掉面板写进 config.yaml 的改动 | 二选一：① 改就改 env（`docker run -e` / compose 的 `environment` / 平台环境变量面板），别在面板改；② 想用面板管配置，就**别用 `-e` 传那个变量**。面板「环境变量」区带 `from_boot` 标记的就是会被 env 覆盖的项 |
 | 重启后**记忆丢失**（退回旧版本 / 空库） | 数据目录没挂到持久盘：容器重建就把记忆连同代码一起丢了。匿名卷也会被 `docker compose down -v` 等操作清掉 | 把 `/app/buckets` 挂到**命名卷或宿主机目录**（`-v ./buckets:/app/buckets`）。**判断标准：能在宿主机文件夹里看到那些 `.md` 文件，就是安全的。** Dashboard → 设置 → 系统诊断 会直接告诉你「数据目录是否持久」 |
-| Docker **构建**（`docker build`）在 `pip install` 处失败：`SSL EOF` / 连不上 pypi.org / `No matching distribution` | 宿主机网络/代理（Clash、V2Ray 等）在构建时把连 PyPI 的连接掐断了 | 用**预构建镜像**（「快速开始」的 `docker compose` 直接拉 Docker Hub 镜像，无需本地构建）；若必须本地构建，临时关掉代理或给 Docker 配一个稳定的 PyPI 镜像源后重试 |
+| Docker **构建**（`docker build`）在 `pip install` 处失败：`SSL EOF` / 连不上 pypi.org / `No matching distribution` | 宿主机网络/代理（Clash、V2Ray 等）在构建时把连 PyPI 的连接掐断了 | 给 Docker 配置可用的 PyPI 镜像源或修复宿主机网络后重建；不要改用上游旧镜像 |
 | 修改源码并以相同 `VERSION` 重建镜像后仍像旧代码 | 旧版启动器只比较版本字符串；或当前容器还没有使用新镜像 | 新版会同时比较镜像代码指纹。先确认容器确实由新镜像重建，再查看启动日志是否出现 `reason=image-fingerprint-changed`；旧版请先升级或临时修改 `VERSION` |
 | 数据目录里看到旧版本 `_app/VERSION`，怀疑仍在运行旧代码 | 独立代码卷部署可能留下旧布局目录；默认布局下它也可能就是活动目录 | 以启动日志“活动代码目录”为准。只有出现 `code-state=legacy-residue` 时该目录才未被使用；备份后可清理，OB 不会自动删除 |
 | 记忆库涨到几百桶后 `breath` 很慢 / 超时被切断 | 旧版检索热路径有全库重读等开销 | **v2.5.0+ 已优化**（内存缓存 + touch 移出响应路径 + BM25 后台重建）；当前 breath 返回层不再调用脱水 LLM |
@@ -795,25 +635,25 @@ docker compose -f deploy/docker-compose.yml up -d
 
 新用户最常踩、但文档里分散各处的点，集中提醒一下：
 
-- **只需加一个连接器 `/mcp`**：16 个工具全在这一个端点上，不用再单独加别的。
+- **只需加一个连接器 `/mcp`**：19 个工具全在这一个端点上，不用再单独加别的。
 - **反代/隧道要整主机名转发**：Cloudflare Tunnel / Nginx 按域名整体转发到 `localhost:端口`，覆盖所有路径即可。
 - **OpenAI 兼容向量化两个坑**：base_url 末尾要带 `/v1`（漏了 404）、model 要带完整前缀（如 `BAAI/bge-m3`，漏了报 Model does not exist）。填完用向量化区的「测试」按钮确认。
 - **改完 key / 配置点「保存」后再「测试」**：压缩和向量化各有独立的「测试」按钮，能用就用，别凭感觉。
 - **国内自托管偶发超时**：LLM 打标仍在当前请求内；embedding 已改为原文落盘后的耐久后台任务，不会阻塞或回滚记忆。可在 `config.yaml` 里设置 `dehydration.timeout_seconds` / `embedding.timeout_seconds`，或用环境变量 `OMBRE_COMPRESS_TIMEOUT_SECONDS` / `OMBRE_EMBED_TIMEOUT_SECONDS`。
 - **`dehydration.max_tokens` 别设太小**：Gemini 2.5 系列有思考 token 开销，太小会让 JSON 截断、记忆全标成「未分类」；用 `gemini-2.0-flash` 或把它设到 `4096` 以上。
-- **记忆数据要挂 volume**：不挂载（或 Render 免费层无持久磁盘）→ 重启记忆全丢。**判断标准很简单：你能在宿主机文件夹里看到那些 `.md` 记忆文件，就是安全的。** Dashboard → 系统诊断 会直接告诉你数据目录持不持久。
+- **记忆数据要挂 volume**：不挂载持久盘 → 重启记忆全丢。**判断标准很简单：你能在宿主机文件夹里看到那些 `.md` 记忆文件，就是安全的。** Dashboard → 系统诊断 会直接告诉你数据目录持不持久。
 - **⚠️ env 变量会盖过面板配置**：如果你启动时用 `-e OMBRE_XXX=...` 传了某个变量（key、model、端口…），那**在 Dashboard 里改同一项、重启后会被 env 值盖回去**。要么统一在 env 改，要么就别用 `-e` 传、改用面板管理。这是新手最容易被绕晕的一点。
 - **🛟 记忆只有一份很危险，强烈建议开异地备份**：本地/单卷就是「一份」，磁盘坏了或误删就找不回。到 Dashboard → GitHub 同步 配一下（几分钟），记忆就多一份云端存档，换机/灾难也能拉回来（embeddings.db 不上传，靠「重算所有向量」恢复）。
 - **切换向量化后端会全库重算**：云端 3072 维和本地 bge-m3 1024 维不通用，每次切换都会重算，别频繁来回切。
 - **热更新按钮看部署方式**：Docker（有 restart 策略）点完自动恢复；裸机/纯 Python 需要 systemd/pm2 等守护，否则更新后要手动重启。点之前先「导出记忆备份」。
 - **自有前端 / GPT / GLM 接入**：默认强制 OAuth，会卡住非 Claude 客户端；设 `OMBRE_MCP_REQUIRE_AUTH=false` 关掉（注意别裸奔公网）。
-- **首次访问先设密码**：设完之后所有 `/api/*` 都要登录；忘了密码可用设置里的安全问题急救。
+- **按部署方式设置密码**：源码版 Compose 先在 `deploy/.env` 预设密码，首次访问直接登录；其他未预设密码的部署方式会引导创建密码。忘了密码可用设置里的安全问题急救。
 
 ---
 
 ## License
 
-MIT
+保留原仓库的 [LICENSE](LICENSE)、[v2.4.0 声明](LICENSE.v2.4.0-NONCOMMERCIAL-NOTICE.md) 和 [第三方声明](THIRD_PARTY_NOTICES.md)；使用和再分发前请直接核对这些原文。
 
 ---
 
@@ -823,6 +663,6 @@ MIT
 
 当前正式变量名：
 
-`OMBRE_COMPRESS_API_KEY`、`OMBRE_COMPRESS_BASE_URL`、`OMBRE_COMPRESS_MODEL`、`OMBRE_COMPRESS_FORMAT`、`OMBRE_COMPRESS_TIMEOUT_SECONDS`、`OMBRE_EMBED_API_KEY`、`OMBRE_EMBED_BASE_URL`、`OMBRE_EMBED_MODEL`、`OMBRE_EMBED_FORMAT`、`OMBRE_EMBED_TIMEOUT_SECONDS`、`OMBRE_EMBED_BACKEND`、`OMBRE_OLLAMA_URL`、`OMBRE_VAULT_DIR`、`OMBRE_MEDIA_DIR`、`OMBRE_MEDIA_MAX_BYTES`、`OMBRE_CONFIG_PATH`、`OMBRE_CODE_DIR`、`OMBRE_LOG_DIR`、`OMBRE_LOG_FILE`、`OMBRE_EXTERNAL_CHANGE_POLL_SECONDS`、`OMBRE_TRANSPORT`、`OMBRE_PORT`、`OMBRE_BIND_HOST`、`OMBRE_MCP_REQUIRE_AUTH`、`OMBRE_MCP_AUTH_MODE`、`OMBRE_MCP_TOKEN`、`OMBRE_DASHBOARD_PASSWORD`、`OMBRE_DASHBOARD_SESSION_DAYS`、`OMBRE_TRUSTED_PROXY_CIDRS`、`OMBRE_GITHUB_TOKEN`、`OMBRE_HOOK_URL`、`OMBRE_HOOK_TOKEN`、`OMBRE_HOOK_SKIP`、`OMBRE_HOOK_ALLOW_PUBLIC`、`OMBRE_DAILY_NOTE_TOKEN`、`OMBRE_PRIVATE_CONTINUITY_TOKEN`、`OMBRE_ALLOW_CUSTOM_UPDATE_REPO`、`OMBRE_ALLOW_UNTRUSTED_MIRROR`、`OMBRE_UPDATE_ALLOW_PIP`、`OMBRE_FORCE_CODE_RESEED`、`AI_NAME`。
+`OMBRE_COMPRESS_API_KEY`、`OMBRE_COMPRESS_BASE_URL`、`OMBRE_COMPRESS_MODEL`、`OMBRE_COMPRESS_FORMAT`、`OMBRE_COMPRESS_TIMEOUT_SECONDS`、`OMBRE_EMBED_API_KEY`、`OMBRE_EMBED_BASE_URL`、`OMBRE_EMBED_MODEL`、`OMBRE_EMBED_FORMAT`、`OMBRE_EMBED_TIMEOUT_SECONDS`、`OMBRE_OLLAMA_URL`、`OMBRE_VAULT_DIR`、`OMBRE_MEDIA_DIR`、`OMBRE_MEDIA_MAX_BYTES`、`OMBRE_CONFIG_PATH`、`OMBRE_CODE_DIR`、`OMBRE_LOG_DIR`、`OMBRE_LOG_FILE`、`OMBRE_EXTERNAL_CHANGE_POLL_SECONDS`、`OMBRE_TRANSPORT`、`OMBRE_PORT`、`OMBRE_BIND_HOST`、`OMBRE_MCP_REQUIRE_AUTH`、`OMBRE_MCP_AUTH_MODE`、`OMBRE_MCP_TOKEN`、`OMBRE_DASHBOARD_PASSWORD`、`OMBRE_DASHBOARD_SESSION_DAYS`、`OMBRE_TRUSTED_PROXY_CIDRS`、`OMBRE_GITHUB_TOKEN`、`OMBRE_HOOK_URL`、`OMBRE_HOOK_TOKEN`、`OMBRE_HOOK_SKIP`、`OMBRE_HOOK_ALLOW_PUBLIC`、`OMBRE_DAILY_NOTE_TOKEN`、`OMBRE_PRIVATE_CONTINUITY_TOKEN`、`OMBRE_ALLOW_CUSTOM_UPDATE_REPO`、`OMBRE_ALLOW_UNTRUSTED_MIRROR`、`OMBRE_UPDATE_ALLOW_PIP`、`OMBRE_FORCE_CODE_RESEED`、`AI_NAME`。
 
 永久兼容旧名：`OMBRE_API_KEY` → `OMBRE_COMPRESS_API_KEY`，`OMBRE_BASE_URL` → `OMBRE_COMPRESS_BASE_URL`，`PASSWORD` → `OMBRE_DASHBOARD_PASSWORD`，`OMBRE_BUCKETS_DIR` → `OMBRE_VAULT_DIR`。

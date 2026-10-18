@@ -3,7 +3,7 @@
 web/dashboard.py — 仪表板页面 + 静态资源 + 健康检查
 ========================================
 
-承载根路径仪表板、前端静态资源（icon/favicon/manifest/字体）、/favicon.ico 跳转、
+承载根路径仪表板、前端静态资源（icon/favicon/manifest）、/favicon.ico 跳转、
 以及 /health 健康检查。
 
 对外暴露：register(mcp)。
@@ -72,7 +72,6 @@ def register(mcp) -> None:
             "icon.svg": "image/svg+xml",
             "favicon.svg": "image/svg+xml",
             "manifest.json": "application/manifest+json",
-            "RRPL.ttf": "font/truetype",
             "breath-trace.js": "text/javascript",
         }
         if name not in allowed:

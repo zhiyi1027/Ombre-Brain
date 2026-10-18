@@ -325,7 +325,7 @@ _gh_auto_interval: int = int(_gh_cfg.get("auto_interval_minutes") or 0)
 # iter 2.2：合并回单连接器 /mcp（claude.ai 5 工具上限已解除）。
 # 历史上（iter 2.1）曾拆成主 mcp(/mcp) + 副 mcp_extra(/mcp-extra) 两个实例。
 # 现在只对外暴露主实例 mcp 的一条 /mcp 路由；mcp_extra 仅作工具分组容器保留
-# （7 个 @mcp_extra.tool() 注册不动），启动入口处把它的工具回灌进 mcp 统一暴露。
+# （12 个 @mcp_extra.tool() 注册不动），启动入口处把它的工具回灌进 mcp 统一暴露。
 # 两个实例共享同一进程、同一 runtime、同一 bucket_mgr；HTTP custom_route（dashboard、API）
 # 全部挂在 mcp 主实例上。
 mcp = FastMCP(
@@ -1096,9 +1096,9 @@ if __name__ == "__main__":
 
     # iter 2.2：合并为单连接器 /mcp。
     # 当初（iter 2.1）拆 /mcp + /mcp-extra 是因为 claude.ai 连接器存在 5 工具上限；
-    # 该上限现已解除，16 个工具全部挂在主实例 mcp 上对外暴露一条 /mcp 即可，
+    # 该上限现已解除，19 个工具全部挂在主实例 mcp 上对外暴露一条 /mcp 即可，
     # 顺带消除「第二个连接器」在 Claude.ai 侧的 OAuth/连接器校验疑难。
-    # mcp_extra 仅作历史工具分组容器保留（9 个 @mcp_extra.tool()），
+    # mcp_extra 仅作历史工具分组容器保留（12 个 @mcp_extra.tool()），
     # 这里把它的工具回灌进 mcp，让 stdio / sse / streamable-http 三种 transport 一致。
     # 依赖 FastMCP._tool_manager 私有结构；若未来版本变化，降级为仅暴露主集 7 工具。
     from server_app import (
@@ -1157,7 +1157,7 @@ if __name__ == "__main__":
             lifecycle=_runtime_lifecycle,
         )
         if transport == "streamable-http":
-            logger.info("MCP 单连接器 /mcp：16 个工具统一对外暴露")
+            logger.info("MCP 单连接器 /mcp：19 个工具统一对外暴露")
         logger.info("CORS middleware enabled for remote transport / 已启用 CORS 中间件")
         logger.info(
             "MCP request body limit: %s",

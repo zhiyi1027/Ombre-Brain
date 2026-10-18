@@ -410,7 +410,7 @@ class EmbeddingEngine:
         embed_cfg = config.get("embedding", {}) or {}
         timeout_seconds = positive_float(embed_cfg.get("timeout_seconds"), _API_TIMEOUT_SECONDS)
 
-        # 解析 backend：env > config > 默认 api
+        # 当前统一使用 OpenAI 兼容 API 后端。
         self.backend = "api"
 
         # 2) 解析 enabled。OB-F001：enabled=true 但 api_key 空，且后端是 api → 拒启

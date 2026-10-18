@@ -15,7 +15,6 @@
 - `OMBRE_EMBED_MODEL`：向量模型名。
 - `OMBRE_EMBED_FORMAT`：向量 API 格式。
 - `OMBRE_EMBED_TIMEOUT_SECONDS`：向量请求超时秒数。
-- `OMBRE_EMBED_BACKEND`：向量后端，例如 `api` 或 `local`。
 - `OMBRE_OLLAMA_URL`：本地 Ollama 地址。
 
 ## 存储、媒体与日志
@@ -74,8 +73,6 @@
 - `OMBRE_CONTAINER_NAME`：目标容器名。
 - `OMBRE_OWNER_NAME`：当前所有者名。
 - `OMBRE_OWNER_COUNT`：多所有者实例数。
-- `OMBRE_MING_VAULT_DIR`、`OMBRE_HONG_VAULT_DIR`：示例多所有者数据目录。
-- `OMBRE_MING_PASSWORD`、`OMBRE_HONG_PASSWORD`：示例多所有者密码。
 - `AI_NAME`：AI 显示名称。
 
 ## v1.x 兼容变量

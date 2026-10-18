@@ -1,22 +1,9 @@
 from pathlib import Path
 
-import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DASHBOARD = ROOT / "frontend" / "dashboard.html"
-
-
-def test_render_blueprint_uses_paid_plan_and_persistent_config_path():
-    blueprint = yaml.safe_load((ROOT / "render.yaml").read_text(encoding="utf-8"))
-    service = blueprint["services"][0]
-    env = {item["key"]: item for item in service["envVars"]}
-
-    assert service["plan"] == "starter"
-    assert service["disk"]["mountPath"] == env["OMBRE_BUCKETS_DIR"]["value"]
-    assert env["OMBRE_CONFIG_PATH"]["value"].startswith(
-        service["disk"]["mountPath"] + "/"
-    )
 
 
 def test_dashboard_warns_that_render_hot_update_will_roll_back():

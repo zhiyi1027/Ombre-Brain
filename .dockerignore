@@ -52,7 +52,6 @@ docs/**/*
 !docs/CLAUDE_PROMPT.md
 !docs/ENVIRONMENT_VARIABLES.md
 !docs/INTERNALS.md
-!docs/MULTI_OWNER.md
 !docs/OPERATIONS.md
 tests/
 tools/
@@ -64,7 +63,6 @@ deploy/
 !docs/CLAUDE_PROMPT.md
 !docs/ENVIRONMENT_VARIABLES.md
 !docs/INTERNALS.md
-!docs/MULTI_OWNER.md
 !docs/OPERATIONS.md
 !README.md
 !CHANGELOG.md

@@ -86,7 +86,7 @@ def _migrate_legacy_render_config(legacy_path: str, persistent_path: str) -> Non
 
     Render services created before ``OMBRE_CONFIG_PATH`` was added already have
     ``OMBRE_BUCKETS_DIR`` pointing at the persistent disk, but Dashboard hot
-    updates do not apply new ``render.yaml`` environment variables.  Those
+    updates do not apply newly configured platform environment variables. Those
     instances therefore kept writing ``<cwd>/config.yaml`` on Render's
     ephemeral code filesystem.  Validate the legacy YAML, then publish a copy
     through a same-directory temporary file so an interrupted migration cannot

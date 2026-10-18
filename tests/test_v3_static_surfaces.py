@@ -16,7 +16,7 @@ def test_static_surface_policy_classifies_frontend_dashboard() -> None:
 def test_static_surface_policy_protects_deployment_user_overrides() -> None:
     policy = StaticSurfacePolicy.default()
 
-    decision = policy.classify("deploy/docker-compose.user.yml")
+    decision = policy.classify("deploy/local.user.yml")
 
     assert decision.profile_module == "deploy.*"
     assert decision.risk == SurfaceRisk.DEPLOYMENT

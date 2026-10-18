@@ -17,7 +17,7 @@ def test_update_policy_rejects_protected_runtime_state_paths() -> None:
             FileManifest(path="config.yaml", sha256=_sha(content), size=len(content)),
             FileManifest(path="buckets/permanent/a.md", sha256=_sha(content), size=len(content)),
             FileManifest(path="data/vector/chroma.sqlite3", sha256=_sha(content), size=len(content)),
-            FileManifest(path="deploy/docker-compose.user.yml", sha256=_sha(content), size=len(content)),
+            FileManifest(path="deploy/local.user.yml", sha256=_sha(content), size=len(content)),
             FileManifest(path="oauth/client_secret.json", sha256=_sha(content), size=len(content)),
         ),
     )
