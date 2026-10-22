@@ -132,6 +132,31 @@ def test_range_hides_legacy_offsets_and_blocks_both_reimport_versions(archive):
     assert archive.stats()["n"] == 0
 
 
+def test_range_retains_deleted_ids_when_source_timestamp_changes(archive):
+    original = rows()[0]
+    first, second = _fragments(msg_uuid="home-msg-35")
+    legacy = rows()[1] | {"msg_uuid": "home-msg-36-part-1"}
+    archive.import_rows([original, legacy])
+    assert archive.import_rows_v2([first])["pending"] == 1
+    now = datetime(2026, 10, 22, 12, tzinfo=ZoneInfo("Asia/Shanghai"))
+    assert archive.hide_range("2026-05-18", "2026-05-18", now=now) == 2
+    shifted = original | {"at": "2026-05-19T20:00:00+08:00", "day": "2026-05-19"}
+    shifted_first = first | {"at": shifted["at"], "day": shifted["day"]}
+    shifted_second = second | {"at": shifted["at"], "day": shifted["day"]}
+    assert archive.import_rows([shifted])["skipped"] == 1
+    assert archive.import_rows_v2([shifted_first, shifted_second])["added"] == 0
+    shifted_legacy = legacy | {"msg_uuid": "home-msg-36", "at": shifted["at"], "day": shifted["day"]}
+    assert archive.import_rows_v2([shifted_legacy])["added"] == 0
+    assert archive.purge_due(now=now + timedelta(days=30)) == 2
+    assert archive.import_rows([shifted])["skipped"] == 1
+    assert archive.import_rows_v2([shifted_first, shifted_second])["added"] == 0
+    assert archive.import_rows_v2([shifted_legacy])["added"] == 0
+    assert archive.stats()["n"] == 0
+    with sqlite3.connect(archive.path) as conn:
+        ids = {r[0] for r in conn.execute("SELECT msg_uuid FROM raw_deleted_message_ids")}
+    assert ids == {"m1", "home-msg-35", "home-msg-36"}
+
+
 def test_hide_pending_message_by_uuid_removes_fragments_and_blocks_reimport(archive):
     first, second = _fragments(msg_uuid="home-msg-34")
     assert archive.import_rows_v2([first])["pending"] == 1
@@ -163,6 +188,21 @@ def test_hide_fragment_alias_blocks_canonical_reimport(archive):
     canonical = legacy | {"msg_uuid": "home-msg-7"}
     assert archive.import_rows_v2([canonical])["added"] == 0
     assert archive.stats()["n"] == 0
+
+
+def test_legacy_fragment_match_requires_numeric_suffix(archive):
+    legacy = rows()[0] | {"msg_uuid": "home-msg-7-part-1"}
+    different = rows()[1] | {"msg_uuid": "home-msg-7-part-1evil"}
+    archive.import_rows([legacy, different])
+    assert archive.hide_message("home-msg-7") == 1
+    assert [row["msg_uuid"] for row in archive.day("2026-05-18")[0]] == [different["msg_uuid"]]
+    archive.import_rows([
+        legacy | {"msg_uuid": "home-msg-8-part-1"},
+        different | {"msg_uuid": "home-msg-8-part-1evil"},
+    ])
+    archive.import_rows_v2([rows()[0] | {"msg_uuid": "home-msg-8", "text": "修订"}])
+    visible = {row["msg_uuid"] for row in archive.day("2026-05-18")[0]}
+    assert visible == {different["msg_uuid"], "home-msg-8-part-1evil", "home-msg-8"}
 
 
 def test_message_id_is_never_treated_as_a_glob(archive):

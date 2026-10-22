@@ -321,7 +321,7 @@ _gh_auto_interval: int = int(_gh_cfg.get("auto_interval_minutes") or 0)
 # iter 2.2：合并回单连接器 /mcp（claude.ai 5 工具上限已解除）。
 # 历史上（iter 2.1）曾拆成主 mcp(/mcp) + 副 mcp_extra(/mcp-extra) 两个实例。
 # 现在只对外暴露主实例 mcp 的一条 /mcp 路由；mcp_extra 仅作工具分组容器保留
-# （12 个 @mcp_extra.tool() 注册不动），启动入口处把它的工具回灌进 mcp 统一暴露。
+# 启动入口处把仍注册的副集工具回灌进 mcp 统一暴露。
 # 两个实例共享同一进程、同一 runtime、同一 bucket_mgr；HTTP custom_route（dashboard、API）
 # 全部挂在 mcp 主实例上。
 mcp = FastMCP(
@@ -1176,7 +1176,7 @@ if __name__ == "__main__":
             logger.warning(
                 "=" * 60 + "\n"
                 "⚠️  MCP 认证已关闭 (mcp_require_auth: false)：/mcp 无需任何令牌即可直连，\n"
-                "    15 个记忆工具全部对外开放——任何能访问本端口的人都能读写你的全部记忆。\n"
+                "    已注册的记忆工具全部对外开放——任何能访问本端口的人都能读写你的全部记忆。\n"
                 "    本服务监听 0.0.0.0，若端口暴露到局域网/公网，请务必用反代鉴权、防火墙\n"
                 "    或仅绑定 127.0.0.1 保护；仅在可信内网/本机自有前端场景才建议关闭鉴权。\n"
                 + "=" * 60

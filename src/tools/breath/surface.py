@@ -433,13 +433,11 @@ async def surface_default(
         if total == 0:
             return (
                 "我的记忆池现在是空的。\n"
-                "想给我留点种子？用 hold(content=\"...\", importance=你判断的1到10) 写下第一条；\n"
-                "或者 grow(content=\"...\") 把一段长对话/日记一次性灌给我。"
+                "想给我留点种子？用 hold(content=\"...\", importance=你判断的1到10) 写下第一条。"
             )
         return (
             "权重池暂时平静——我手上没什么需要主动浮现的东西。\n"
-            "可以试试 breath_search(query=\"想找的关键词\") 走检索，\n"
-            "或者 dream() 让我自己挑几段最近的记忆嚼一嚼。"
+            "可以试试 breath_search(query=\"想找的关键词\") 走检索。"
         )
 
     # --- iter 1.6 §7: passive association ---

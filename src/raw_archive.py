@@ -74,6 +74,10 @@ CREATE TABLE IF NOT EXISTS raw_deletions (
 );
 CREATE INDEX IF NOT EXISTS idx_raw_deletions_uuid ON raw_deletions(msg_uuid);
 CREATE INDEX IF NOT EXISTS idx_raw_deletions_range ON raw_deletions(start_at, end_at);
+CREATE TABLE IF NOT EXISTS raw_deleted_message_ids (
+    msg_uuid TEXT PRIMARY KEY,
+    deleted_at TEXT NOT NULL
+);
 """
 _DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _FIELDS = ("msg_uuid", "conv_uuid", "conv_name", "speaker", "at", "day", "text", "thinking")
@@ -109,6 +113,7 @@ class RawArchive:
         conn.execute("PRAGMA secure_delete=ON")
         conn.execute("PRAGMA busy_timeout=30000")
         conn.create_function("beijing_timestamp", 1, _beijing_timestamp, deterministic=True)
+        conn.create_function("raw_base_uuid", 1, _base_uuid, deterministic=True)
         return conn
 
     # ---------- 写 ----------
@@ -228,8 +233,8 @@ class RawArchive:
         target = "msg_uuid=?"
         target_params: tuple[str, ...] = (msg_uuid,)
         if _LEGACY_HOME_ID.fullmatch(msg_uuid):
-            target += " OR msg_uuid GLOB ?"
-            target_params += (msg_uuid + "-part-[0-9]*",)
+            target += " OR (msg_uuid GLOB ? AND raw_base_uuid(msg_uuid)=?)"
+            target_params += (msg_uuid + "-part-[0-9]*", msg_uuid)
         with self._lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             count = conn.execute(
@@ -269,6 +274,18 @@ class RawArchive:
             conn.execute(
                 "INSERT INTO raw_deletions(start_at,end_at,deleted_at,purge_after,affected_count) "
                 "VALUES (?,?,?,?,?)", (start_at, end_at, deleted_at, purge_after, count),
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO raw_deleted_message_ids(msg_uuid,deleted_at) "
+                "SELECT DISTINCT raw_base_uuid(msg_uuid), ? FROM raw_messages "
+                "WHERE beijing_timestamp(at) BETWEEN ? AND ?",
+                (deleted_at, start_at, end_at),
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO raw_deleted_message_ids(msg_uuid,deleted_at) "
+                "SELECT DISTINCT raw_base_uuid(msg_uuid), ? FROM raw_message_parts "
+                "WHERE beijing_timestamp(at) BETWEEN ? AND ?",
+                (deleted_at, start_at, end_at),
             )
             conn.execute(
                 "UPDATE raw_messages SET deleted_at=?, purge_after=? "
@@ -462,10 +479,12 @@ def _boundary(value: str, *, end: bool) -> str:
 
 def _is_deleted(conn: sqlite3.Connection, clean: dict[str, str]) -> bool:
     at_beijing = _beijing_timestamp(clean["at"])
+    msg_uuid = _base_uuid(clean["msg_uuid"])
     return conn.execute(
         "SELECT 1 FROM raw_deletions WHERE msg_uuid=? "
-        "OR (start_at IS NOT NULL AND ? BETWEEN start_at AND end_at) LIMIT 1",
-        (_base_uuid(clean["msg_uuid"]), at_beijing),
+        "OR (start_at IS NOT NULL AND ? BETWEEN start_at AND end_at) "
+        "UNION ALL SELECT 1 FROM raw_deleted_message_ids WHERE msg_uuid=? LIMIT 1",
+        (msg_uuid, at_beijing, msg_uuid),
     ).fetchone() is not None
 
 
@@ -482,8 +501,10 @@ def _upsert(conn: sqlite3.Connection, clean: dict[str, str], source: str) -> boo
 
 def _delete_legacy_parts(conn: sqlite3.Connection, msg_uuid: str) -> None:
     if _LEGACY_HOME_ID.fullmatch(msg_uuid):
-        conn.execute("DELETE FROM raw_messages WHERE msg_uuid GLOB ?",
-                     (msg_uuid + "-part-[0-9]*",))
+        conn.execute(
+            "DELETE FROM raw_messages WHERE msg_uuid GLOB ? AND raw_base_uuid(msg_uuid)=?",
+            (msg_uuid + "-part-[0-9]*", msg_uuid),
+        )
 
 
 _instances: dict[str, RawArchive] = {}
