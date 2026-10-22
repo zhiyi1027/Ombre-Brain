@@ -891,7 +891,7 @@ async def test_startup_lists_plan_pointer_when_full_body_exceeds_plan_budget():
     assert plan_body not in output
     assert "[活动计划] [bucket_id:oversized-active-plan]" in output
     assert "↗ [未展开] 超长活动计划" in output
-    assert 'breath_advanced(domain="plan")' in output
+    assert 'breath_search(domain="plan")' in output
     assert count_tokens_approx(output) <= 5000
 
 

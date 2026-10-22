@@ -1,7 +1,7 @@
 """
 /api/album、/api/raw/* —— 仪表板的「相册」和「原文」两页。
 
-- 全部要求仪表板登录（和其他管理页同一套 cookie 会话），只读。
+- 全部要求仪表板登录（和其他管理页同一套 cookie 会话）。
 - 相册：列出挂了图的记忆桶；原图按桶和序号现取，不进浏览器以外的任何地方。
 - 原文：按北京时间日期翻页、逐字搜原话；原文抽屉的边界见 raw_archive.py。
 """
@@ -96,3 +96,35 @@ def register(mcp) -> None:
         speaker = request.query_params.get("speaker", "")
         hits = await asyncio.to_thread(get_archive(sh.config).search, query, 50, thinking, speaker)
         return JSONResponse({"q": query, "hits": hits})
+
+    @mcp.custom_route("/api/raw/deletions", methods=["GET"])
+    async def api_raw_deletions(request: Request) -> Response:
+        err = sh._require_auth(request)
+        if err:
+            return err
+        entries = await asyncio.to_thread(get_archive(sh.config).deletion_log)
+        return JSONResponse({"entries": entries})
+
+    @mcp.custom_route("/api/raw/delete", methods=["POST"])
+    async def api_raw_delete(request: Request) -> Response:
+        err = sh._require_auth(request)
+        if err:
+            return err
+        if request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
+            return JSONResponse({"error": "cross-site request refused"}, status_code=403)
+        if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+            return JSONResponse({"error": "JSON required"}, status_code=415)
+        try:
+            body = await request.json()
+            if not isinstance(body, dict):
+                raise ValueError("请求内容无效")
+            archive = get_archive(sh.config)
+            if set(body) == {"msg_uuid"}:
+                affected = await asyncio.to_thread(archive.hide_message, body["msg_uuid"])
+            elif set(body) == {"start", "end"}:
+                affected = await asyncio.to_thread(archive.hide_range, body["start"], body["end"])
+            else:
+                raise ValueError("请给 msg_uuid 或 start 和 end")
+        except (ValueError, TypeError) as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        return JSONResponse({"hidden": affected, "purge_after_days": 30})

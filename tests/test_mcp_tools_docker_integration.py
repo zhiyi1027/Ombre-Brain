@@ -1,4 +1,4 @@
-"""Real streamable-HTTP integration coverage for all 19 public MCP tools.
+"""Real streamable-HTTP integration coverage for the 11 current MCP tools.
 
 Run this file against an isolated Docker service by setting
 OMBRE_DOCKER_INTEGRATION_URL=http://ombre-brain:8000/mcp.
@@ -19,48 +19,25 @@ import pytest
 
 
 MCP_URL = os.environ.get("OMBRE_DOCKER_INTEGRATION_URL", "").strip()
-EXPECT_COMPRESSION_PROVIDER = os.environ.get(
-    "OMBRE_DOCKER_EXPECT_COMPRESSION_PROVIDER", ""
-).strip().lower() in {"1", "true", "yes", "on"}
 pytestmark = pytest.mark.skipif(not MCP_URL, reason="Docker MCP integration service is not configured")
 
 EXPECTED_TOOLS = {
     "breath",
     "breath_search",
-    "breath_advanced",
     "hold",
-    "grow",
     "trace",
-    "anchor",
-    "release",
-    "pulse",
     "plan",
     "letter_write",
     "letter_read",
     "I",
-    "dream",
-    "media_catalog",
-    "media_read",
-    "raw_day",
-    "raw_search",
+    "media",
+    "raw_browse",
     "quarrel",
 }
 
 EXPECTED_TOOL_PROPERTIES = {
     "breath": set(),
     "breath_search": {"query", "domain", "max_results", "quotes"},
-    "breath_advanced": {
-        "query",
-        "max_tokens",
-        "domain",
-        "valence",
-        "arousal",
-        "max_results",
-        "importance_min",
-        "tags",
-        "catalog",
-        "quotes",
-    },
     "hold": {
         "content",
         "tags",
@@ -77,7 +54,6 @@ EXPECTED_TOOL_PROPERTIES = {
         "quotes",
         "state_key",
     },
-    "grow": {"content", "items"},
     "trace": {
         "bucket_id",
         "name",
@@ -106,32 +82,20 @@ EXPECTED_TOOL_PROPERTIES = {
         "state_key",
         "superseded_by",
     },
-    "anchor": {"bucket_id"},
-    "release": {"bucket_id"},
-    "pulse": {"include_archive"},
     "plan": {"content", "status", "related_bucket", "weight", "why_remembered"},
     "letter_write": {"author", "content", "user_name", "title", "date", "ai_name"},
     "letter_read": {"query", "limit", "author", "date_from", "date_to"},
     "I": {"content", "aspect", "read", "limit"},
-    "dream": {"window_hours", "catalog"},
-    "media_catalog": {"query"},
-    "media_read": {"bucket_id", "index"},
-    "raw_day": {"date", "page", "thinking"},
-    "raw_search": {"query", "max_results", "thinking", "speaker"},
+    "media": {"bucket_id", "index", "query"},
+    "raw_browse": {"date", "query", "page", "max_results", "thinking", "speaker"},
     "quarrel": {"action", "content", "expected_revision", "her_words", "source_client"},
 }
 
 EXPECTED_REQUIRED_PROPERTIES = {
-    "breath_search": {"query"},
     "hold": {"content"},
     "trace": {"bucket_id"},
-    "anchor": {"bucket_id"},
-    "release": {"bucket_id"},
     "plan": {"content"},
     "letter_write": {"author", "content"},
-    "media_read": {"bucket_id"},
-    "raw_day": {"date"},
-    "raw_search": {"query"},
 }
 
 
@@ -265,7 +229,7 @@ def _hold(mcp_client: MCPClient, marker: str, **overrides) -> str:
     )
 
 
-def test_manifest_exposes_exactly_the_documented_19_tools(mcp_client):
+def test_manifest_exposes_exactly_the_documented_11_tools(mcp_client):
     tools = mcp_client.list_tools()
     tools_by_name = {tool["name"]: tool for tool in tools}
     assert set(tools_by_name) == EXPECTED_TOOLS
@@ -287,20 +251,14 @@ def test_manifest_exposes_exactly_the_documented_19_tools(mcp_client):
     ("tool", "arguments", "field"),
     [
         ("breath", {"unexpected_contract_probe": True}, "unexpected_contract_probe"),
-        ("breath_search", {}, "query"),
-        ("breath_advanced", {"catalog": {"not": "a boolean"}}, "catalog"),
         ("hold", {}, "content"),
-        ("grow", {"items": {"not": "a list"}}, "items"),
         ("trace", {}, "bucket_id"),
-        ("anchor", {}, "bucket_id"),
-        ("release", {}, "bucket_id"),
-        ("pulse", {"include_archive": {"not": "a boolean"}}, "include_archive"),
         ("plan", {}, "content"),
         ("letter_write", {"content": "missing author"}, "author"),
         ("letter_read", {"limit": {"not": "an integer"}}, "limit"),
         ("I", {"read": {"not": "a boolean"}}, "read"),
-        ("dream", {"window_hours": {"not": "an integer"}}, "window_hours"),
-        ("media_read", {}, "bucket_id"),
+        ("media", {"index": {"not": "an integer"}}, "index"),
+        ("raw_browse", {"page": {"not": "an integer"}}, "page"),
     ],
 )
 def test_all_tools_reject_schema_invalid_arguments(mcp_client, tool, arguments, field):
@@ -340,7 +298,9 @@ def test_hold_image_can_be_read_back_on_demand(mcp_client):
     )
 
     try:
-        result = mcp_client.call_result("media_read", {"bucket_id": bucket_id, "index": 0})
+        catalog = mcp_client.call("media", {"query": marker})
+        assert bucket_id in catalog
+        result = mcp_client.call_result("media", {"bucket_id": bucket_id, "index": 0})
         assert result.get("isError") is not True, result
         images = [part for part in result.get("content", []) if part.get("type") == "image"]
         assert len(images) == 1
@@ -356,6 +316,10 @@ def test_hold_image_can_be_read_back_on_demand(mcp_client):
             },
         )
         assert "已永久删除测试桶" in cleanup
+
+
+def test_raw_browse_requires_a_date_or_query(mcp_client):
+    assert "date" in mcp_client.call("raw_browse", {})
 
 
 def test_hold_rejects_invalid_feel_and_test_data_combinations(mcp_client):
@@ -400,36 +364,6 @@ def test_pre_split_breath_arguments_remain_compatible(mcp_client):
     assert "[bucket_id:" not in catalog
 
 
-def test_breath_advanced_exact_query_honors_final_result_limit(mcp_client):
-    marker = _marker("breath-limit")
-    bucket_id = _hold(mcp_client, marker)
-
-    result = mcp_client.call(
-        "breath_advanced",
-        {"query": bucket_id, "max_results": 1, "max_tokens": 6000},
-    )
-
-    assert marker in result
-    assert result.count("[bucket_id:") == 1
-    assert "=== 核心准则 ===" not in result
-
-
-def test_breath_advanced_catalog_returns_metadata_only(mcp_client):
-    marker = _marker("catalog")
-    body_only = "BODY-ONLY-" + uuid.uuid4().hex * 8
-    _hold(mcp_client, f"{marker} {body_only}")
-
-    result = mcp_client.call(
-        "breath_advanced",
-        {"catalog": True, "max_results": 1, "max_tokens": 256},
-    )
-
-    assert "=== 记忆目录" in result
-    assert "[bucket_id:" not in result
-    assert "[content_role:stored_memory_data]" not in result
-    assert body_only not in result
-
-
 def test_exact_bucket_id_read_preserves_long_bullets_across_trace_append(mcp_client):
     marker = _marker("raw-bullets")
     original = "\n".join(
@@ -439,7 +373,7 @@ def test_exact_bucket_id_read_preserves_long_bullets_across_trace_append(mcp_cli
     bucket_id = _hold(mcp_client, original)
 
     before = mcp_client.call(
-        "breath_advanced", {"query": bucket_id, "max_results": 1, "max_tokens": 20000}
+        "breath_search", {"query": bucket_id, "max_results": 1}
     )
     marker_at = before.index(f"[bucket_id:{bucket_id}]")
     body_at = before.index("\n", marker_at) + 1
@@ -451,41 +385,11 @@ def test_exact_bucket_id_read_preserves_long_bullets_across_trace_append(mcp_cli
     assert bucket_id in traced
 
     after = mcp_client.call(
-        "breath_advanced", {"query": bucket_id, "max_results": 1, "max_tokens": 20000}
+        "breath_search", {"query": bucket_id, "max_results": 1}
     )
     marker_at = after.index(f"[bucket_id:{bucket_id}]")
     body_at = after.index("\n", marker_at) + 1
     assert after[body_at:body_at + len(appended)] == appended
-
-
-def test_grow_items_succeeds_without_compression_provider(mcp_client):
-    marker = _marker("grow-items")
-    result = mcp_client.call(
-        "grow",
-        {"items": [f"{marker}-one", f"{marker}-two"]},
-    )
-    assert "新2" in result
-    recalled = mcp_client.call("breath_search", {"query": marker, "max_results": 5})
-    assert f"{marker}-one" in recalled
-    assert f"{marker}-two" in recalled
-
-
-def test_grow_long_content_obeys_configured_provider_contract(mcp_client):
-    marker = _marker("grow")
-    content = f"{marker} " + "long integration memory " * 8
-    before_ids = _bucket_ids(mcp_client.call("pulse", {"include_archive": True}))
-    result = mcp_client.call("grow", {"content": content})
-
-    if not EXPECT_COMPRESSION_PROVIDER:
-        assert "OB-E004" in result
-        assert "API key 未配置或调用失败" in result
-        after_ids = _bucket_ids(mcp_client.call("pulse", {"include_archive": True}))
-        assert after_ids == before_ids
-        return
-
-    assert "batch:g_" in result
-    recalled = mcp_client.call("breath_search", {"query": marker, "max_results": 5})
-    assert marker in recalled
 
 
 def test_trace_updates_existing_memory_metadata(mcp_client):
@@ -493,7 +397,7 @@ def test_trace_updates_existing_memory_metadata(mcp_client):
     bucket_id = _hold(mcp_client, marker)
     result = mcp_client.call("trace", {"bucket_id": bucket_id, "importance": 8})
     assert bucket_id in result
-    recalled = mcp_client.call("breath_advanced", {"query": marker, "importance_min": 8})
+    recalled = mcp_client.call("breath_search", {"query": marker})
     assert marker in recalled
 
 
@@ -505,7 +409,7 @@ def test_trace_existing_bucket_without_changes_is_a_clean_noop(mcp_client):
 
 def test_trace_patches_unique_tail_fragment_of_long_pinned_bucket(mcp_client):
     marker = _marker("trace-patch-long")
-    filler = f"{marker} 长桶填充行，必须保留。\n" * 700
+    filler = f"{marker} 长桶填充行，必须保留。\n" * 100
     old_str = "目标旧片段第一行🙂\n目标旧片段第二行 **原样**"
     new_str = "目标新片段第一行🙂\n目标新片段第二行 **原样**"
     suffix = "\n长桶尾声不能丢。"
@@ -525,8 +429,8 @@ def test_trace_patches_unique_tail_fragment_of_long_pinned_bucket(mcp_client):
         },
     )
     recalled = mcp_client.call(
-        "breath_advanced",
-        {"query": bucket_id, "max_results": 1, "max_tokens": 20_000},
+        "breath_search",
+        {"query": bucket_id, "max_results": 1},
     )
 
     assert "content=已局部替换" in result
@@ -534,49 +438,6 @@ def test_trace_patches_unique_tail_fragment_of_long_pinned_bucket(mcp_client):
     assert old_str not in recalled
     assert filler[:100] in recalled
     assert suffix in recalled
-
-
-def test_anchor_marks_a_bucket(mcp_client):
-    bucket_id = _hold(mcp_client, _marker("anchor"))
-    result = mcp_client.call("anchor", {"bucket_id": bucket_id})
-    assert "放进 anchor" in result
-    repeated = mcp_client.call("anchor", {"bucket_id": bucket_id})
-    assert "已经是 anchor" in repeated
-
-
-def test_release_removes_anchor_marker(mcp_client):
-    bucket_id = _hold(mcp_client, _marker("release"))
-    mcp_client.call("anchor", {"bucket_id": bucket_id})
-    result = mcp_client.call("release", {"bucket_id": bucket_id})
-    assert "从 anchor 移开" in result
-    repeated = mcp_client.call("release", {"bucket_id": bucket_id})
-    assert "本来就不是 anchor" in repeated
-
-
-def test_pulse_returns_system_summary(mcp_client):
-    result = mcp_client.call("pulse", {"include_archive": False})
-    assert "KB" in result
-    assert _bucket_id(result)
-
-
-def test_pulse_include_archive_controls_archived_bucket_listing(mcp_client):
-    bucket_id = _hold(mcp_client, _marker("pulse-archive"), test_data=True)
-    archived = mcp_client.call("trace", {"bucket_id": bucket_id, "delete": True})
-    assert "存入档案" in archived
-
-    try:
-        assert bucket_id not in mcp_client.call("pulse", {"include_archive": False})
-        assert bucket_id in mcp_client.call("pulse", {"include_archive": True})
-    finally:
-        cleanup = mcp_client.call(
-            "trace",
-            {
-                "bucket_id": bucket_id,
-                "hard_delete": True,
-                "delete_reason": "Docker integration cleanup",
-            },
-        )
-        assert "已永久删除测试桶" in cleanup
 
 
 def test_plan_creates_active_plan(mcp_client):
@@ -653,28 +514,11 @@ def test_I_writes_and_reads_self_description(mcp_client):
     assert marker in read_back
 
 
-def test_dream_returns_recent_complete_memory(mcp_client):
-    marker = _marker("dream")
-    _hold(mcp_client, marker)
-    result = mcp_client.call("dream", {"window_hours": 48})
-    assert marker in result
-
-
-@pytest.mark.parametrize("window_hours", [-100, 1000])
-def test_dream_keeps_fixed_48_hour_window_for_legacy_argument(mcp_client, window_hours):
-    marker = _marker(f"dream-{window_hours}")
-    _hold(mcp_client, marker)
-    result = mcp_client.call("dream", {"window_hours": window_hours})
-    assert "过去 48 小时" in result
-    assert marker in result
-
-
 @pytest.mark.parametrize(
     ("tool", "arguments"),
     [
         ("breath", {"query": "q" * (16 * 1024 + 1)}),
         ("breath_search", {"query": "q" * (16 * 1024 + 1)}),
-        ("breath_advanced", {"query": "q" * (16 * 1024 + 1)}),
         ("letter_read", {"query": "q" * (16 * 1024 + 1)}),
     ],
 )
@@ -688,10 +532,7 @@ def test_query_tools_enforce_query_size_limit(mcp_client, tool, arguments):
     [
         ("hold", {"content": "", "importance": 5}, "内容为空"),
         ("hold", {"content": "missing importance"}, "importance 必填"),
-        ("grow", {"content": ""}, "内容为空"),
         ("trace", {"bucket_id": "missing-boundary-id"}, "missing-boundary-id"),
-        ("anchor", {"bucket_id": "missing-boundary-id"}, "anchor"),
-        ("release", {"bucket_id": "missing-boundary-id"}, "释放失败"),
         ("plan", {"content": ""}, "内容为空"),
         ("letter_write", {"author": "", "content": "x"}, "author"),
         ("I", {"content": "x", "aspect": "prompt-injected"}, "aspect 无效"),
@@ -717,16 +558,6 @@ def test_prompt_injection_text_is_returned_verbatim_but_marked_as_data(mcp_clien
 def test_path_traversal_shaped_bucket_id_is_treated_as_an_identifier(mcp_client):
     result = mcp_client.call("trace", {"bucket_id": "../../../../etc/passwd", "importance": 9})
     assert "未找到记忆桶" in result
-
-
-def test_grow_rejects_excessive_source_before_llm_call(mcp_client):
-    result = mcp_client.call("grow", {"content": "x" * (2 * 1024 * 1024 + 1)})
-    assert "grow 输入过大" in result
-
-
-def test_grow_rejects_excessive_item_count(mcp_client):
-    result = mcp_client.call("grow", {"items": [f"item-{index}" for index in range(101)]})
-    assert "items 过多" in result
 
 
 @pytest.mark.parametrize("tool,arguments", [

@@ -126,11 +126,11 @@ async def test_mcp_boundary_returns_fastmcp_image(monkeypatch) -> None:
         return b"\x89PNG\r\n\x1a\ncontent", "png"
 
     monkeypatch.setattr(server._t_media, "read", fake_read)
-    tool = server.mcp_extra._tool_manager.get_tool("media_read")
-    listed = next(item for item in await server.mcp_extra.list_tools() if item.name == "media_read")
+    tool = server.mcp_extra._tool_manager.get_tool("media")
+    listed = next(item for item in await server.mcp_extra.list_tools() if item.name == "media")
 
-    assert set(listed.inputSchema["properties"]) == {"bucket_id", "index"}
-    assert listed.inputSchema["required"] == ["bucket_id"]
+    assert set(listed.inputSchema["properties"]) == {"bucket_id", "index", "query"}
+    assert listed.inputSchema.get("required", []) == []
     output = await tool.run({"bucket_id": "bucket-a", "index": 0})
     assert isinstance(output, Image)
     content = output.to_image_content()
@@ -138,16 +138,16 @@ async def test_mcp_boundary_returns_fastmcp_image(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_mcp_boundary_exposes_media_catalog(monkeypatch) -> None:
+async def test_mcp_boundary_exposes_media_catalog_mode(monkeypatch) -> None:
     import server
 
     async def fake_catalog(**_kwargs):
         return "catalog-result"
 
     monkeypatch.setattr(server._t_media, "catalog", fake_catalog)
-    tool = server.mcp_extra._tool_manager.get_tool("media_catalog")
-    listed = next(item for item in await server.mcp_extra.list_tools() if item.name == "media_catalog")
+    tool = server.mcp_extra._tool_manager.get_tool("media")
+    listed = next(item for item in await server.mcp_extra.list_tools() if item.name == "media")
 
-    assert set(listed.inputSchema["properties"]) == {"query"}
+    assert set(listed.inputSchema["properties"]) == {"bucket_id", "index", "query"}
     assert listed.inputSchema.get("required", []) == []
     assert await tool.run({"query": "紫色"}) == "catalog-result"

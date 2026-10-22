@@ -56,37 +56,36 @@ Ombre Brain 的使用者是**模型自己**，不是它背后的人。所以这�
 
 ---
 
-## 它的 19 个工具 / The 19 Tools
+## 当前 11 个工具 / The 11 Current Tools
 
-19 个工具全部在**一个 MCP 连接器 `/mcp`** 上。连上 `/mcp` 即拥有全部能力。
+现阶段 11 个工具在**一个 MCP 连接器 `/mcp`** 上。信件迁入 Home 并开放已开封信的只读入口后，才撤下 `letter_write` / `letter_read`，最终为 9 个。
 
-### 高频 7 个
+### 常用工具
 
 | 工具 | 一句话 |
 |---|---|
 | `breath` | 睁眼。**0 参数**，让权重最高的未解决事浮现 + 置顶核心准则。**每次对话第一件事**。故意做成 0 参数：claude.ai 按需加载工具时会跳过参数复杂的工具，塞太多参数会导致它常年加载不上。 |
-| `breath_search` | 按关键词 / 语义找记忆：`query`（必填）/ `domain` / `max_results`。融合关键词/BM25 + 语义检索，向量不可用时自动退回关键词检索。 |
-| `breath_advanced` | `breath` 的完整参数版：`catalog=True` 目录模式（每桶一行元数据，0 LLM，最省 token）、`tags`、`importance_min`、`valence`/`arousal`、`max_tokens` 等精细控制，日常用不到时用前两个就够。 |
+| `breath_search` | 关键词 / 语义找记忆；`domain="feel"` 加 `query` 找感受，`domain="plan"` 列活动计划，`domain="daily_impression"` 补读日印象。 |
 | `hold` | 记下当下一件事（一句话级）。自动打标；打标失败时仍会原样落盘，绝不压缩正文。可选 `state_key` 只用于少数会变化的当前事实：发现同 key 旧版本时仅提示，不自动判过时。 |
-| `grow` | 整理一段长内容（日记 / 总结），自动拆成 2~6 条独立桶。要存多条时用它，别连续 `hold`。 |
 | `trace` | 唯一的元数据写入口：resolved / pinned / 改情感坐标 / 替换正文 / 删除到档案 / 改 plan 状态。`superseded_by=新桶ID` 可显式确认一条普通记忆已被取代，`\clear` 撤销。 |
-| `dream` | `catalog=True` 轻量列出过去 48h 新记忆及 `resolved/digested` 状态；按 ID 精读后真有沉淀才写 feel。完整 dream 需要整体消化时再调。 |
 
-### 低频 12 个
+### 其他工具
 
 | 工具 | 一句话 |
 |---|---|
-| `pulse` | 自检：桶数量、占用、衰减引擎状态、全部桶摘要。「为什么搜不到 X」时第一个调它。 |
-| `plan` | 登记一个承诺 / 待办。不衰减、不浮现，只在 `dream` 末尾出现；后续写新事件会自动判断它是否已闭环。 |
-| `anchor` / `release` | 把**已存在的**桶设 / 解为「坐标系」。anchor 不主动浮现但可被检索命中，硬上限 24。必须先 `hold` 再 `anchor`。 |
+| `plan` | 登记一个承诺 / 待办；活动计划可由 `breath_search(domain="plan")` 读取。 |
 | `letter_write` / `letter_read` | 写信 / 读信。原文永久保留，不压缩、不合并、不衰减。`author` 常用 `user`（用户）或 `claude`（你自己），也接受任意署名字符串。 |
 | `I` | 自我认知：写下 / 读取「我是什么」（本质 / 规律 / 立场 / 局限…）。不随普通 `breath` 浮现，每次对话开头自动附最近 3 条。 |
-| `media_catalog` | 列出全部图片记忆桶的日期、关键词、桶 ID 和张数，也可先按关键词过滤；不读取图片本体。 |
-| `media_read` | 按 `bucket_id` 与从 0 开始的 `index` 取回一张已持久化图片；只有明确要看原图时才调用，`breath` / `dream` 不会自动加载图片本体。 |
-| `raw_day` / `raw_search` | 按日期或关键词查找已归档的原始记录；调用时才读取。 |
+| `media` | 无 `bucket_id` 时列目录或按 `query` 找图；给 `bucket_id` 和 `index` 时打开那张原图。 |
+| `raw_browse` | `date` 翻某天或范围，`query` 全库找词，两者同给则在范围内找；支持“最近7天”“2026年10月上旬”。 |
 | `quarrel` | 处理独立的私有连续状态，不进入普通记忆检索。 |
 
-> 给模型的完整使用约定（含示例、边界、返回提示）见 [docs/CLAUDE_PROMPT.md](docs/CLAUDE_PROMPT.md)；逐工具技术规格见 [docs/INTERNALS.md](docs/INTERNALS.md) §3。
+Dashboard「原文」页可以按单条或北京时间的日期/时间范围手动藏起原文。藏起后翻阅、搜索、日印象素材都不再读取；30 天后后台清除正文，删除记录继续留在原文库，夜间重新导入也不会恢复。此操作只针对原文库，不修改记忆桶。
+已有的 Home 原始记录或离线导出文件不由 OB 删除；它们再次导入 OB 时会被删除记录挡住。
+
+原 `pulse` 的版本、桶数量、衰减引擎和向量搜索状态仍在 Dashboard 设置页，由登录后的 `/api/status` 提供。
+
+> 给模型的当前使用约定见 [docs/CLAUDE_PROMPT.md](docs/CLAUDE_PROMPT.md)；内部实现与历史规格见 [docs/INTERNALS.md](docs/INTERNALS.md) §3。
 
 ---
 
@@ -162,9 +161,9 @@ curl http://localhost:18001/health
 }
 ```
 
-重启 Claude Desktop，工具列表里会出现全部 19 个工具：`breath` / `breath_search` / `breath_advanced` / `hold` / `grow` / `trace` / `dream` / `anchor` / `release` / `pulse` / `plan` / `letter_write` / `letter_read` / `I` / `media_catalog` / `media_read` / `raw_day` / `raw_search` / `quarrel`。
+重启 Claude Desktop，工具列表里会出现 11 个工具：`breath` / `breath_search` / `hold` / `trace` / `plan` / `letter_write` / `letter_read` / `I` / `media` / `raw_browse` / `quarrel`。
 
-> 19 个工具全在同一连接器 `/mcp` 暴露，只配这一个即可。
+> 11 个工具全在同一连接器 `/mcp` 暴露，只配这一个即可。
 
 ---
 
@@ -241,13 +240,13 @@ Claude.ai                    Ombre Brain 服务器
 
 #### 步骤 3：连接端点
 
-19 个工具全在**一个 MCP 端点 `/mcp`** 上：
+11 个工具全在**一个 MCP 端点 `/mcp`** 上：
 
 | 端点 | 工具 | 说明 |
 |---|---|---|
-| `/mcp` | `breath` `breath_search` `breath_advanced` `hold` `grow` `dream` `trace` `anchor` `release` `pulse` `plan` `letter_write` `letter_read` `I` `media_catalog` `media_read` `raw_day` `raw_search` `quarrel` | 全部 19 个工具 |
+| `/mcp` | `breath` `breath_search` `hold` `trace` `plan` `letter_write` `letter_read` `I` `media` `raw_browse` `quarrel` | 现阶段 11 个工具 |
 
-> 旧版曾使用第二连接器 `/mcp-extra`，该端点现已退役并返回 `404`；不要再单独添加。全部 19 个工具都在 `/mcp`。
+> 旧版曾使用第二连接器 `/mcp-extra`，该端点现已退役并返回 `404`；不要再单独添加。现阶段 11 个工具都在 `/mcp`。
 
 在 Claude.ai / 你的客户端里添加这一个连接器即可使用全部工具：
 
@@ -491,7 +490,7 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 
 > 🔐 **Hook 安全默认值**：`/breath-hook` 默认不再公开。它接受 Dashboard 登录 cookie，或 `hooks.token` / `OMBRE_HOOK_TOKEN`；token 只能通过 `X-Ombre-Hook-Token` 或 `Authorization: Bearer ...` 请求头传入，避免密钥进入 URL、代理日志和浏览器历史。只有在反向代理、Cloudflare Access 等外层已经做鉴权时，才建议把 `hooks.allow_public` / `OMBRE_HOOK_ALLOW_PUBLIC` 设为 `true`。
 >
-> 注：这里**只有 `/breath-hook`**。早期版本还有一个每次开场自动触发的 `/dream-hook`，已移除——`dream`（做梦消化）按设计哲学不是义务、不该被自动触发，只应在需要消化时由模型主动调用 `dream` 工具。
+> 注：这里**只有 `/breath-hook`**。早期版本的 `/dream-hook` 已移除。
 
 ### Embedding 两后端：云端 Gemini vs 本地 bge-m3
 
@@ -619,7 +618,7 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 | **Operit / 安卓 / Proot 本地桥接一直黄灯、连不上 `/mcp`** | 多为下面三点之一：① `transport` 没设成 `streamable-http`（默认 `stdio` **根本不开 HTTP 服务**）；② 默认强制 OAuth，Operit 这类本地桥不走该流程被 401 卡半通；③ 客户端填了 `localhost`，在 Proot/Termux 里常解析成 IPv6 `::1`，连不上 IPv4 监听 | 见下方「**Operit / 安卓 / Proot 本地桥接**」一节，三步逐个对齐 |
 | Token 过期后无法自动重连 | 旧版本不支持 `refresh_token` grant，headless 环境只能重新打开授权页 | 更新到 v2.4.11+ 后重新授权一次，之后客户端可用 refresh token 自动续期 |
 | Dashboard 401 | 未登录 / 密码错 | 浏览器重新登录 |
-| `hold` / `grow` 报 API key 错误 / `401 Invalid token` | LLM key 未配置或不对；**或**你既用 `-e OMBRE_COMPRESS_API_KEY=...` 传了 env、又在面板改过 key —— 见下一行 | Dashboard → ③ 引擎 填入 Key 点「保存 Key」；确认 base_url、model 正确后用「测试」按钮自查 |
+| `hold` 报 API key 错误 / `401 Invalid token` | LLM key 未配置或不对；**或**你既用 `-e OMBRE_COMPRESS_API_KEY=...` 传了 env、又在面板改过 key —— 见下一行 | Dashboard → ③ 引擎 填入 Key 点「保存 Key」；确认 base_url、model 正确后用「测试」按钮自查 |
 | **在面板改了 key/配置，重启后又变回旧值 / 不生效** | **env 变量优先级高于 config.yaml**。你启动时用 `-e OMBRE_XXX=...` 传的值，会在每次重启时盖掉面板写进 config.yaml 的改动 | 二选一：① 改就改 env（`docker run -e` / compose 的 `environment` / 平台环境变量面板），别在面板改；② 想用面板管配置，就**别用 `-e` 传那个变量**。面板「环境变量」区带 `from_boot` 标记的就是会被 env 覆盖的项 |
 | 重启后**记忆丢失**（退回旧版本 / 空库） | 数据目录没挂到持久盘：容器重建就把记忆连同代码一起丢了。匿名卷也会被 `docker compose down -v` 等操作清掉 | 把 `/app/buckets` 挂到**命名卷或宿主机目录**（`-v ./buckets:/app/buckets`）。**判断标准：能在宿主机文件夹里看到那些 `.md` 文件，就是安全的。** Dashboard → 设置 → 系统诊断 会直接告诉你「数据目录是否持久」 |
 | Docker **构建**（`docker build`）在 `pip install` 处失败：`SSL EOF` / 连不上 pypi.org / `No matching distribution` | 宿主机网络/代理（Clash、V2Ray 等）在构建时把连 PyPI 的连接掐断了 | 给 Docker 配置可用的 PyPI 镜像源或修复宿主机网络后重建；不要改用上游旧镜像 |
@@ -635,7 +634,7 @@ docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 
 新用户最常踩、但文档里分散各处的点，集中提醒一下：
 
-- **只需加一个连接器 `/mcp`**：19 个工具全在这一个端点上，不用再单独加别的。
+- **只需加一个连接器 `/mcp`**：现阶段 11 个工具全在这一个端点上。
 - **反代/隧道要整主机名转发**：Cloudflare Tunnel / Nginx 按域名整体转发到 `localhost:端口`，覆盖所有路径即可。
 - **OpenAI 兼容向量化两个坑**：base_url 末尾要带 `/v1`（漏了 404）、model 要带完整前缀（如 `BAAI/bge-m3`，漏了报 Model does not exist）。填完用向量化区的「测试」按钮确认。
 - **改完 key / 配置点「保存」后再「测试」**：压缩和向量化各有独立的「测试」按钮，能用就用，别凭感觉。

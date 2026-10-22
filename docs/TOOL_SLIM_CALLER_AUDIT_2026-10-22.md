@@ -23,3 +23,9 @@
 本次先撤 `dream`、`anchor`、`release`、`grow`、`pulse` 五个注册；合并两对读工具为各一个；把 `breath_advanced` 的必要通道迁入 `breath_search` 后撤注册。信件两个入口保留，所以此阶段从 19 变为 **11**。Home 已开封信件只读入口和五封信迁移完成、另行验收后，才可能再撤两封信工具，届时才是 **9**。
 
 撤注册不删除记忆桶、不删除内部 `grow`/`dream` 等代码；自动夜间梦境和原文库按各自服务运行。主线合并会触发 Zeabur 部署，本分支不合并、不部署。
+
+## 分支实施后的待核项
+
+OB 本分支已同步 README、模型提示、公共工具契约和集成测试清单。grey-kit 中列出的旧权限名、图片提示和 `CLAUDE.md` 仍留在原仓，须由顾凛核实际加载的配置与提示后，在 OB 上线前改为 `media`、`raw_browse`、`breath_search(domain="feel", query=...)`。两台机器运行态、Zeabur 线上 `/mcp` 清单均未核；不能据本分支判断已上线。
+
+信件迁移没有纳入本分支。Home 的已开封信只读入口、五封信迁移及验收完成以前，OB 的 `letter_write` / `letter_read` 继续保留。

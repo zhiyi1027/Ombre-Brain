@@ -1,13 +1,16 @@
 import gzip
 import json
+import sqlite3
+from datetime import datetime, timedelta
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 
 import raw_archive
 from raw_archive import get_archive
 from tools import _runtime as rt
-from tools.raw import day, search
+from tools.raw import browse, day, parse_period, search
 
 
 def rows():
@@ -36,6 +39,25 @@ def test_archive_lives_beside_media_and_is_private(archive, tmp_path):
     assert oct(path.stat().st_mode & 0o777) == "0o600"
 
 
+def test_existing_archive_schema_is_migrated_without_losing_rows(tmp_path):
+    path = tmp_path / "old.sqlite3"
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE raw_messages (msg_uuid TEXT PRIMARY KEY, conv_uuid TEXT NOT NULL, "
+            "conv_name TEXT NOT NULL DEFAULT '', speaker TEXT NOT NULL, at TEXT NOT NULL, "
+            "day TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', thinking TEXT NOT NULL DEFAULT '', "
+            "source TEXT NOT NULL DEFAULT '')"
+        )
+        conn.execute(
+            "INSERT INTO raw_messages VALUES (?,?,?,?,?,?,?,?,?)",
+            tuple(rows()[0][key] for key in ("msg_uuid", "conv_uuid", "conv_name", "speaker", "at", "day", "text", "thinking")) + ("old",),
+        )
+    archive = raw_archive.RawArchive(str(path))
+    assert archive.day("2026-05-18")[1] == 1
+    assert archive.hide_message("m1") == 1
+    assert archive.stats()["n"] == 0
+
+
 def test_import_is_idempotent_and_rejects_bad_rows(archive):
     assert archive.import_rows(rows()) == {"added": 3, "updated": 0, "skipped": 0}
     bad = [{"msg_uuid": "x", "conv_uuid": "c", "speaker": "路人", "at": "t", "day": "2026-05-18", "text": "a"},
@@ -43,6 +65,78 @@ def test_import_is_idempotent_and_rejects_bad_rows(archive):
            "not a row"]
     assert archive.import_rows(rows() + bad) == {"added": 0, "updated": 3, "skipped": 3}
     assert archive.stats()["n"] == 3
+
+
+def test_hide_one_excludes_all_read_paths_and_blocks_both_importers(archive):
+    archive.import_rows(rows())
+    now = datetime(2026, 10, 22, 12, tzinfo=ZoneInfo("Asia/Shanghai"))
+    assert archive.hide_message("m2", now=now) == 1
+    assert archive.stats()["n"] == 2
+    assert archive.days() == [{"day": "2026-05-18", "n": 2}]
+    assert [r["msg_uuid"] for r in archive.rows_for_days(["2026-05-18"])] == ["m1", "m3"]
+    assert [r["msg_uuid"] for r in archive.day("2026-05-18")[0]] == ["m1", "m3"]
+    assert archive.range_days("2026-05-18", "2026-05-18")[1] == 2
+    assert archive.search("你觉得呢") == []
+    assert archive.search("我爱你")[0]["before"]["text"] == "你觉得是浪费吗"
+    assert archive.import_rows([rows()[1]])["skipped"] == 1
+    assert archive.import_rows_v2([rows()[1]])["added"] == 0
+    assert archive.deletion_log()[0]["affected_count"] == 1
+    assert archive.purge_due(now=now + timedelta(days=29)) == 0
+    assert archive.purge_due(now=now + timedelta(days=30)) == 1
+    assert archive.deletion_log()[0]["purged_at"] is not None
+    assert archive.import_rows([rows()[1]])["skipped"] == 1
+    assert archive.stats()["n"] == 2
+
+
+def test_hide_range_blocks_future_rows_and_fragments(archive):
+    archive.import_rows(rows())
+    assert archive.hide_range("2026-05-18T20:00:05+08:00", "2026-05-18T20:01:00+08:00") == 2
+    assert archive.stats()["n"] == 1
+    assert archive.search("我爱你") == []
+    assert archive.import_rows(rows())["skipped"] == 2
+    first, second = _fragments(msg_uuid="home-msg-9")
+    first = first | {"at": "2026-05-18T20:00:05+08:00"}
+    second = second | {"at": "2026-05-18T20:00:05+08:00"}
+    assert archive.import_rows_v2([first, second])["pending"] == 0
+    assert archive.stats()["n"] == 1
+    assert archive.deletion_log()[0]["start_at"].startswith("2026-05-18")
+    with pytest.raises(ValueError, match="开始时间"):
+        archive.hide_range("2026-05-19", "2026-05-18")
+
+
+def test_whole_day_range_includes_fractional_last_second(archive):
+    row = rows()[0] | {"at": "2026-05-18T23:59:59.500000+08:00"}
+    archive.import_rows([row])
+    assert archive.hide_range("2026-05-18", "2026-05-18") == 1
+    assert archive.import_rows([row])["skipped"] == 1
+
+
+def test_hide_fragment_alias_blocks_canonical_reimport(archive):
+    legacy = rows()[0] | {"msg_uuid": "home-msg-7-part-000001"}
+    archive.import_rows([legacy])
+    archive.hide_message(legacy["msg_uuid"])
+    canonical = legacy | {"msg_uuid": "home-msg-7"}
+    assert archive.import_rows_v2([canonical])["added"] == 0
+    assert archive.stats()["n"] == 0
+
+
+def test_message_id_is_never_treated_as_a_glob(archive):
+    archive.import_rows([rows()[0] | {"msg_uuid": "m*"}, rows()[1] | {"msg_uuid": "mX-part-1"}])
+    assert archive.hide_message("m*") == 1
+    assert [row["msg_uuid"] for row in archive.day("2026-05-18")[0]] == ["mX-part-1"]
+
+
+@pytest.mark.asyncio
+async def test_browse_calendar_ranges_and_scoped_search(archive):
+    archive.import_rows(rows() + [rows()[0] | {"msg_uuid": "later", "day": "2026-05-25", "at": "2026-05-25T20:00:00+08:00"}])
+    assert parse_period("2026年5月中旬") == ("2026-05-11", "2026-05-20")
+    assert parse_period("最近7天", today=datetime(2026, 5, 25).date()) == ("2026-05-19", "2026-05-25")
+    assert "共 3 条" in await browse(date="2026年5月中旬")
+    assert "共 1 条" in await browse(date="2026-05-21..2026-05-31")
+    assert "2026-05-25" in await browse(date="2026-05-21..2026-05-31", query="浪费")
+    assert "没搜到" in await browse(date="2026年5月中旬", query="酸菜")
+    assert "page 必须" in await browse(date="2026-05-18", page=-1)
+    assert "翻过头" in await browse(date="2026-05-18..2026-05-25", page=100)
 
 
 def _fragments(text="前半X" + "Y后半", msg_uuid="home-msg-9"):
@@ -223,10 +317,11 @@ async def test_raw_tools_are_registered_read_only():
     import server
 
     listed = {t.name: t.inputSchema for t in await server.mcp_extra.list_tools()}
-    assert set(listed["raw_day"]["properties"]) == {"date", "page", "thinking"}
-    assert listed["raw_day"]["required"] == ["date"]
-    assert set(listed["raw_search"]["properties"]) == {"query", "max_results", "thinking", "speaker"}
-    assert listed["raw_search"]["required"] == ["query"]
+    assert set(listed["raw_browse"]["properties"]) == {
+        "date", "query", "page", "max_results", "thinking", "speaker",
+    }
+    assert listed["raw_browse"].get("required", []) == []
+    assert "raw_day" not in listed and "raw_search" not in listed
 
 
 def test_delete_source_takes_back_one_import_only(tmp_path, monkeypatch):

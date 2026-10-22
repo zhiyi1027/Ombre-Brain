@@ -787,6 +787,22 @@ async def test_runtime_lifecycle_cancels_keepalive_on_shutdown():
 
 
 @pytest.mark.asyncio
+async def test_runtime_lifecycle_runs_raw_purge_and_cancels_loop():
+    ran = asyncio.Event()
+
+    async def purge():
+        ran.set()
+
+    lifecycle = RuntimeLifecycle(logger=RecordingLogger(), raw_purge=purge)
+    await lifecycle.start()
+    await asyncio.wait_for(ran.wait(), timeout=2)
+    task = lifecycle._raw_purge_task
+    await lifecycle.stop()
+    assert task is not None and task.done()
+    assert lifecycle._raw_purge_task is None
+
+
+@pytest.mark.asyncio
 async def test_runtime_lifecycle_logs_optional_service_failures_without_leaking():
     logger = RecordingLogger()
 

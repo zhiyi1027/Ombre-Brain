@@ -1,4 +1,4 @@
-"""Relevant feel retrieval for ``breath_advanced(domain="feel")``.
+"""Relevant feel retrieval for ``breath_search(domain="feel", query=...)``.
 
 Feel history grows without bound, so this channel never dumps it by recency.
 The caller supplies the current topic and may include ``bucket_id:<id>`` or
@@ -56,8 +56,8 @@ _NEEDS_QUERY = (
     "feel 需要一个主题，不再全量返回。\n"
     "请描述此刻在想的事；若要优先找某条记忆亲生的感受，可在 query 中加入 "
     "bucket_id:<id>。\n"
-    '例：breath_advanced(domain="feel", query="[bucket_id:abc123] 被误解", '
-    "max_results=5, max_tokens=2000)。"
+    '例：breath_search(domain="feel", query="[bucket_id:abc123] 被误解", '
+    "max_results=5)。"
 )
 
 

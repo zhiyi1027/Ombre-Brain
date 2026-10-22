@@ -1,5 +1,7 @@
 # Ombre Brain — 内部开发文档 / INTERNALS
 
+> **2026-10-22 工具入口更新**：当前 `/mcp` 注册 11 个工具：`breath`、`hold`、`breath_search`、`trace`、`plan`、`quarrel`、`I`、`raw_browse`、`media`、`letter_write`、`letter_read`。下文 §3 保留旧版 19 工具的实现背景，不能用作当前客户端调用清单；现行调用见 [README](../README.md) 和 [CLAUDE_PROMPT](CLAUDE_PROMPT.md)。信件迁入 Home 后才撤下两项信件工具。
+
 > **第一人称原则（全局）**：Ombre Brain 的使用者是**模型自己**，不是用户。所有提示词、docstring、注释、前端说明文字必须用第一人称（"我的记忆"/"我记得"/"我感受到"），禁止"用户的记忆""帮用户记住""为用户存储"等第三人称表述。本规则覆盖 server.py 工具 docstring、CLAUDE_PROMPT.md、dashboard 文案、ENV_VARS.md 描述。改任何一段面向模型的文字前先回头看这条。
 >
 > 本文档面向开发者和维护者。合并自原 INTERNALS.md（系统怎么运作）+ BEHAVIOR_SPEC.md（行为应该符合什么规格）。
@@ -106,7 +108,7 @@ Ombre-Brain/
 
 每个模块「干什么、边界在哪、依赖谁」：
 
-- **server.py**（约 1200 行）— MCP 服务入口。创建所有组件后调 `tools._runtime.init(...)` 注入依赖；以 `@mcp.tool()` / `@mcp_extra.tool()` 注册 **19 个工具入口**（每个只负责转发和协议适配）；启动入口处把 `mcp_extra` 的 12 个工具回灌进 `mcp`，对外只暴露 **单连接器 `/mcp`**（19 个工具全在这一条，详见 §3 抬头）；启动段调 `web.register_all(mcp)` 装配所有 HTTP 路由，并起 `mcp.streamable_http_app()` 一个 uvicorn 进程。**不写业务逻辑，也不再直接定义 HTTP 路由**——后者已全部迁到 `web/`。
+- **server.py**（约 1200 行）— MCP 服务入口。创建所有组件后调 `tools._runtime.init(...)` 注入依赖；以 `@mcp.tool()` / `@mcp_extra.tool()` 注册当前 **11 个工具入口**；启动时回灌到单连接器 `/mcp`。HTTP 路由由 `web.register_all(mcp)` 装配，业务逻辑在 `tools/`。
 - **tools/**（MCP 工具应用层）— 详见下面「1.x tools/ 包结构」。
 - **web/**（HTTP/Dashboard 路由层）— 详见下面「1.y web/ 包结构」。从旧 server.py 巨石里拆出的 25 个域模块，每个导出 `register(mcp)`；cookie/CSRF/会话鉴权等共享依赖在 `web/_shared.py`（类比 `tools/_runtime.py`）。
 - **bucket_manager.py** — 桶 CRUD + 多维加权搜索 + `touch()` 激活刷新 + `_time_ripple()` 时间涟漪 + 文件搬运（archive/permanent 之间）。
@@ -265,7 +267,7 @@ feel 桶自身：
 
 ---
 
-## 3. MCP 工具规格（共 19 个）
+## 3. 旧版 MCP 工具规格（历史实现背景，现行清单见本页开头）
 
 > **单连接器（iter 2.2）**：claude.ai 的 5 工具上限已解除，19 个工具合并回一个连接器 `/mcp`。
 > 历史上（iter 2.1）曾因该上限拆成主 `mcp`（`/mcp`，5 个）+ 副 `mcp_extra`（`/mcp-extra`，7 个）两个 FastMCP 实例。
@@ -486,7 +488,7 @@ feel 桶自身：
 | `/api/nightly-dreams` | GET | 🔒 | 列出最近夜间梦境状态；列表不批量返回梦境正文 |
 | `/api/nightly-dreams/{dream_day}` | GET | 🔒 | 查看某夜合成梦境与可追溯来源；只读，不提供生成或写回入口 |
 | `/internal/daily-notes` | POST | 🔑 | 幂等上传 CC/Codex 当日累计便签；只接受 `OMBRE_DAILY_NOTE_TOKEN`（或回退的 Hook Token）/ Dashboard 登录态，响应不回显正文 |
-| `/mcp/*` | — | 公开 | FastMCP 单连接器（iter 2.2）：全部 19 个工具 —— breath / breath_search / breath_advanced / hold / grow / dream / trace / anchor / release / pulse / plan / letter_write / letter_read / **I** / media_catalog / media_read / raw_day / raw_search / quarrel |
+| `/mcp/*` | — | 公开 | FastMCP 单连接器：现阶段 11 个工具，见本页开头 |
 
 🔒 = 需要 cookie 认证，未认证返回 `JSON {error, setup_needed}` 状态码 401。
 

@@ -17,17 +17,16 @@ class LegacyCompatibilityContract:
         return cls(
             tool_names=(
                 "breath",
+                "breath_search",
                 "hold",
-                "grow",
-                "dream",
                 "trace",
-                "anchor",
-                "release",
-                "pulse",
                 "plan",
                 "letter_write",
                 "letter_read",
                 "I",
+                "media",
+                "raw_browse",
+                "quarrel",
             ),
             dashboard_routes=(
                 "/",

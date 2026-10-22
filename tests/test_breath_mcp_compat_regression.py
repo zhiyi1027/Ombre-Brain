@@ -153,17 +153,6 @@ async def test_breath_search_defaults_to_five_full_buckets(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_breath_advanced_keeps_config_driven_result_default(monkeypatch):
+async def test_breath_advanced_is_no_longer_registered():
     import server
-
-    seen = {}
-
-    async def fake_dispatch(**kwargs):
-        seen.update(kwargs)
-        return "advanced-dispatched"
-
-    monkeypatch.setattr(server._t_breath, "dispatch", fake_dispatch)
-    tool = server.mcp._tool_manager.get_tool("breath_advanced")
-
-    assert await tool.run({"query": QUERY}) == "advanced-dispatched"
-    assert seen["max_results"] == 0
+    assert server.mcp._tool_manager.get_tool("breath_advanced") is None

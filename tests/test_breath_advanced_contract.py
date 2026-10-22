@@ -1,4 +1,4 @@
-"""Keep the advertised advanced breath surface in sync with dispatch."""
+"""Keep the internal legacy advanced wrapper in sync with dispatch."""
 
 import inspect
 
@@ -33,11 +33,11 @@ def test_breath_advanced_forwards_everything_dispatch_takes():
 
 
 @pytest.mark.asyncio
-async def test_quotes_is_advertised_on_both_search_tools():
+async def test_quotes_is_advertised_on_public_search_tool():
     import server
 
     listed = {tool.name: tool.inputSchema for tool in await server.mcp.list_tools()}
-    for name in ("breath_search", "breath_advanced"):
+    for name in ("breath_search",):
         prop = listed[name]["properties"].get("quotes")
         assert prop is not None
         advertised_types = {prop.get("type")}

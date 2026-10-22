@@ -1,7 +1,7 @@
 """图片目录与按需读取工具。
 
-``media_catalog`` 只返回轻量关键词和桶定位信息；``media_read`` 仍是唯一会
-读取图片本体的入口。这样可以先找图，再把明确选中的那一张放进上下文。
+``media`` 不给 bucket_id 时返回目录；给 bucket_id 时读取指定图片本体。
+这样可以先找图，再把明确选中的那一张放进上下文。
 """
 
 from __future__ import annotations
@@ -192,7 +192,7 @@ async def catalog(query: str = "") -> str:
     lines = [
         f"=== 图片记忆目录 · {scope}（{len(matches)} 个桶 / {image_count} 张）===",
         "这里只列关键词与定位信息，不读取原图。确定目标后调用 "
-        'media_read(bucket_id="...", index=0)。',
+        'media(bucket_id="...", index=0)。',
     ]
     for bucket, media in matches:
         meta = bucket.get("metadata") or {}

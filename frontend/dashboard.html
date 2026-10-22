@@ -2887,6 +2887,14 @@
         <select id="raw-speaker" style="flex:0 0 110px;"><option value="">双方</option><option value="知知">知知</option><option value="顾凛">顾凛</option></select>
         <button class="btn-secondary" onclick="searchRaw()" style="padding:8px 14px;font-size:12px;">搜</button>
       </div>
+      <div class="config-row">
+        <label>藏起一段时间的原文</label>
+        <input id="raw-delete-start" type="text" placeholder="开始：2026-10-22 或 2026-10-22T09:30:00+08:00" />
+        <input id="raw-delete-end" type="text" placeholder="结束：2026-10-22 或 ISO 时间" />
+        <button class="btn-secondary" onclick="deleteRawRange()" style="padding:8px 14px;font-size:12px;">藏起</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);margin:0 0 8px 0;">藏起后立即退出翻阅、搜索和日印象；30 天后清除正文，删除记录继续保留，防止夜间导入复活。时间按北京时间。</div>
+      <details ontoggle="if(this.open)loadRawDeletions()"><summary style="cursor:pointer;font-size:12px;">查看删除记录</summary><div id="raw-deletions" style="font-size:12px;white-space:pre-wrap;padding:8px;"></div></details>
       <div id="raw-list" class="raw-list"></div>
       <div id="raw-pager" style="display:flex;gap:10px;justify-content:center;margin-top:12px;"></div>
     </div>
@@ -10891,7 +10899,39 @@ async function loadRawDays() {
 function _rawLine(row, cls) {
   const who = row.speaker === '知知' ? 'zhizhi' : 'grey';
   const think = document.getElementById('raw-thinking').checked && row.thinking ? `<span class="think">${esc(row.thinking)}</span>` : '';
-  return `<div class="raw-line ${who} ${cls || ''}"><span class="who">${esc((row.at || '').slice(11, 16))} ${esc(row.speaker)}</span>${esc(row.text)}${think}</div>`;
+  const remove = row.msg_uuid ? ` <button class="btn-secondary" data-raw-id="${escAttr(row.msg_uuid)}" onclick="deleteRawMessage(this.dataset.rawId)" style="font-size:11px;padding:2px 6px;">藏起这条</button>` : '';
+  return `<div class="raw-line ${who} ${cls || ''}"><span class="who">${esc((row.at || '').slice(11, 16))} ${esc(row.speaker)}</span>${esc(row.text)}${think}${remove}</div>`;
+}
+async function _postRawDelete(body) {
+  const r = await fetch(BASE + '/api/raw/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || 'HTTP ' + r.status);
+  _rawMode = null;
+  await loadRawDays();
+  await loadRawDeletions();
+  return data.hidden;
+}
+async function deleteRawMessage(id) {
+  if (!id || !confirm('把这条原文藏起来？30 天后会清除正文，夜间导入也不会恢复。')) return;
+  try { await _postRawDelete({msg_uuid:id}); } catch (e) { alert('藏起失败：' + e.message); }
+}
+async function deleteRawRange() {
+  const start = document.getElementById('raw-delete-start').value.trim();
+  const end = document.getElementById('raw-delete-end').value.trim();
+  if (!start || !end) { alert('请填开始和结束时间'); return; }
+  if (!confirm(`把北京时间 ${start} 至 ${end} 的原文藏起来？该范围以后导入的原文也会被拦住。`)) return;
+  try { const n = await _postRawDelete({start,end}); alert(`已藏起 ${n} 条；删除记录已保存。`); }
+  catch (e) { alert('藏起失败：' + e.message); }
+}
+async function loadRawDeletions() {
+  const box = document.getElementById('raw-deletions');
+  if (!box) return;
+  try {
+    const r = await fetch(BASE + '/api/raw/deletions');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const entries = (await r.json()).entries || [];
+    box.textContent = entries.length ? entries.map(x => `${x.deleted_at} · ${x.msg_uuid || (x.start_at + ' 至 ' + x.end_at)} · ${x.affected_count} 条 · ${x.purged_at ? '正文已清除' : '正文待清除'}`).join('\n') : '还没有删除记录';
+  } catch (e) { box.textContent = '加载失败：' + e.message; }
 }
 function rerenderRaw() {
   if (!_rawMode) return;

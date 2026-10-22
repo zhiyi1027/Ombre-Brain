@@ -8,9 +8,9 @@ raw_archive.py — 聊天原文抽屉
 边界：
 - 不是记忆桶。breath / 召回 / dream / 衰减 / 合并 / github_sync 都不碰它。
 - 库放在 vault 下的 _raw/，与 _media 同级；github_sync 只收 Markdown，不会把它推上去。
-  原文随时能从导出 JSON 重建，导出文件本身就是备份。
-- 只读工具：raw_day、raw_search。写入只走带独立口令的导入口（web/raw_import.py）。
-- 重复导入按 msg_uuid 覆盖，不会翻倍。
+- MCP 只读工具是 raw_browse；写入走独立口令导入口，手动删除走登录后的 Dashboard。
+- 软删立即从所有读路径隐藏，30 天后清除正文；删除记录保留，用来挡住后续导入。
+- 重复导入按 msg_uuid 覆盖，不会翻倍；被删除记录命中的原文不会重建。
 
 对外暴露：RawArchive、get_archive(config)
 ========================================
@@ -24,7 +24,11 @@ import sqlite3
 import threading
 import hashlib
 import json
+from datetime import datetime, timedelta
 from typing import Any, Iterable
+from zoneinfo import ZoneInfo
+
+_BEIJING = ZoneInfo("Asia/Shanghai")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS raw_messages (
@@ -36,7 +40,9 @@ CREATE TABLE IF NOT EXISTS raw_messages (
     day TEXT NOT NULL,
     text TEXT NOT NULL DEFAULT '',
     thinking TEXT NOT NULL DEFAULT '',
-    source TEXT NOT NULL DEFAULT ''
+    source TEXT NOT NULL DEFAULT '',
+    deleted_at TEXT,
+    purge_after TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_raw_day_at ON raw_messages(day, at);
 CREATE INDEX IF NOT EXISTS idx_raw_conv_at ON raw_messages(conv_uuid, at);
@@ -55,6 +61,19 @@ CREATE TABLE IF NOT EXISTS raw_message_parts (
     source TEXT NOT NULL,
     PRIMARY KEY (msg_uuid, part_index)
 );
+CREATE TABLE IF NOT EXISTS raw_deletions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    msg_uuid TEXT,
+    start_at TEXT,
+    end_at TEXT,
+    deleted_at TEXT NOT NULL,
+    purge_after TEXT NOT NULL,
+    purged_at TEXT,
+    affected_count INTEGER NOT NULL DEFAULT 0,
+    CHECK ((msg_uuid IS NOT NULL) != (start_at IS NOT NULL AND end_at IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_raw_deletions_uuid ON raw_deletions(msg_uuid);
+CREATE INDEX IF NOT EXISTS idx_raw_deletions_range ON raw_deletions(start_at, end_at);
 """
 _DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _FIELDS = ("msg_uuid", "conv_uuid", "conv_name", "speaker", "at", "day", "text", "thinking")
@@ -75,6 +94,10 @@ class RawArchive:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(raw_messages)")}
+            for column in ("deleted_at", "purge_after"):
+                if column not in columns:
+                    conn.execute(f"ALTER TABLE raw_messages ADD COLUMN {column} TEXT")
         try:
             os.chmod(path, 0o600)
         except OSError:
@@ -83,15 +106,21 @@ class RawArchive:
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA secure_delete=ON")
+        conn.execute("PRAGMA busy_timeout=30000")
         return conn
 
     # ---------- 写 ----------
     def import_rows(self, rows: Iterable[dict[str, Any]], source: str = "") -> dict[str, int]:
         added = updated = skipped = 0
         with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             for row in rows:
                 clean = _clean_row(row)
                 if clean is None:
+                    skipped += 1
+                    continue
+                if _is_deleted(conn, clean):
                     skipped += 1
                     continue
                 exists = conn.execute(
@@ -113,10 +142,14 @@ class RawArchive:
         """Receive complete messages or staged fragments; expose only assembled originals."""
         added = updated = pending = 0
         with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             for row in rows:
                 clean = _clean_row(row)
                 if clean is None:
                     raise ValueError("invalid raw message")
+                if _is_deleted(conn, clean):
+                    conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=?", (clean["msg_uuid"],))
+                    continue
                 has_part = any(key in row for key in ("fragment_index", "fragment_count", "fragment_digest"))
                 if not has_part:
                     conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=?", (clean["msg_uuid"],))
@@ -181,22 +214,100 @@ class RawArchive:
         if not source:
             return 0
         with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             conn.execute("DELETE FROM raw_message_parts WHERE source=?", (source,))
             return conn.execute("DELETE FROM raw_messages WHERE source=?", (source,)).rowcount
+
+    def hide_message(self, msg_uuid: str, *, now: datetime | None = None) -> int:
+        """Hide one original immediately and retain a content-free reimport tombstone."""
+        msg_uuid = _base_uuid(msg_uuid)
+        if not msg_uuid or len(msg_uuid) > 80:
+            raise ValueError("msg_uuid 无效")
+        deleted_at, purge_after = _deletion_times(now)
+        target = "msg_uuid=?"
+        target_params: tuple[str, ...] = (msg_uuid,)
+        if _LEGACY_HOME_ID.fullmatch(msg_uuid):
+            target += " OR msg_uuid GLOB ?"
+            target_params += (msg_uuid + "-part-[0-9]*",)
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            count = conn.execute(
+                f"SELECT COUNT(*) FROM raw_messages WHERE deleted_at IS NULL AND ({target})",  # nosec B608
+                target_params,
+            ).fetchone()[0]
+            if not count:
+                raise ValueError("这条原文不存在或已藏起")
+            conn.execute(
+                "INSERT INTO raw_deletions(msg_uuid,deleted_at,purge_after,affected_count) "
+                "VALUES (?,?,?,?)", (msg_uuid, deleted_at, purge_after, count),
+            )
+            conn.execute(
+                f"UPDATE raw_messages SET deleted_at=?, purge_after=? "
+                f"WHERE deleted_at IS NULL AND ({target})",  # nosec B608
+                (deleted_at, purge_after, *target_params),
+            )
+            conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=?", (msg_uuid,))
+        return int(count)
+
+    def hide_range(self, start: str, end: str, *, now: datetime | None = None) -> int:
+        """Hide inclusive Beijing timestamps/days, including future reimports in the range."""
+        start_at, end_at = _boundary(start, end=False), _boundary(end, end=True)
+        if start_at > end_at:
+            raise ValueError("开始时间不能晚于结束时间")
+        deleted_at, purge_after = _deletion_times(now)
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            count = conn.execute(
+                "SELECT COUNT(*) FROM raw_messages WHERE deleted_at IS NULL AND at BETWEEN ? AND ?",
+                (start_at, end_at),
+            ).fetchone()[0]
+            conn.execute(
+                "INSERT INTO raw_deletions(start_at,end_at,deleted_at,purge_after,affected_count) "
+                "VALUES (?,?,?,?,?)", (start_at, end_at, deleted_at, purge_after, count),
+            )
+            conn.execute(
+                "UPDATE raw_messages SET deleted_at=?, purge_after=? "
+                "WHERE deleted_at IS NULL AND at BETWEEN ? AND ?",
+                (deleted_at, purge_after, start_at, end_at),
+            )
+            conn.execute("DELETE FROM raw_message_parts WHERE at BETWEEN ? AND ?", (start_at, end_at))
+        return int(count)
+
+    def purge_due(self, *, now: datetime | None = None) -> int:
+        """Physically remove hidden content after 30 days; keep the tombstones forever."""
+        current = (now or datetime.now(_BEIJING)).astimezone(_BEIJING).isoformat(timespec="seconds")
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            count = conn.execute(
+                "DELETE FROM raw_messages WHERE deleted_at IS NOT NULL AND purge_after<=?", (current,)
+            ).rowcount
+            conn.execute(
+                "UPDATE raw_deletions SET purged_at=? WHERE purged_at IS NULL AND purge_after<=?",
+                (current, current),
+            )
+        return int(count)
+
+    def deletion_log(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id,msg_uuid,start_at,end_at,deleted_at,purge_after,purged_at,affected_count "
+                "FROM raw_deletions ORDER BY id DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     # ---------- 读 ----------
     def stats(self) -> dict[str, Any]:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT COUNT(*) n, MIN(day) first, MAX(day) last, COUNT(DISTINCT day) days "
-                "FROM raw_messages"
+                "FROM raw_messages WHERE deleted_at IS NULL"
             ).fetchone()
         return dict(row)
 
     def days(self) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT day, COUNT(*) n FROM raw_messages GROUP BY day ORDER BY day"
+                "SELECT day, COUNT(*) n FROM raw_messages WHERE deleted_at IS NULL GROUP BY day ORDER BY day"
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -210,29 +321,53 @@ class RawArchive:
             rows = conn.execute(
                 # Only parameter placeholders are interpolated; day values stay bound.
                 f"SELECT msg_uuid, conv_name, speaker, at, day, text FROM raw_messages "  # nosec B608
-                f"WHERE day IN ({marks}) ORDER BY at, conv_uuid, msg_uuid",
+                f"WHERE deleted_at IS NULL AND day IN ({marks}) ORDER BY at, conv_uuid, msg_uuid",
                 wanted,
             ).fetchall()
         return [dict(r) for r in rows]
 
     def day(self, day: str, offset: int = 0, limit: int = 40) -> tuple[list[dict[str, Any]], int]:
         with self._connect() as conn:
-            total = conn.execute("SELECT COUNT(*) FROM raw_messages WHERE day=?", (day,)).fetchone()[0]
+            total = conn.execute("SELECT COUNT(*) FROM raw_messages WHERE deleted_at IS NULL AND day=?", (day,)).fetchone()[0]
             rows = conn.execute(
-                "SELECT * FROM raw_messages WHERE day=? ORDER BY at, conv_uuid LIMIT ? OFFSET ?",
+                "SELECT * FROM raw_messages WHERE deleted_at IS NULL AND day=? ORDER BY at, conv_uuid LIMIT ? OFFSET ?",
                 (day, limit, offset),
             ).fetchall()
         return [dict(r) for r in rows], int(total)
 
+    def range_days(
+        self, start_day: str, end_day: str, offset: int = 0, limit: int = 40
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Page through visible originals in an inclusive Beijing calendar range."""
+        with self._connect() as conn:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM raw_messages WHERE deleted_at IS NULL AND day BETWEEN ? AND ?",
+                (start_day, end_day),
+            ).fetchone()[0]
+            rows = conn.execute(
+                "SELECT * FROM raw_messages WHERE deleted_at IS NULL AND day BETWEEN ? AND ? "
+                "ORDER BY at, conv_uuid, msg_uuid LIMIT ? OFFSET ?",
+                (start_day, end_day, limit, offset),
+            ).fetchall()
+        return [dict(row) for row in rows], int(total)
+
     def search(
-        self, query: str, limit: int = 8, include_thinking: bool = False, speaker: str = ""
+        self, query: str, limit: int = 8, include_thinking: bool = False, speaker: str = "",
+        start_day: str = "", end_day: str = "",
     ) -> list[dict[str, Any]]:
         like = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-        where = "(text LIKE ? ESCAPE '\\'" + (" OR thinking LIKE ? ESCAPE '\\')" if include_thinking else ")")
+        where = "deleted_at IS NULL AND (text LIKE ? ESCAPE '\\'" + (" OR thinking LIKE ? ESCAPE '\\')" if include_thinking else ")")
         params: list[Any] = [like, like] if include_thinking else [like]
         if speaker in _SPEAKERS:
             where += " AND speaker=?"
             params.append(speaker)
+        range_where = ""
+        range_params: list[Any] = []
+        if start_day and end_day:
+            where += " AND day BETWEEN ? AND ?"
+            params.extend((start_day, end_day))
+            range_where = " AND day BETWEEN ? AND ?"
+            range_params = [start_day, end_day]
         with self._connect() as conn:
             hits = conn.execute(
                 # where uses fixed SQL fragments; search values stay bound.
@@ -242,14 +377,14 @@ class RawArchive:
             results = []
             for hit in hits:
                 before = conn.execute(
-                    "SELECT speaker, text FROM raw_messages WHERE conv_uuid=? AND at<? "
-                    "ORDER BY at DESC LIMIT 1",
-                    (hit["conv_uuid"], hit["at"]),
+                    "SELECT speaker, text FROM raw_messages WHERE deleted_at IS NULL AND conv_uuid=? AND at<? "
+                    f"{range_where} ORDER BY at DESC LIMIT 1",  # nosec B608
+                    (hit["conv_uuid"], hit["at"], *range_params),
                 ).fetchone()
                 after = conn.execute(
-                    "SELECT speaker, text FROM raw_messages WHERE conv_uuid=? AND at>? "
-                    "ORDER BY at LIMIT 1",
-                    (hit["conv_uuid"], hit["at"]),
+                    "SELECT speaker, text FROM raw_messages WHERE deleted_at IS NULL AND conv_uuid=? AND at>? "
+                    f"{range_where} ORDER BY at LIMIT 1",  # nosec B608
+                    (hit["conv_uuid"], hit["at"], *range_params),
                 ).fetchone()
                 item = dict(hit)
                 item["before"] = dict(before) if before else None
@@ -272,6 +407,44 @@ def _clean_row(row: Any) -> dict[str, str] | None:
     clean["conv_uuid"] = clean["conv_uuid"][:80]
     clean["conv_name"] = clean["conv_name"][:200]
     return clean
+
+
+def _base_uuid(msg_uuid: str) -> str:
+    value = str(msg_uuid or "").strip()
+    match = re.fullmatch(r"(home-msg-\d+)-part-\d+", value)
+    return match.group(1) if match else value
+
+
+def _deletion_times(now: datetime | None) -> tuple[str, str]:
+    current = (now or datetime.now(_BEIJING)).astimezone(_BEIJING)
+    return current.isoformat(timespec="seconds"), (current + timedelta(days=30)).isoformat(timespec="seconds")
+
+
+def _boundary(value: str, *, end: bool) -> str:
+    value = str(value or "").strip()
+    if _DAY.fullmatch(value):
+        day = datetime.fromisoformat(value)
+        stamp = day.replace(hour=23, minute=59, second=59, microsecond=999999) if end else day
+    else:
+        try:
+            stamp = datetime.fromisoformat(value)
+        except ValueError:
+            raise ValueError("时间须为 YYYY-MM-DD 或 ISO 日期时间") from None
+        if stamp.microsecond:
+            raise ValueError("时间精确到秒即可")
+        if end:
+            stamp = stamp.replace(microsecond=999999)
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=_BEIJING)
+    return stamp.astimezone(_BEIJING).isoformat(timespec="microseconds" if end else "seconds")
+
+
+def _is_deleted(conn: sqlite3.Connection, clean: dict[str, str]) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM raw_deletions WHERE msg_uuid=? "
+        "OR (start_at IS NOT NULL AND ? BETWEEN start_at AND end_at) LIMIT 1",
+        (_base_uuid(clean["msg_uuid"]), clean["at"]),
+    ).fetchone() is not None
 
 
 def _upsert(conn: sqlite3.Connection, clean: dict[str, str], source: str) -> bool:

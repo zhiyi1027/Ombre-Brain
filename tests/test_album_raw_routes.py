@@ -69,6 +69,8 @@ def test_everything_needs_dashboard_login(client):
     state["authed"] = False
     for path in ["/api/album", "/api/album/b1/0", "/api/raw/days", "/api/raw/day?date=2026-05-18", "/api/raw/search?q=爱你"]:
         assert c.get(path).status_code == 401
+    assert c.get("/api/raw/deletions").status_code == 401
+    assert c.post("/api/raw/delete", json={"msg_uuid": "m1"}).status_code == 401
 
 
 def test_album_lists_only_live_image_buckets_and_serves_images(client):
@@ -96,3 +98,24 @@ def test_raw_days_day_and_search(client):
     assert c.get("/api/raw/search?q=心跳").json()["hits"] == []
     assert len(c.get("/api/raw/search?q=心跳&thinking=1").json()["hits"]) == 1
     assert c.get("/api/raw/search?q=爱").status_code == 400
+
+
+def test_dashboard_delete_hides_entry_and_keeps_content_free_log(client):
+    c, _ = client
+    assert c.post("/api/raw/delete", json={"msg_uuid": "m1"},
+                  headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
+    assert c.post("/api/raw/delete", json={"msg_uuid": "m1"}).json()["hidden"] == 1
+    assert c.get("/api/raw/day?date=2026-05-18").json()["total"] == 1
+    assert c.get("/api/raw/search?q=爱你").json()["hits"] == []
+    log = c.get("/api/raw/deletions").json()["entries"]
+    assert log[0]["msg_uuid"] == "m1"
+    assert "我爱你" not in str(log)
+    assert c.post("/api/raw/delete", json={"msg_uuid": "m1"}).status_code == 400
+
+
+def test_dashboard_delete_range_validates_and_hides(client):
+    c, _ = client
+    assert c.post("/api/raw/delete", json={"start": "2026-05-19", "end": "2026-05-18"}).status_code == 400
+    assert c.post("/api/raw/delete", json={"start": "2026-05-18", "end": "2026-05-18"}).json()["hidden"] == 2
+    assert c.get("/api/raw/days").json()["days"] == []
+    assert c.post("/api/raw/delete", json={"unexpected": 1}).status_code == 400

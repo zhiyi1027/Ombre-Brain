@@ -8,12 +8,8 @@ DecayEngine / EmbeddingEngine / ImportEngine，把它们注入 tools._runtime �
 web._shared，然后以 @mcp.tool() 注册薄封装（真正的实现在 src/tools/<工具>/ 下面）。
 
 关键行为：
-- 启动后暴露 19 个 MCP 工具：breath/breath_search/breath_advanced/hold/grow/
-  trace/anchor/release/pulse/plan/letter_write/letter_read/dream/I/media_catalog/
-  media_read/raw_day/raw_search/quarrel；每个入口
-      ≤ 10 行，只负责转发。breath 拆成 breath()(0 参数)+breath_search(4 参数)+
-  breath_advanced(9 参数) 三级，是因为 claude.ai 按需加载工具时会跳过参数
-  复杂的工具，全塞一个 breath() 会导致它常年加载不上（见 issue #17）。
+- 启动后暴露 11 个 MCP 工具：breath/breath_search/hold/trace/plan/
+  letter_write/letter_read/I/media/raw_browse/quarrel。信件迁入 Home 前保留两个信件工具。
 - Dashboard / HTTP 路由全部已拆分到 src/web/<域>.py（每个模块 register(mcp)），
   本文件仅在启动时调用 web.register_all(mcp) 装配；共享依赖见 web/_shared.py
 - 仍保留在本文件：进程启动、引擎初始化、GitHub 后台同步循环、Webhook 推送、
@@ -24,7 +20,7 @@ web._shared，然后以 @mcp.tool() 注册薄封装（真正的实现在 src/too
 - 不写 HTTP 路由处理（全在 web/* 下）；不写 LLM prompt（dehydrator 负责）
 - 不直接读写桶文件（bucket_manager 负责）
 
-对外暴露：mcp/mcp_extra 两个实例 + 19 个 @mcp*.tool() 函数；HTTP 路由在 src/web/*
+对外暴露：mcp/mcp_extra 两个实例 + 11 个 @mcp*.tool() 函数；HTTP 路由在 src/web/*
 ========================================
 """
 
@@ -568,7 +564,7 @@ async def breath(
     tags: Optional[str] = "",
     catalog: Optional[bool] = False,
 ) -> str:
-    """无参数一键睁眼:完整返回短核心、昨日印象、最近24小时交接、最多一条合格旧事联想和预算内的活动计划；再自动精读最近48小时中尚未消化且未在前述正文出现的最多2桶，并根据本轮完整读过的普通记忆附上最多3条相关且不重复的feel（直属source_bucket优先，再按语义+关键词补足；明显负面最多2条，无不同且仍相关的候选就少返回）。startup_breath_soft_tokens只作为基础记忆体积参考，固定槽不受其拦截；startup_breath_max_tokens是基础记忆硬上限，自动精读与相关feel各有2000 token独立预算，所有正文整桶返回、绝不截断。0参数是刻意设计——一次调用即可完成启动，不必再固定调用dream目录、精读和feel通道。主动深挖仍用dream()/breath_search()，高级过滤用breath_advanced(...)。"""
+    """无参数一键睁眼：返回短核心、昨日印象、近期交接、活动计划，并自动精读近期记忆和相关 feel。正文整桶返回、不截断；主动深挖用 breath_search()。"""
     return await _with_notice(
         _t_breath.dispatch_public(
             query=query, max_tokens=max_tokens, domain=domain,
@@ -612,15 +608,17 @@ except (AttributeError, RuntimeError, TypeError, ValueError) as _breath_compat_e
 
 @mcp.tool()
 async def breath_search(
-    query: str,
+    query: str = "",
     domain: Optional[str] = "",
     max_results: Optional[int] = 0,
     quotes: Optional[bool] = False,
 ) -> str:
-    """按关键词/语义检索记忆桶,融合关键词/BM25+语义检索,向量不可用时明确提示并退回关键词检索。命中后逐字返回桶内当前 content，不调用 LLM 摘要/改写；非删除 archived 桶可由关键词或完整 bucket ID 找回并标记 archived:true，软删除/tombstone 始终隐藏。domain 逗号分隔,按主题域预筛。max_results=返回条数上限(默认 5,最大 50)；需要更多结果或 tags/importance_min/valence/arousal/max_tokens/catalog 等过滤维度时用 breath_advanced(...)。quotes=True 只在已经命中一条记忆后附上当初主动保留的原话；默认不返回，也不能用于列出全部引语。"""
+    """按关键词/语义找记忆；domain=feel 且提供 query 时找相关感受，domain=plan 且 query 留空时列活动计划，domain=daily_impression 且 query 留空时补读日印象。普通检索须给 query，可按桶 ID 逐字直读；quotes=True 只在命中桶后附上当初保留的原话。"""
     # 普通搜索会把完整桶正文放进模型上下文，因此采用小而稳定的独立默认值。
-    # breath_advanced 仍保留 config.surfacing.breath_max_results（默认 20），
-    # 需要深挖时由调用方明确选择，而不是一次普通关键词查询就灌入整页正文。
+    # 普通查询不因旧高级工具撤注册而扩大默认结果数。
+    special_domain = str(domain or "").strip().lower()
+    if not str(query or "").strip() and special_domain not in ("plan", "daily_impression"):
+        return "普通记忆搜索需要 query；列计划可用 domain=plan，找感受用 domain=feel 并提供 query。"
     effective_max_results = (
         max_results
         if max_results is not None and max_results > 0
@@ -631,6 +629,7 @@ async def breath_search(
             query=query,
             domain=domain,
             max_results=effective_max_results,
+            max_tokens=2000 if special_domain == "feel" else 0,
             quotes=quotes,
         ),
         op="breath_search",
@@ -643,7 +642,6 @@ async def breath_search(
     )
 
 
-@mcp.tool()
 async def breath_advanced(
     query: Optional[str] = "",
     max_tokens: Optional[int] = 0,
@@ -715,7 +713,6 @@ async def hold(
     )
 
 
-@mcp.tool()
 async def grow(content: str = "", items: Optional[list] = None) -> str:
     """仅在对话中已明确要求整理并写入长期记忆时调用，不要根据普通聊天自行推断写入意图。整理一段长文本(如一天的记录/一段日记/一篇总结)存入记忆,系统拆分为 2~6 条独立事件桶并各自尝试合并。短内容(<30 字)走 hold 单条快速路径,不强行拆分。
 
@@ -828,7 +825,6 @@ except (AttributeError, RuntimeError, TypeError, ValueError) as _trace_schema_ex
     )
 
 
-@mcp_extra.tool()
 async def anchor(bucket_id: str) -> str:
     """把指定桶标记为 anchor(坐标系)。anchor 不主动出现在默认 breath，但 query/domain/emotion 命中时仍返回。硬上限 24，已满时拒绝并提示先 release。"""
     return await _with_notice(
@@ -838,7 +834,6 @@ async def anchor(bucket_id: str) -> str:
     )
 
 
-@mcp_extra.tool()
 async def release(bucket_id: str) -> str:
     """解除指定桶的 anchor 标记。桶恢复为普通状态，重新参与默认 breath；pinned 状态保留。"""
     return await _with_notice(
@@ -848,7 +843,6 @@ async def release(bucket_id: str) -> str:
     )
 
 
-@mcp_extra.tool()
 async def pulse(include_archive: Optional[bool] = False) -> str:
     """返回记忆系统状态摘要:固化/动态/归档/feel/plan/letter 数量、总占用、衰减引擎运行状态,以及所有桶的摘要列表。include_archive=True 同时返回归档区。"""
     return await _with_notice(
@@ -968,65 +962,55 @@ async def quarrel(
 
 
 @mcp_extra.tool()
-async def media_catalog(query: Optional[str] = "") -> str:
-    """列出所有带图片的记忆桶；query 可按正文、标签、图片标题/备注或桶 ID 过滤。只返回日期、关键词、桶 ID 和张数，不加载图片本体；确定目标后再调用 media_read。"""
-    safe_query = "" if query is None else query
-    return await _with_notice(
-        _t_media.catalog(query=safe_query),
-        op="media_catalog",
-        args={"query": safe_query},
-    )
-
-
-@mcp_extra.tool()
-async def media_read(bucket_id: str, index: Optional[int] = 0) -> Image:
-    """按 bucket_id 和序号读取一张已存图片。只在明确需要看原图时调用；不会把图片自动塞进 breath/dream。index 从 0 开始。"""
+async def media(
+    bucket_id: Optional[str] = "", index: Optional[int] = 0, query: Optional[str] = "",
+):
+    """不给 bucket_id 时列图片目录，可用 query 按词筛选；给 bucket_id 时按 index 打开那张原图，index 从 0 开始。"""
+    safe_bucket_id = str(bucket_id or "").strip()
+    if not safe_bucket_id:
+        return await _with_notice(
+            _t_media.catalog(query=str(query or "")),
+            op="media",
+            args={"mode": "catalog", "query_len": len(str(query or ""))},
+        )
     safe_index = 0 if index is None else index
-    _log_op_entry("media_read", {"bucket_id": bucket_id, "index": safe_index})
+    _log_op_entry("media", {"mode": "read", "bucket_id": safe_bucket_id, "index": safe_index})
     try:
-        result = await _t_media.read(bucket_id=bucket_id, index=safe_index)
+        result = await _t_media.read(bucket_id=safe_bucket_id, index=safe_index)
     except Exception as exc:
-        _log_op_err("media_read", exc)
+        _log_op_err("media", exc)
         return f"❌ [OB-E004] MCP 工具执行异常\n{type(exc).__name__}"
     if isinstance(result, str):
-        _log_op_ok("media_read", result)
+        _log_op_ok("media", result)
         return result
     data, image_format = result
-    _log_op_ok("media_read", f"image/{image_format} {len(data)} bytes")
+    _log_op_ok("media", f"image/{image_format} {len(data)} bytes")
     return Image(data=data, format=image_format)
 
 
 @mcp_extra.tool()
-async def raw_day(date: str, page: Optional[int] = 0, thinking: Optional[bool] = False) -> str:
-    """按北京时间日期（YYYY-MM-DD）翻那天的聊天原文，每页 40 条，page 从 0 开始；thinking=True 连当时的思考一起看。原文不是记忆桶，只在想对证原话时用，不要为了浮现而调用。"""
-    return await _with_notice(
-        _t_raw.day(date=date, page=0 if page is None else page, thinking=bool(thinking)),
-        op="raw_day",
-        args={"date": date, "page": page, "thinking": thinking},
-    )
-
-
-@mcp_extra.tool()
-async def raw_search(
-    query: str,
+async def raw_browse(
+    date: Optional[str] = "",
+    query: Optional[str] = "",
+    page: Optional[int] = 0,
     max_results: Optional[int] = 8,
     thinking: Optional[bool] = False,
     speaker: Optional[str] = "",
 ) -> str:
-    """在聊天原文里逐字搜原话，返回命中句和前后各一句，带日期和对话名。speaker 可填“知知”或“顾凛”只看一方；thinking=True 也搜当时的思考。适合“她当时原话怎么说的”；想找记忆用 breath_search。"""
+    """只给 date=翻那天/范围的原话；只给 query=全库逐字搜；date 和 query 都给=在日期范围内搜。date 接受 YYYY-MM-DD、YYYY-MM-DD..YYYY-MM-DD、最近7天、2026年10月上旬等；page 从 0 开始，thinking=True 可看当时的思考。"""
     return await _with_notice(
-        _t_raw.search(
-            query=query,
+        _t_raw.browse(
+            date=date or "", query=query or "", page=0 if page is None else page,
             max_results=8 if max_results is None else max_results,
             thinking=bool(thinking),
             speaker=speaker or "",
         ),
-        op="raw_search",
-        args={"query": query, "max_results": max_results, "thinking": thinking, "speaker": speaker},
+        op="raw_browse",
+        args={"date": date, "query_len": len(query or ""), "page": page,
+              "max_results": max_results, "thinking": thinking, "speaker": speaker},
     )
 
 
-@mcp.tool()
 async def dream(
     window_hours: Optional[int] = 48,
     catalog: Optional[bool] = False,
@@ -1091,16 +1075,17 @@ from web.tunnel import _load_tunnel_config, _start_tunnel, _stop_tunnel  # noqa:
 
 # --- Entry point / 启动入口 ---
 if __name__ == "__main__":
+    from raw_archive import get_archive
     transport = config.get("transport", "stdio")
     logger.info(f"Ombre Brain starting | transport: {transport}")
 
     # iter 2.2：合并为单连接器 /mcp。
     # 当初（iter 2.1）拆 /mcp + /mcp-extra 是因为 claude.ai 连接器存在 5 工具上限；
-    # 该上限现已解除，19 个工具全部挂在主实例 mcp 上对外暴露一条 /mcp 即可，
+    # 该上限现已解除，11 个工具全部挂在主实例 mcp 上对外暴露一条 /mcp 即可，
     # 顺带消除「第二个连接器」在 Claude.ai 侧的 OAuth/连接器校验疑难。
-    # mcp_extra 仅作历史工具分组容器保留（12 个 @mcp_extra.tool()），
+    # mcp_extra 仅作历史工具分组容器保留，
     # 这里把它的工具回灌进 mcp，让 stdio / sse / streamable-http 三种 transport 一致。
-    # 依赖 FastMCP._tool_manager 私有结构；若未来版本变化，降级为仅暴露主集 7 工具。
+    # 依赖 FastMCP._tool_manager 私有结构；若未来版本变化，启动阶段须显式报错。
     from server_app import (
         HTTPRuntimeSettings,
         RuntimeLifecycle,
@@ -1115,9 +1100,7 @@ if __name__ == "__main__":
             f"{len(mcp._tool_manager._tools)} 个工具对外暴露"
         )
     except AttributeError as _merge_exc:
-        logger.warning(
-            f"FastMCP 内部结构变化，工具回灌失败，仅暴露主集 7 工具：{_merge_exc}"
-        )
+        raise RuntimeError("FastMCP 工具回灌失败，拒绝以残缺工具清单启动") from _merge_exc
 
     if transport in ("sse", "streamable-http"):
         import uvicorn
@@ -1130,6 +1113,7 @@ if __name__ == "__main__":
             embedding_outbox=embedding_outbox,
             daily_continuity=daily_continuity,
             nightly_dreams=nightly_dreams,
+            raw_purge=lambda: asyncio.to_thread(get_archive(config).purge_due),
             ensure_ollama_child=_ollama_local.ensure_child_on_boot,
             stop_ollama_child=_ollama_local.stop_child,
             load_tunnel_config=_load_tunnel_config,
@@ -1157,7 +1141,7 @@ if __name__ == "__main__":
             lifecycle=_runtime_lifecycle,
         )
         if transport == "streamable-http":
-            logger.info("MCP 单连接器 /mcp：19 个工具统一对外暴露")
+            logger.info("MCP 单连接器 /mcp：11 个工具统一对外暴露")
         logger.info("CORS middleware enabled for remote transport / 已启用 CORS 中间件")
         logger.info(
             "MCP request body limit: %s",

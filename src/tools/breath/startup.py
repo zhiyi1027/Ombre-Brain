@@ -400,7 +400,7 @@ def _render_plan_pointer(bucket: dict, *, reference_time: datetime) -> str:
     return (
         f"📋 [活动计划] [bucket_id:{bucket_id}] [weight:{weight:.2f}]"
         f"{review_label} "
-        f"↗ [未展开] {name}（使用 breath_advanced(domain=\"plan\") 读取）"
+        f"↗ [未展开] {name}（使用 breath_search(domain=\"plan\") 读取）"
     )
 
 
@@ -568,7 +568,7 @@ async def surface_startup(
     ):
         append_if_fits(
             pointers,
-            '↗ [未展开] 昨日印象（使用 breath_advanced(domain="daily_impression") 读取）',
+            '↗ [未展开] 昨日印象（使用 breath_search(domain="daily_impression") 读取）',
             limit=hard_tokens,
         )
 
@@ -761,7 +761,7 @@ async def surface_startup(
     if total_plans > expanded_plans:
         notice = (
             f"有 {total_plans - expanded_plans} 条活动计划未展开，"
-            "可用 breath_advanced(domain=\"plan\") 读取。"
+            "可用 breath_search(domain=\"plan\") 读取。"
         )
         append_notice_if_fits(notice, limit=total_hard_tokens)
     if pointers:

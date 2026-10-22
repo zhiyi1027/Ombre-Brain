@@ -499,6 +499,8 @@ class RuntimeLifecycle:
     embedding_outbox: Any = None
     daily_continuity: Any = None
     nightly_dreams: Any = None
+    raw_purge: AsyncCallback | None = None
+    raw_purge_interval: float = 24 * 60 * 60
     ensure_ollama_child: AsyncCallback | None = None
     stop_ollama_child: AsyncCallback | None = None
     load_tunnel_config: Callable[[], Mapping[str, Any]] | None = None
@@ -512,6 +514,7 @@ class RuntimeLifecycle:
     keepalive_interval: float = DEFAULT_KEEPALIVE_INTERVAL_SECONDS
     health_probe_timeout: float = DEFAULT_HEALTH_PROBE_TIMEOUT_SECONDS
     _keepalive_task: asyncio.Task | None = field(default=None, init=False, repr=False)
+    _raw_purge_task: asyncio.Task | None = field(default=None, init=False, repr=False)
     _started: bool = field(default=False, init=False, repr=False)
 
     async def _run_async_step(self, label: str, callback: AsyncCallback | None) -> None:
@@ -564,6 +567,11 @@ class RuntimeLifecycle:
                     self.logger.warning("Keepalive ping failed: %s", exc)
                 await asyncio.sleep(max(0.01, self.keepalive_interval))
 
+    async def _raw_purge_loop(self) -> None:
+        while True:
+            await self._run_async_step("raw archive purge", self.raw_purge)
+            await asyncio.sleep(max(60.0, self.raw_purge_interval))
+
     async def start(self) -> None:
         if self._started:
             return
@@ -586,6 +594,10 @@ class RuntimeLifecycle:
             "nightly dreams start",
             getattr(self.nightly_dreams, "start", None),
         )
+        if self.raw_purge is not None:
+            self._raw_purge_task = asyncio.create_task(
+                self._raw_purge_loop(), name="ombre-raw-archive-purge"
+            )
         if self.keepalive_url:
             self._keepalive_task = asyncio.create_task(
                 self._keepalive_loop(),
@@ -600,6 +612,13 @@ class RuntimeLifecycle:
 
         task = self._keepalive_task
         self._keepalive_task = None
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+        task = self._raw_purge_task
+        self._raw_purge_task = None
         if task is not None:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

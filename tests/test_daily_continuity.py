@@ -1010,6 +1010,18 @@ def test_pending_days_include_chat_transcript_day(tmp_path):
     assert date(2026, 8, 21) in days and date(2026, 8, 20) in days
 
 
+def test_hidden_original_never_reaches_daily_continuity(tmp_path):
+    from raw_archive import get_archive
+
+    service = make_service(tmp_path)
+    archive = get_archive(service.config)
+    archive.import_rows(_raw_rows())
+    archive.hide_message("tg-1-1")
+    sources = service._raw_sources(date(2026, 8, 20), 40_000)
+    assert "直接炖大鹅去了我们" not in str(sources)
+    assert "铁锅炖大鹅" in str(sources)
+
+
 @pytest.mark.asyncio
 async def test_quote_must_come_from_a_cited_block(tmp_path):
     from raw_archive import get_archive
