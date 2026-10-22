@@ -108,6 +108,7 @@ class RawArchive:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA secure_delete=ON")
         conn.execute("PRAGMA busy_timeout=30000")
+        conn.create_function("beijing_timestamp", 1, _beijing_timestamp, deterministic=True)
         return conn
 
     # ---------- 写 ----------
@@ -235,11 +236,14 @@ class RawArchive:
                 f"SELECT COUNT(*) FROM raw_messages WHERE deleted_at IS NULL AND ({target})",  # nosec B608
                 target_params,
             ).fetchone()[0]
-            if not count:
+            pending = conn.execute(
+                "SELECT 1 FROM raw_message_parts WHERE msg_uuid=? LIMIT 1", (msg_uuid,)
+            ).fetchone() is not None
+            if not count and not pending:
                 raise ValueError("这条原文不存在或已藏起")
             conn.execute(
                 "INSERT INTO raw_deletions(msg_uuid,deleted_at,purge_after,affected_count) "
-                "VALUES (?,?,?,?)", (msg_uuid, deleted_at, purge_after, count),
+                "VALUES (?,?,?,?)", (msg_uuid, deleted_at, purge_after, count or 1),
             )
             conn.execute(
                 f"UPDATE raw_messages SET deleted_at=?, purge_after=? "
@@ -247,7 +251,7 @@ class RawArchive:
                 (deleted_at, purge_after, *target_params),
             )
             conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=?", (msg_uuid,))
-        return int(count)
+        return int(count or pending)
 
     def hide_range(self, start: str, end: str, *, now: datetime | None = None) -> int:
         """Hide inclusive Beijing timestamps/days, including future reimports in the range."""
@@ -258,7 +262,8 @@ class RawArchive:
         with self._lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             count = conn.execute(
-                "SELECT COUNT(*) FROM raw_messages WHERE deleted_at IS NULL AND at BETWEEN ? AND ?",
+                "SELECT COUNT(*) FROM raw_messages WHERE deleted_at IS NULL "
+                "AND beijing_timestamp(at) BETWEEN ? AND ?",
                 (start_at, end_at),
             ).fetchone()[0]
             conn.execute(
@@ -267,10 +272,13 @@ class RawArchive:
             )
             conn.execute(
                 "UPDATE raw_messages SET deleted_at=?, purge_after=? "
-                "WHERE deleted_at IS NULL AND at BETWEEN ? AND ?",
+                "WHERE deleted_at IS NULL AND beijing_timestamp(at) BETWEEN ? AND ?",
                 (deleted_at, purge_after, start_at, end_at),
             )
-            conn.execute("DELETE FROM raw_message_parts WHERE at BETWEEN ? AND ?", (start_at, end_at))
+            conn.execute(
+                "DELETE FROM raw_message_parts WHERE beijing_timestamp(at) BETWEEN ? AND ?",
+                (start_at, end_at),
+            )
         return int(count)
 
     def purge_due(self, *, now: datetime | None = None) -> int:
@@ -401,6 +409,8 @@ def _clean_row(row: Any) -> dict[str, str] | None:
         return None
     if clean["speaker"] not in _SPEAKERS or not _DAY.match(clean["day"]):
         return None
+    if _beijing_timestamp(clean["at"]) is None:
+        return None
     if not clean["text"] and not clean["thinking"]:
         return None
     clean["msg_uuid"] = clean["msg_uuid"][:80]
@@ -420,6 +430,17 @@ def _deletion_times(now: datetime | None) -> tuple[str, str]:
     return current.isoformat(timespec="seconds"), (current + timedelta(days=30)).isoformat(timespec="seconds")
 
 
+def _beijing_timestamp(value: str) -> str | None:
+    """Canonical comparison key without changing the original imported timestamp."""
+    try:
+        stamp = datetime.fromisoformat(str(value).strip())
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=_BEIJING)
+        return stamp.astimezone(_BEIJING).isoformat(timespec="microseconds")
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
 def _boundary(value: str, *, end: bool) -> str:
     value = str(value or "").strip()
     if _DAY.fullmatch(value):
@@ -436,14 +457,15 @@ def _boundary(value: str, *, end: bool) -> str:
             stamp = stamp.replace(microsecond=999999)
     if stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=_BEIJING)
-    return stamp.astimezone(_BEIJING).isoformat(timespec="microseconds" if end else "seconds")
+    return stamp.astimezone(_BEIJING).isoformat(timespec="microseconds")
 
 
 def _is_deleted(conn: sqlite3.Connection, clean: dict[str, str]) -> bool:
+    at_beijing = _beijing_timestamp(clean["at"])
     return conn.execute(
         "SELECT 1 FROM raw_deletions WHERE msg_uuid=? "
         "OR (start_at IS NOT NULL AND ? BETWEEN start_at AND end_at) LIMIT 1",
-        (_base_uuid(clean["msg_uuid"]), clean["at"]),
+        (_base_uuid(clean["msg_uuid"]), at_beijing),
     ).fetchone() is not None
 
 

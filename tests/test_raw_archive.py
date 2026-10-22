@@ -104,6 +104,51 @@ def test_hide_range_blocks_future_rows_and_fragments(archive):
         archive.hide_range("2026-05-19", "2026-05-18")
 
 
+def test_range_hides_legacy_offsets_and_blocks_both_reimport_versions(archive):
+    offsets = (
+        "2026-05-18T12:00:00+00:00",
+        "2026-05-18T12:00:00Z",
+        "2026-05-18T14:00:00+02:00",
+    )
+    # Existing archives retain imported timestamp text, including old offsets.
+    with sqlite3.connect(archive.path) as conn:
+        conn.executemany(
+            "INSERT INTO raw_messages "
+            "(msg_uuid, conv_uuid, conv_name, speaker, at, day, text, thinking) "
+            "VALUES (?, 'c1', '', '知知', ?, '2026-05-18', '原文', '')",
+            [(f"legacy-{i}", at) for i, at in enumerate(offsets)],
+        )
+    first, second = _fragments(msg_uuid="home-msg-33")
+    first = first | {"at": offsets[0]}
+    second = second | {"at": offsets[0]}
+    assert archive.import_rows_v2([first])["pending"] == 1
+
+    assert archive.hide_range("2026-05-18T20:00:00+08:00", "2026-05-18T20:00:00+08:00") == 3
+    assert archive.stats()["n"] == 0
+    with sqlite3.connect(archive.path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM raw_message_parts").fetchone()[0] == 0
+    assert archive.import_rows([rows()[0] | {"msg_uuid": "new-utc", "at": offsets[0]}])["skipped"] == 1
+    assert archive.import_rows_v2([first, second])["added"] == 0
+    assert archive.stats()["n"] == 0
+
+
+def test_hide_pending_message_by_uuid_removes_fragments_and_blocks_reimport(archive):
+    first, second = _fragments(msg_uuid="home-msg-34")
+    assert archive.import_rows_v2([first])["pending"] == 1
+    assert archive.hide_message("home-msg-34") == 1
+    with sqlite3.connect(archive.path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM raw_message_parts").fetchone()[0] == 0
+    assert archive.import_rows_v2([first, second])["added"] == 0
+    assert archive.stats()["n"] == 0
+
+
+def test_invalid_timestamp_cannot_bypass_range_deletion(archive):
+    bad = rows()[0] | {"at": "not-an-iso-time"}
+    assert archive.import_rows([bad])["skipped"] == 1
+    with pytest.raises(ValueError, match="invalid raw message"):
+        archive.import_rows_v2([bad])
+
+
 def test_whole_day_range_includes_fractional_last_second(archive):
     row = rows()[0] | {"at": "2026-05-18T23:59:59.500000+08:00"}
     archive.import_rows([row])

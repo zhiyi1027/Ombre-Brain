@@ -82,7 +82,7 @@ Authorization: Bearer <OMBRE_DAILY_NOTE_TOKEN>
 显式读取最近日印象：
 
 ```text
-breath_advanced(domain="daily_impression")
+breath_search(domain="daily_impression")
 ```
 
 ## Dashboard 查看与修订

@@ -240,7 +240,7 @@ hold / grow（Claude 决策）
 ```
 1. breath()                — 必须。短核心全文 + 最近24小时 + 较早未完 + active plans
 2. dream()                 — 可选。你或用户觉得需要消化时再调
-3. breath_advanced(query="主题", domain="feel") — 可选。按本轮主题读最多 5 条相关 feel
+3. breath_search(query="主题", domain="feel") — 可选。按本轮主题读最多 5 条相关 feel
 4. 开始和用户说话
 ```
 
@@ -261,13 +261,15 @@ hold(feel=True, source_bucket="xxx", valence=0.45)
 feel 桶自身：
   - calculate_score() 固定返回 50.0，永不归档
   - 普通 breath 不浮现（被 type 过滤）
-  - 只通过带 query 的 breath_advanced(domain="feel") 或 tags="feel"/"__feel__" 读取；无 query 不全量返回
+  - 只通过带 query 的 breath_search(domain="feel") 读取；无 query 不全量返回
   - 仍参与 dream 的结晶化检测（>0.7 相似度且 ≥3 条 → 提示升级为 pinned）
 ```
 
 ---
 
 ## 3. 旧版 MCP 工具规格（历史实现背景，现行清单见本页开头）
+
+本节保留旧版工具的设计沿革；其中的调用例子不可直接用于当前 11 工具接口。现行调用以 README「当前 11 个工具」和 `src/server.py` 注册表为准。
 
 > **单连接器（iter 2.2）**：claude.ai 的 5 工具上限已解除，19 个工具合并回一个连接器 `/mcp`。
 > 历史上（iter 2.1）曾因该上限拆成主 `mcp`（`/mcp`，5 个）+ 副 `mcp_extra`（`/mcp-extra`，7 个）两个 FastMCP 实例。
@@ -1364,7 +1366,7 @@ normalized = total / w_sum × 100   # 归一化到 0~100
 
 `pinned` 计数按逻辑 bucket ID 去重，并通过 `parse_bool` 解释历史 YAML 布尔值；archived/deleted/tombstone 是终态，不占 pinned 名额，也不能通过常规 `BucketManager.update()`、Dashboard 或导入复核重新激活。
 
-**importance≥9 配额口径**：只统计能被 `breath_advanced(importance_min=9)` 审计的普通记忆，再排除走独立配额的 `pinned/protected`。因此 `dont_surface`、`feel/plan/letter`、archived/deleted/tombstone 不占该池；显式且未 pinned 的 `permanent` 仍属于普通高重要度候选。历史恢复或手工文件可能产生同 ID 的物理副本，配额始终按逻辑 bucket ID 只计一次。取消钉选、恢复浮现、特殊类型转回 dynamic/permanent、历史对话在线导入，以及新建/合并导致 importance 升到 9+ 时，资格检查和写盘必须在同一个 `high_importance` quota turn 内完成。备份迁移、`write_memory.py` 和手工 Markdown 属于受信任的保真/维护入口，允许原样恢复或直接修订数据，不适用在线写入配额。
+**importance≥9 配额口径**：只统计能被 `breath_search(importance_min=9)` 审计的普通记忆，再排除走独立配额的 `pinned/protected`。因此 `dont_surface`、`feel/plan/letter`、archived/deleted/tombstone 不占该池；显式且未 pinned 的 `permanent` 仍属于普通高重要度候选。历史恢复或手工文件可能产生同 ID 的物理副本，配额始终按逻辑 bucket ID 只计一次。取消钉选、恢复浮现、特殊类型转回 dynamic/permanent、历史对话在线导入，以及新建/合并导致 importance 升到 9+ 时，资格检查和写盘必须在同一个 `high_importance` quota turn 内完成。备份迁移、`write_memory.py` 和手工 Markdown 属于受信任的保真/维护入口，允许原样恢复或直接修订数据，不适用在线写入配额。
 
 (实现注意：`pinned` 和 `protected` 在代码里几乎等价处理，但 `protected` 是历史遗留字段，新桶不应再写；UI 只暴露 pinned。)
 

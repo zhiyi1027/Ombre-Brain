@@ -222,7 +222,7 @@ ERROR_CODES: dict[str, ErrorSpec] = {
         suggestion_zh=(
             "★ 这是 OB 自作主张帮你做的事 ★\n"
             "importance≥9 的桶已达硬上限 24，本次新桶被自动降级为 importance=8。\n"
-            "建议：用 breath_advanced(importance_min=9) 重读全部「核心事项」，"
+            "建议：用 breath_search(importance_min=9) 核对高重要度记忆，"
             "重新评估每条 importance；不再核心的用 trace(bucket_id, importance=7) 降级。\n"
             "（重新设定 importance 的责任在你，OB 不会替你判断哪条更重要。）"
         ),

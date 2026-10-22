@@ -543,8 +543,8 @@ async def trace_core(
                     return (
                         "未找到 old_str，正文未修改。请从 Dashboard 或对应记忆类型的读取入口"
                         "核对当前原文；普通记忆也可用 "
-                        f'breath_advanced(query="{bucket_id}", max_results=1, '
-                        "max_tokens=20000) 按完整 bucket_id 读取。复制连续且逐字一致的片段后重试。"
+                        f'breath_search(query="{bucket_id}", max_results=1) '
+                        "按完整 bucket_id 读取。复制连续且逐字一致的片段后重试。"
                     )
                 if patch_error == "old_str_ambiguous":
                     return (

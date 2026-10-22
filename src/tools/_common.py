@@ -553,7 +553,7 @@ def is_importance_audit_candidate(
 def occupies_high_importance_quota_slot(metadata: dict | None) -> bool:
     """Whether one logical bucket occupies the ordinary importance>=9 pool.
 
-    This intentionally matches the auditable ``breath_advanced(importance_min=9)``
+    This intentionally matches the auditable ``breath_search(importance_min=9)``
     candidate scope, then additionally excludes pinned/protected buckets because
     those have their own quota.  Explicit unpinned ``permanent`` buckets remain
     ordinary candidates and therefore still count.

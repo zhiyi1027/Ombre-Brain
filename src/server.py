@@ -612,12 +612,14 @@ async def breath_search(
     domain: Optional[str] = "",
     max_results: Optional[int] = 0,
     quotes: Optional[bool] = False,
+    importance_min: Optional[int] = -1,
 ) -> str:
-    """按关键词/语义找记忆；domain=feel 且提供 query 时找相关感受，domain=plan 且 query 留空时列活动计划，domain=daily_impression 且 query 留空时补读日印象。普通检索须给 query，可按桶 ID 逐字直读；quotes=True 只在命中桶后附上当初保留的原话。"""
+    """按关键词/语义找记忆；domain=feel 且提供 query 时找相关感受，domain=plan 且 query 留空时列活动计划，domain=daily_impression 且 query 留空时补读日印象。importance_min>=1 且不传 query 时按重要度列记忆，供配额核对。普通检索须给 query，可按桶 ID 逐字直读；quotes=True 只在命中桶后附上当初保留的原话。"""
     # 普通搜索会把完整桶正文放进模型上下文，因此采用小而稳定的独立默认值。
     # 普通查询不因旧高级工具撤注册而扩大默认结果数。
     special_domain = str(domain or "").strip().lower()
-    if not str(query or "").strip() and special_domain not in ("plan", "daily_impression"):
+    if (not str(query or "").strip() and special_domain not in ("plan", "daily_impression")
+            and not (importance_min is not None and importance_min >= 1)):
         return "普通记忆搜索需要 query；列计划可用 domain=plan，找感受用 domain=feel 并提供 query。"
     effective_max_results = (
         max_results
@@ -630,6 +632,7 @@ async def breath_search(
             domain=domain,
             max_results=effective_max_results,
             max_tokens=2000 if special_domain == "feel" else 0,
+            importance_min=importance_min,
             quotes=quotes,
         ),
         op="breath_search",
@@ -638,6 +641,7 @@ async def breath_search(
             "domain": domain,
             "max_results": effective_max_results,
             "quotes": bool(quotes),
+            "importance_min": importance_min,
         },
     )
 

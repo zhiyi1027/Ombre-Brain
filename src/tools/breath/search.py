@@ -220,7 +220,7 @@ async def surface_search(
             await rt.fire_webhook("breath", {"mode": "empty", "matches": 0})
         empty_text = (
             f"没有匹配到「{query}」相关的记忆。\n"
-            "可以换个关键词试试，或用 breath() 看当下权重池；feel 用 breath_advanced(domain=\"feel\")，信件用 letter_read。"
+            "可以换个关键词试试，或用 breath() 看当下权重池；feel 用 breath_search(domain=\"feel\", query=\"主题\")，信件用 letter_read。"
         )
         return f"{semantic_notice}\n{empty_text}" if semantic_notice else empty_text
 

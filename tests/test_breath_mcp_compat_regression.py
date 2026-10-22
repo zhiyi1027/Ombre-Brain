@@ -153,6 +153,23 @@ async def test_breath_search_defaults_to_five_full_buckets(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_breath_search_keeps_high_importance_audit(monkeypatch):
+    import server
+
+    calls = []
+
+    async def fake_dispatch(**kwargs):
+        calls.append(kwargs)
+        return "importance-dispatched"
+
+    monkeypatch.setattr(server._t_breath, "dispatch", fake_dispatch)
+    tool = server.mcp._tool_manager.get_tool("breath_search")
+    assert await tool.run({"importance_min": 9}) == "importance-dispatched"
+    assert calls[-1]["importance_min"] == 9
+    assert calls[-1]["query"] == ""
+
+
+@pytest.mark.asyncio
 async def test_breath_advanced_is_no_longer_registered():
     import server
     assert server.mcp._tool_manager.get_tool("breath_advanced") is None

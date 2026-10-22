@@ -65,7 +65,7 @@ Ombre Brain 的使用者是**模型自己**，不是它背后的人。所以这�
 | 工具 | 一句话 |
 |---|---|
 | `breath` | 睁眼。**0 参数**，让权重最高的未解决事浮现 + 置顶核心准则。**每次对话第一件事**。故意做成 0 参数：claude.ai 按需加载工具时会跳过参数复杂的工具，塞太多参数会导致它常年加载不上。 |
-| `breath_search` | 关键词 / 语义找记忆；`domain="feel"` 加 `query` 找感受，`domain="plan"` 列活动计划，`domain="daily_impression"` 补读日印象。 |
+| `breath_search` | 关键词 / 语义找记忆；`domain="feel"` 加 `query` 找感受，`domain="plan"` 列活动计划，`domain="daily_impression"` 补读日印象，`importance_min=9` 核对高重要度记忆。 |
 | `hold` | 记下当下一件事（一句话级）。自动打标；打标失败时仍会原样落盘，绝不压缩正文。可选 `state_key` 只用于少数会变化的当前事实：发现同 key 旧版本时仅提示，不自动判过时。 |
 | `trace` | 唯一的元数据写入口：resolved / pinned / 改情感坐标 / 替换正文 / 删除到档案 / 改 plan 状态。`superseded_by=新桶ID` 可显式确认一条普通记忆已被取代，`\clear` 撤销。 |
 
