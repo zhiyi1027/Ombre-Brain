@@ -127,19 +127,31 @@ async def test_system_diagnostics_reports_missing_ai_configuration(monkeypatch, 
                 "async def hold():",
                 "    pass",
                 "@mcp.tool()",
-                "async def grow():",
+                "async def breath_search():",
                 "    pass",
                 "@mcp.tool()",
                 "async def trace():",
                 "    pass",
                 "@mcp.tool()",
-                "async def dream():",
+                "async def plan():",
                 "    pass",
                 "@mcp_extra.tool()",
-                "async def pulse():",
+                "async def quarrel():",
                 "    pass",
                 "@mcp_extra.tool()",
-                "async def release():",
+                "async def I():",
+                "    pass",
+                "@mcp_extra.tool()",
+                "async def letter_write():",
+                "    pass",
+                "@mcp_extra.tool()",
+                "async def letter_read():",
+                "    pass",
+                "@mcp_extra.tool()",
+                "async def media():",
+                "    pass",
+                "@mcp_extra.tool()",
+                "async def raw_browse():",
                 "    pass",
             ]
         ),
@@ -273,8 +285,11 @@ Diagnostics regression tests.
     assert by_id["public_tool_manifest"]["status"] == "ok"
     tool_details = by_id["public_tool_manifest"]["details"]
     assert tool_details["report"]["ok"] is True
-    assert set(tool_details["tool_names"]) >= {"breath", "hold", "grow", "trace", "dream", "pulse"}
-    assert "release" in tool_details["compatibility_tool_names"]
+    assert set(tool_details["tool_names"]) == {
+        "breath", "hold", "breath_search", "trace", "plan", "quarrel", "I",
+        "letter_write", "letter_read", "media", "raw_browse",
+    }
+    assert set(tool_details["compatibility_tool_names"]) == {"letter_write", "letter_read"}
     assert by_id["adr_requirements"]["status"] == "ok"
     adr_details = by_id["adr_requirements"]["details"]
     assert adr_details["report"]["ok"] is True
