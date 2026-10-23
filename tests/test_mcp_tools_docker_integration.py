@@ -37,7 +37,7 @@ EXPECTED_TOOLS = {
 
 EXPECTED_TOOL_PROPERTIES = {
     "breath": set(),
-    "breath_search": {"query", "domain", "max_results", "quotes"},
+    "breath_search": {"query", "domain", "max_results", "quotes", "importance_min"},
     "hold": {
         "content",
         "tags",
