@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -41,6 +43,51 @@ def dehydrator(tmp_path):
 
 def test_sdk_does_not_retry_under_application_chat_loop(dehydrator):
     assert dehydrator.client.max_retries == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("effort", [None, "none", "high"])
+async def test_explicit_reasoning_control_reaches_provider_only_when_configured(
+    dehydrator, monkeypatch, effort
+):
+    observed = []
+
+    async def create(**kwargs):
+        observed.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="OK"))])
+
+    monkeypatch.setattr(dehydrator.client.chat.completions, "create", create)
+    dehydrator.reasoning_effort = effort
+    assert await dehydrator._chat_once("generated", "generated", max_tokens=32) == "OK"
+    if effort is None:
+        assert "reasoning_effort" not in observed[0]
+    else:
+        assert observed[0]["reasoning_effort"] == effort
+
+
+@pytest.mark.parametrize("value", [False, 0, "unknown", {}, []])
+def test_invalid_reasoning_control_fails_before_creating_cache(tmp_path, value):
+    with pytest.raises(ValueError, match="reasoning_effort"):
+        Dehydrator({"buckets_dir": str(tmp_path), "dehydration": {"reasoning_effort": value}})
+    assert not (tmp_path / "dehydration_cache.db").exists()
+
+
+def test_reasoning_change_does_not_reuse_summary_from_another_policy(dehydrator):
+    dehydrator.reasoning_effort = "high"
+    dehydrator._set_cached_summary("generated source", "generated high summary")
+    dehydrator.reasoning_effort = "none"
+    assert dehydrator._get_cached_summary("generated source") is None
+    dehydrator._set_cached_summary("generated source", "generated none summary")
+    dehydrator.reasoning_effort = "high"
+    assert dehydrator._get_cached_summary("generated source") == "generated high summary"
+
+
+def test_unconfigured_reasoning_keeps_existing_cache_identity(dehydrator):
+    legacy = (
+        f"{dehydrator_module._PROMPT_VERSION}|{dehydrator.human}|{dehydrator.api_format}|"
+        f"{dehydrator.base_url.rstrip('/')}|{dehydrator.model}|generated source"
+    )
+    assert dehydrator._content_key("generated source") == hashlib.sha256(legacy.encode()).hexdigest()
 
 
 async def _count_attempts(dehydrator, monkeypatch, exc):
