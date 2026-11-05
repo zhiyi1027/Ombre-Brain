@@ -29,7 +29,7 @@ breath 是「我睁眼看看自己记得什么」。这个文件根据参数把�
 
 from typing import Optional
 
-from utils import parse_bool
+from utils import count_tokens_approx, parse_bool
 from .. import _runtime as rt
 from .._common import check_metadata_size, check_query_size
 from .catalog import surface_catalog
@@ -198,6 +198,24 @@ async def dispatch(
             max_tokens=max_tokens,
             max_results=max_results,
         )
+
+    if domain.strip().lower() in ("fact", "fact_card", "commitment_candidate"):
+        service = getattr(rt, "daily_continuity", None)
+        clerk = getattr(service, "clerk", None)
+        if clerk is None:
+            return "书记员事实卡尚未启用。"
+        cards = clerk.search_facts(query, limit=max_results,
+                                   candidates_only=domain.strip().lower() == "commitment_candidate")
+        import json
+        if not cards:
+            return "没有当前有效的事实卡；可能待整理或来源已变化。"
+        chosen = []
+        for card in cards:
+            candidate = json.dumps({"cards": chosen + [card], "more_available": True}, ensure_ascii=False)
+            if count_tokens_approx(candidate) > max_tokens:
+                break
+            chosen.append(card)
+        return json.dumps({"cards": chosen, "more_available": len(chosen) < len(cards)}, ensure_ascii=False)
 
     # --- Daily continuity is private state, never an ordinary bucket search. ---
     if domain.strip().lower() == "daily_impression" and not query.strip():

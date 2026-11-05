@@ -1236,6 +1236,16 @@ class MigrateEngine:
             os.path.normcase(os.path.abspath(existing_path))
             == os.path.normcase(os.path.abspath(target_path))
         )
+        if not same_target and os.path.abspath(existing_path).casefold() == os.path.abspath(target_path).casefold():
+            try:
+                # macOS volumes may resolve case variants to one directory
+                # entry although POSIX normcase preserves their spelling.
+                # Do not treat distinct hardlinks or symlinks as that alias.
+                same_target = (not os.path.islink(existing_path) and not os.path.islink(target_path)
+                               and os.stat(existing_path).st_nlink == 1
+                               and os.path.samefile(existing_path, target_path))
+            except OSError:
+                pass
         try:
             if not same_target and os.path.exists(target_path):
                 raise FileExistsError(f"恢复目标已存在: {target_path}")

@@ -27,10 +27,15 @@ import json
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
+from clerk_privacy import VISIBLE_TEXT_POLICY, VisibilityStateError
 
 _BEIJING = ZoneInfo("Asia/Shanghai")
 
-_SCHEMA = """
+_SPACE_CODES = ",".join(str(c) for c in range(0x110000) if chr(c).isspace())
+_VISIBLE_TEXT = "trim(text,char(" + _SPACE_CODES + "))<>''"
+_VISIBLE_OLD_TEXT = "trim(OLD.text,char(" + _SPACE_CODES + "))<>''"
+
+_SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS raw_messages (
     msg_uuid TEXT PRIMARY KEY,
     conv_uuid TEXT NOT NULL,
@@ -78,15 +83,40 @@ CREATE TABLE IF NOT EXISTS raw_deleted_message_ids (
     msg_uuid TEXT PRIMARY KEY,
     deleted_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS raw_clerk_gaps (
+    msg_uuid TEXT NOT NULL, conv_uuid TEXT NOT NULL, at TEXT NOT NULL,
+    PRIMARY KEY(msg_uuid,conv_uuid,at)
+);
+CREATE TABLE IF NOT EXISTS raw_clerk_meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
+CREATE TRIGGER IF NOT EXISTS raw_clerk_before_delete BEFORE DELETE ON raw_messages
+WHEN {_VISIBLE_OLD_TEXT}
+BEGIN
+    INSERT OR IGNORE INTO raw_clerk_gaps VALUES (OLD.msg_uuid, OLD.conv_uuid, OLD.at);
+END;
+CREATE TRIGGER IF NOT EXISTS raw_clerk_hide AFTER UPDATE OF deleted_at ON raw_messages
+WHEN NEW.deleted_at IS NOT NULL AND {_VISIBLE_OLD_TEXT}
+BEGIN
+    INSERT OR IGNORE INTO raw_clerk_gaps VALUES (OLD.msg_uuid, OLD.conv_uuid, OLD.at);
+END;
+CREATE TRIGGER IF NOT EXISTS raw_clerk_replace BEFORE INSERT ON raw_messages
+WHEN EXISTS (SELECT 1 FROM raw_messages WHERE msg_uuid=NEW.msg_uuid
+             AND {_VISIBLE_TEXT} AND (text<>NEW.text OR at<>NEW.at OR conv_uuid<>NEW.conv_uuid))
+BEGIN
+    INSERT OR IGNORE INTO raw_clerk_gaps
+    SELECT msg_uuid,conv_uuid,at FROM raw_messages WHERE msg_uuid=NEW.msg_uuid;
+END;
 """
 _DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _FIELDS = ("msg_uuid", "conv_uuid", "conv_name", "speaker", "at", "day", "text", "thinking")
+_ARCHIVE_COLUMNS = "msg_uuid,conv_uuid,conv_name,speaker,at,day,text,thinking,source,deleted_at,purge_after"
+_VISIBLE_COLUMNS = "msg_uuid,conv_uuid,conv_name,speaker,at,day,text,source,deleted_at,purge_after"
 _SPEAKERS = {"知知", "顾凛"}
 _LEGACY_HOME_ID = re.compile(r"^home-msg-\d+$")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
 
-def _content_digest(text: str, thinking: str) -> str:
+def _content_digest(text: str, thinking: str = "") -> str:
+    """Archive transport integrity only; never a clerk source/cache identity."""
     body = json.dumps([text, thinking], ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
@@ -97,11 +127,27 @@ class RawArchive:
         self._lock = threading.Lock()
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with self._connect() as conn:
-            conn.executescript(_SCHEMA)
+            # Upgrade all triggers atomically with their input-policy marker.
+            migration = ""
+            old_keys = [r["name"] for r in conn.execute("PRAGMA table_info(raw_clerk_gaps)") if r["pk"]]
+            if old_keys == ["msg_uuid"]:
+                migration = """
+                    ALTER TABLE raw_clerk_gaps RENAME TO raw_clerk_gaps_v1;
+                    CREATE TABLE raw_clerk_gaps(msg_uuid TEXT NOT NULL,conv_uuid TEXT NOT NULL,at TEXT NOT NULL,
+                                               PRIMARY KEY(msg_uuid,conv_uuid,at));
+                    INSERT INTO raw_clerk_gaps SELECT * FROM raw_clerk_gaps_v1;
+                    DROP TABLE raw_clerk_gaps_v1;
+                """
+            conn.executescript("BEGIN IMMEDIATE;\n"
+                               "DROP TRIGGER IF EXISTS raw_clerk_before_delete;\n"
+                               "DROP TRIGGER IF EXISTS raw_clerk_hide;\n"
+                               "DROP TRIGGER IF EXISTS raw_clerk_replace;\n" + migration + _SCHEMA)
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(raw_messages)")}
             for column in ("deleted_at", "purge_after"):
                 if column not in columns:
                     conn.execute(f"ALTER TABLE raw_messages ADD COLUMN {column} TEXT")
+            if not conn.execute("SELECT 1 FROM raw_clerk_gaps LIMIT 1").fetchone():
+                conn.execute("INSERT OR IGNORE INTO raw_clerk_meta VALUES ('input_policy',?)", (VISIBLE_TEXT_POLICY,))
         try:
             os.chmod(path, 0o600)
         except OSError:
@@ -127,6 +173,9 @@ class RawArchive:
                     skipped += 1
                     continue
                 if _is_deleted(conn, clean):
+                    if clean["text"].strip():
+                        conn.execute("INSERT OR IGNORE INTO raw_clerk_gaps VALUES (?,?,?)",
+                                     (clean["msg_uuid"], clean["conv_uuid"], clean["at"]))
                     skipped += 1
                     continue
                 exists = conn.execute(
@@ -150,16 +199,21 @@ class RawArchive:
         with self._lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             for row in rows:
-                clean = _clean_row(row)
+                has_part = isinstance(row, dict) and any(key in row for key in ("fragment_index", "fragment_count", "fragment_digest"))
+                clean = _clean_row(row, allow_empty_text=has_part)
                 if clean is None:
                     raise ValueError("invalid raw message")
                 if _is_deleted(conn, clean):
+                    if clean["text"].strip():
+                        conn.execute("INSERT OR IGNORE INTO raw_clerk_gaps VALUES (?,?,?)",
+                                     (clean["msg_uuid"], clean["conv_uuid"], clean["at"]))
+                    _remember_replaced_parts(conn, clean)
                     conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=?", (clean["msg_uuid"],))
                     continue
-                has_part = any(key in row for key in ("fragment_index", "fragment_count", "fragment_digest"))
                 if not has_part:
+                    _remember_replaced_parts(conn, clean, _content_digest(clean["text"], clean["thinking"]))
                     conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=?", (clean["msg_uuid"],))
-                    _delete_legacy_parts(conn, clean["msg_uuid"])
+                    _delete_legacy_parts(conn, clean)
                     existed = _upsert(conn, clean, source)
                     added += not existed
                     updated += existed
@@ -177,9 +231,11 @@ class RawArchive:
                     raise ValueError("invalid raw message fragment") from None
 
                 if index == 0:
+                    _remember_replaced_parts(conn, clean, digest, part_index=index)
                     # 每次完整重送都从第 0 段开始；旧布局即使正文 digest 相同也不能混拼。
                     conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=?", (clean["msg_uuid"],))
                 else:
+                    _remember_replaced_parts(conn, clean, digest, part_index=index)
                     conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=? AND digest<>?",
                                  (clean["msg_uuid"], digest))
                 conn.execute(
@@ -193,7 +249,8 @@ class RawArchive:
                     (clean["msg_uuid"], digest, index, count, *(clean[f] for f in _FIELDS if f != "msg_uuid"), source[:80]),
                 )
                 parts = conn.execute(
-                    "SELECT * FROM raw_message_parts WHERE msg_uuid=? ORDER BY part_index",
+                    "SELECT msg_uuid,digest,part_index,part_count,conv_uuid,conv_name,speaker,at,day,text,thinking,source "
+                    "FROM raw_message_parts WHERE msg_uuid=? ORDER BY part_index",
                     (clean["msg_uuid"],),
                 ).fetchall()
                 if len(parts) != count:
@@ -208,11 +265,14 @@ class RawArchive:
                 assembled["thinking"] = "".join(part["thinking"] for part in parts)
                 if _content_digest(assembled["text"], assembled["thinking"]) != digest:
                     raise ValueError("raw message fragment digest mismatch")
-                _delete_legacy_parts(conn, clean["msg_uuid"])
-                existed = _upsert(conn, assembled, source)
+                existed = None
+                if assembled["text"].strip() or assembled["thinking"].strip():
+                    _delete_legacy_parts(conn, assembled)
+                    existed = _upsert(conn, assembled, source)
                 conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=?", (clean["msg_uuid"],))
-                added += not existed
-                updated += existed
+                if existed is not None:
+                    added += not existed
+                    updated += existed
         return {"added": added, "updated": updated, "pending": pending}
 
     def delete_source(self, source: str) -> int:
@@ -221,6 +281,8 @@ class RawArchive:
             return 0
         with self._lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
+            conn.execute("INSERT OR IGNORE INTO raw_clerk_gaps SELECT DISTINCT msg_uuid,conv_uuid,at "
+                         f"FROM raw_message_parts WHERE source=? AND {_VISIBLE_TEXT}", (source,))
             conn.execute("DELETE FROM raw_message_parts WHERE source=?", (source,))
             return conn.execute("DELETE FROM raw_messages WHERE source=?", (source,)).rowcount
 
@@ -255,6 +317,8 @@ class RawArchive:
                 f"WHERE deleted_at IS NULL AND ({target})",  # nosec B608
                 (deleted_at, purge_after, *target_params),
             )
+            conn.execute("INSERT OR IGNORE INTO raw_clerk_gaps SELECT DISTINCT msg_uuid,conv_uuid,at "
+                         f"FROM raw_message_parts WHERE msg_uuid=? AND {_VISIBLE_TEXT}", (msg_uuid,))
             conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=?", (msg_uuid,))
         return int(count or pending)
 
@@ -291,6 +355,11 @@ class RawArchive:
                 "UPDATE raw_messages SET deleted_at=?, purge_after=? "
                 "WHERE deleted_at IS NULL AND beijing_timestamp(at) BETWEEN ? AND ?",
                 (deleted_at, purge_after, start_at, end_at),
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO raw_clerk_gaps SELECT DISTINCT msg_uuid,conv_uuid,at "
+                f"FROM raw_message_parts WHERE {_VISIBLE_TEXT} AND beijing_timestamp(at) BETWEEN ? AND ?",
+                (start_at, end_at),
             )
             conn.execute(
                 "DELETE FROM raw_message_parts WHERE beijing_timestamp(at) BETWEEN ? AND ?",
@@ -346,16 +415,40 @@ class RawArchive:
             rows = conn.execute(
                 # Only parameter placeholders are interpolated; day values stay bound.
                 f"SELECT msg_uuid, conv_name, speaker, at, day, text FROM raw_messages "  # nosec B608
-                f"WHERE deleted_at IS NULL AND day IN ({marks}) ORDER BY at, conv_uuid, msg_uuid",
+                f"WHERE deleted_at IS NULL AND {_VISIBLE_TEXT} AND day IN ({marks}) ORDER BY at, conv_uuid, msg_uuid",
                 wanted,
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def clerk_snapshot(self) -> dict[str, Any]:
+        """Complete assembled snapshot; no day/length truncation before privacy.
+
+        Gaps carry no body. They preserve conservative start signals when an
+        opening message was hidden, purged, replaced or its import withdrawn.
+        Pending fragments block the clerk instead of exposing a partial scene.
+        """
+        with self._lock, self._connect() as conn:
+            conn.execute("BEGIN")
+            policy = conn.execute("SELECT value FROM raw_clerk_meta WHERE key='input_policy'").fetchone()
+            if not policy or policy[0] != VISIBLE_TEXT_POLICY:
+                raise VisibilityStateError("legacy exclusion metadata requires visible-text revalidation")
+            pending = conn.execute("SELECT COUNT(*) FROM raw_message_parts").fetchone()[0]
+            rows = conn.execute(
+                "SELECT msg_uuid,conv_uuid,speaker,at,text FROM raw_messages "
+                f"WHERE deleted_at IS NULL AND {_VISIBLE_TEXT} ORDER BY at,conv_uuid,msg_uuid"
+            ).fetchall()
+            gaps = conn.execute(
+                "SELECT msg_uuid,conv_uuid,at FROM raw_clerk_gaps UNION "
+                f"SELECT msg_uuid,conv_uuid,at FROM raw_messages WHERE deleted_at IS NOT NULL AND {_VISIBLE_TEXT}"
+            ).fetchall()
+        return {"rows": [dict(r) for r in rows], "gaps": [dict(r) for r in gaps],
+                "complete": not pending, "pending_fragments": pending}
 
     def day(self, day: str, offset: int = 0, limit: int = 40) -> tuple[list[dict[str, Any]], int]:
         with self._connect() as conn:
             total = conn.execute("SELECT COUNT(*) FROM raw_messages WHERE deleted_at IS NULL AND day=?", (day,)).fetchone()[0]
             rows = conn.execute(
-                "SELECT * FROM raw_messages WHERE deleted_at IS NULL AND day=? ORDER BY at, conv_uuid LIMIT ? OFFSET ?",
+                f"SELECT {_ARCHIVE_COLUMNS} FROM raw_messages WHERE deleted_at IS NULL AND day=? ORDER BY at, conv_uuid LIMIT ? OFFSET ?",
                 (day, limit, offset),
             ).fetchall()
         return [dict(r) for r in rows], int(total)
@@ -370,7 +463,7 @@ class RawArchive:
                 (start_day, end_day),
             ).fetchone()[0]
             rows = conn.execute(
-                "SELECT * FROM raw_messages WHERE deleted_at IS NULL AND day BETWEEN ? AND ? "
+                f"SELECT {_ARCHIVE_COLUMNS} FROM raw_messages WHERE deleted_at IS NULL AND day BETWEEN ? AND ? "
                 "ORDER BY at, conv_uuid, msg_uuid LIMIT ? OFFSET ?",
                 (start_day, end_day, limit, offset),
             ).fetchall()
@@ -396,18 +489,18 @@ class RawArchive:
         with self._connect() as conn:
             hits = conn.execute(
                 # where uses fixed SQL fragments; search values stay bound.
-                f"SELECT * FROM raw_messages WHERE {where} ORDER BY at LIMIT ?",  # nosec B608
+                f"SELECT {_ARCHIVE_COLUMNS} FROM raw_messages WHERE {where} ORDER BY at LIMIT ?",  # nosec B608
                 (*params, limit),
             ).fetchall()
             results = []
             for hit in hits:
                 before = conn.execute(
-                    "SELECT speaker, text FROM raw_messages WHERE deleted_at IS NULL AND conv_uuid=? AND at<? "
+                    f"SELECT speaker, text, thinking FROM raw_messages WHERE deleted_at IS NULL AND conv_uuid=? AND at<? "
                     f"{range_where} ORDER BY at DESC LIMIT 1",  # nosec B608
                     (hit["conv_uuid"], hit["at"], *range_params),
                 ).fetchone()
                 after = conn.execute(
-                    "SELECT speaker, text FROM raw_messages WHERE deleted_at IS NULL AND conv_uuid=? AND at>? "
+                    f"SELECT speaker, text, thinking FROM raw_messages WHERE deleted_at IS NULL AND conv_uuid=? AND at>? "
                     f"{range_where} ORDER BY at LIMIT 1",  # nosec B608
                     (hit["conv_uuid"], hit["at"], *range_params),
                 ).fetchone()
@@ -418,17 +511,24 @@ class RawArchive:
         return results
 
 
-def _clean_row(row: Any) -> dict[str, str] | None:
+def _clean_row(row: Any, *, allow_empty_text: bool = False) -> dict[str, str] | None:
     if not isinstance(row, dict):
         return None
-    clean = {f: str(row.get(f) or "") for f in _FIELDS}
+    clean = {}
+    for key in _FIELDS:
+        value = row.get(key)
+        if value is None:
+            value = ""
+        if not isinstance(value, str):
+            return None  # Never stringify structured native/content blocks.
+        clean[key] = value
     if not clean["msg_uuid"] or not clean["conv_uuid"] or not clean["at"]:
         return None
     if clean["speaker"] not in _SPEAKERS or not _DAY.match(clean["day"]):
         return None
     if _beijing_timestamp(clean["at"]) is None:
         return None
-    if not clean["text"] and not clean["thinking"]:
+    if not allow_empty_text and not (clean["text"].strip() or clean["thinking"].strip()):
         return None
     clean["msg_uuid"] = clean["msg_uuid"][:80]
     clean["conv_uuid"] = clean["conv_uuid"][:80]
@@ -499,12 +599,30 @@ def _upsert(conn: sqlite3.Connection, clean: dict[str, str], source: str) -> boo
     return bool(existed)
 
 
-def _delete_legacy_parts(conn: sqlite3.Connection, msg_uuid: str) -> None:
+def _delete_legacy_parts(conn: sqlite3.Connection, replacement: dict) -> None:
+    msg_uuid = replacement["msg_uuid"]
     if _LEGACY_HOME_ID.fullmatch(msg_uuid):
+        rows = conn.execute(f"SELECT {_VISIBLE_COLUMNS} FROM raw_messages WHERE msg_uuid GLOB ? AND raw_base_uuid(msg_uuid)=?",
+                            (msg_uuid + "-part-[0-9]*", msg_uuid)).fetchall()
+        ordered = sorted(rows, key=lambda r: int(re.search(r"-part-(\d+)$", r["msg_uuid"]).group(1)))
+        equivalent = bool(ordered) and all(
+            not r["deleted_at"] and all(r[k] == replacement[k] for k in ("conv_uuid", "speaker", "at"))
+            for r in ordered)
+        indices = [int(re.search(r"-part-(\d+)$", r["msg_uuid"]).group(1)) for r in ordered]
+        equivalent = (equivalent and indices == list(range(indices[0], indices[0] + len(indices)))
+                      and "".join(r["text"] for r in ordered) == replacement["text"])
+        new_gaps = []
+        if equivalent:
+            for row in ordered:
+                key = (row["msg_uuid"], row["conv_uuid"], row["at"])
+                if not conn.execute("SELECT 1 FROM raw_clerk_gaps WHERE msg_uuid=? AND conv_uuid=? AND at=?", key).fetchone():
+                    new_gaps.append(key)
         conn.execute(
             "DELETE FROM raw_messages WHERE msg_uuid GLOB ? AND raw_base_uuid(msg_uuid)=?",
             (msg_uuid + "-part-[0-9]*", msg_uuid),
         )
+        if equivalent:
+            conn.executemany("DELETE FROM raw_clerk_gaps WHERE msg_uuid=? AND conv_uuid=? AND at=?", new_gaps)
 
 
 _instances: dict[str, RawArchive] = {}
@@ -516,6 +634,22 @@ def archive_path(config: dict[str, Any]) -> str:
     if configured:
         return configured
     return os.path.join(str(config["buckets_dir"]), "_raw", "raw_archive.sqlite3")
+
+
+def _remember_replaced_parts(conn, clean, digest=None, *, part_index=None):
+    # Pending digests are claims, not verified evidence. A full replacement
+    # discards an unverified assembly and conservatively preserves its position.
+    rows = conn.execute("SELECT msg_uuid,conv_uuid,speaker,at,text,digest,part_index FROM raw_message_parts WHERE msg_uuid=?", (clean["msg_uuid"],)).fetchall()
+    gaps = []
+    for row in rows:
+        context_changed = any(row[k] != clean[k] for k in ("conv_uuid", "speaker", "at"))
+        body_changed = row["text"] != clean["text"]
+        discarded = (part_index is None or digest != row["digest"] or context_changed
+                     or (part_index == 0 and row["part_index"] != 0)
+                     or (row["part_index"] == part_index and body_changed))
+        if discarded and row["text"].strip():
+            gaps.append((row["msg_uuid"], row["conv_uuid"], row["at"]))
+    conn.executemany("INSERT OR IGNORE INTO raw_clerk_gaps VALUES (?,?,?)", gaps)
 
 
 def get_archive(config: dict[str, Any]) -> RawArchive:

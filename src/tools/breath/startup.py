@@ -12,6 +12,7 @@ import random
 
 from ombrebrain.policy.surfacing import SurfacePolicyVM
 from plan_review import plan_review_state, plan_stale_after_days
+from .._plan_state import active_plan, plan_reader
 
 from .. import _runtime as rt
 from utils import count_tokens_approx, parse_bool, parse_iso_datetime
@@ -302,10 +303,11 @@ def _active_plans(
     reference_time: datetime,
 ) -> tuple[list[dict], int]:
     plans = []
+    read_plan = plan_reader(reference_time=reference_time)
     stale_after_days = plan_stale_after_days(getattr(rt, "config", {}))
     for bucket in all_buckets:
         meta = bucket.get("metadata") or {}
-        if meta.get("type") != "plan" or meta.get("status", "active") != "active":
+        if meta.get("type") != "plan" or not active_plan(bucket, reader=read_plan):
             continue
         if meta.get("deleted_at") or meta.get("tombstone") or meta.get("dont_surface"):
             continue
@@ -430,6 +432,8 @@ async def surface_startup(
     dream_tokens: int = NIGHTLY_DREAM_TOKEN_BUDGET,
     reflection_tokens: int = REFLECTION_TOKEN_BUDGET,
     feel_tokens: int = STARTUP_FEEL_TOKEN_BUDGET,
+    clerk_layout: bool = False,
+    daily_factual_texts: tuple[str, ...] = (),
 ) -> str:
     """Render one bounded startup briefing within soft/hard budgets."""
 
@@ -444,6 +448,14 @@ async def surface_startup(
     dream_tokens = max(0, int(dream_tokens or 0))
     reflection_tokens = max(0, int(reflection_tokens or 0))
     feel_tokens = max(0, int(feel_tokens or 0))
+    if clerk_layout:
+        from .clerk_startup import surface_clerk_startup
+        return await surface_clerk_startup(
+            all_buckets, max_results=max_results, hard_tokens=hard_tokens, reference_time=reference,
+            daily_impression=daily_impression, daily_factual_texts=daily_factual_texts,
+            private_continuity=private_continuity, nightly_dream=nightly_dream,
+            continuity_tokens=continuity_tokens, dream_tokens=dream_tokens,
+            reflection_tokens=reflection_tokens, feel_tokens=feel_tokens, exclude_older_id=exclude_older_id)
     continuity_hard_tokens = hard_tokens + continuity_tokens
     dream_hard_tokens = continuity_hard_tokens + dream_tokens
     reflection_hard_tokens = dream_hard_tokens + reflection_tokens

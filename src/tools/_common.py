@@ -1167,6 +1167,8 @@ async def check_duplicate_for(new_bucket_id: str, new_text: str, threshold: floa
 
 async def check_plan_resolution(new_event_text: str, source_bucket_id: str = "") -> None:
     """fire-and-forget：扫描 active plan，向量相似 > 0.7 的让 LLM 保守判断是否完成。"""
+    if parse_bool((getattr(rt, "config", {}).get("night_clerk") or {}).get("enabled"), default=False):
+        return  # New clerk mode requires explicit confirmation of plan changes.
     try:
         all_b = await rt.bucket_mgr.list_all(include_archive=False)
         active_plans = [

@@ -445,6 +445,23 @@ def load_config(config_path: Optional[str] = None) -> dict:
         "storage": {
             "external_change_poll_seconds": 1.0,
         },
+        "night_clerk": {
+            "enabled": False,
+            "automatic": False,
+            "provider": "",
+            "auth_dir": "",
+            "profile": "main",
+            "input_profile": "legacy",
+            "lexicon_path": "",
+            "approved_input_revision": "",
+            "automatic_start_day": "",
+            "max_calls_per_day": 64,
+            "timezone": "Asia/Shanghai",
+            "cutoff_hour": 4,
+            "input_budget": 16000,
+            "max_calls_per_run": 100,
+            "timeout_seconds": 45,
+        },
         "daily_continuity": {
             "enabled": True,
             "timezone": "Asia/Shanghai",

@@ -118,22 +118,37 @@ dehydration:
   timeout_seconds: 120             # LLM request timeout seconds / LLM 请求超时秒数
 
 # --- Daily continuity / 每日连续性 ---------------------------------
-# CC/Codex 换窗便签通过私有 HTTP 入口写入独立暂存区；不会进入普通记忆桶、
-# 搜索、dream 或 feel。每天按上海时间凌晨 4 点切日，复用上面的压缩 LLM
-# 生成一张约 450-650 token 的昨日印象。
+# 每日便签上传入口已退役；历史便签只读保留，不参与新整理。
+# 每天按上海时间凌晨 4 点切日，使用后台原文与记忆证据生成昨日印象。
+# 大体量原文的分段提取与汇总尚未启用，请先核原文输入预算。
+# Separate subscription clerk; enable only after independent OAuth + synthetic smoke.
+# Credentials must be outside both this checkout and buckets_dir.
+night_clerk:
+  enabled: false
+  automatic: false
+  provider: ""  # Set chatgpt_subscription only after explicit setup.
+  auth_dir: ""  # Absolute private path, never a credential/token value.
+  profile: "main"
+  input_profile: "scene_word_mask"
+  lexicon_path: ""  # Private 0600 JSON; never commit household words.
+  approved_input_revision: ""  # Explicitly approved production profile hash.
+  automatic_start_day: ""  # YYYY-MM-DD; no automatic historical catch-up by default.
+  input_budget: 16000
+  max_calls_per_run: 100
+  max_calls_per_day: 64  # Durable across retries, including failed/unknown calls.
+  timeout_seconds: 45
+
 daily_continuity:
   enabled: true
   timezone: "Asia/Shanghai"
   cutoff_hour: 4
   poll_seconds: 300
   catchup_days: 7
-  # 无便签时使用普通记忆/feel 兜底的首个记忆日；更早日期不做历史回填。
+  # 普通记忆/feel 兜底的首个记忆日；更早日期不做历史回填。
   bucket_fallback_start_day: "2026-08-20"
-  max_note_chars: 50000
   max_input_chars: 60000
   max_output_tokens: 1400
   max_impression_edit_chars: 20000
-  # token: ""  # Prefer OMBRE_DAILY_NOTE_TOKEN; falls back to OMBRE_HOOK_TOKEN.
 
 # --- Nightly dreams / 夜间梦境 --------------------------------------
 # 凌晨切日后从前一逻辑日的普通桶与 feel 里挑选最多 3 条近事，并可关联 1 条

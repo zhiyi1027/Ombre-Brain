@@ -618,7 +618,7 @@ async def breath_search(
     # 普通搜索会把完整桶正文放进模型上下文，因此采用小而稳定的独立默认值。
     # 普通查询不因旧高级工具撤注册而扩大默认结果数。
     special_domain = str(domain or "").strip().lower()
-    if (not str(query or "").strip() and special_domain not in ("plan", "daily_impression")
+    if (not str(query or "").strip() and special_domain not in ("plan", "daily_impression", "fact", "fact_card", "commitment_candidate")
             and not (importance_min is not None and importance_min >= 1)):
         return "普通记忆搜索需要 query；列计划可用 domain=plan，找感受用 domain=feel 并提供 query。"
     effective_max_results = (
@@ -863,12 +863,16 @@ async def plan(
     related_bucket: Optional[str] = "",
     weight: Optional[float] = 0.5,
     why_remembered: Optional[str] = "",
+    due_date: Optional[str] = "",
+    candidate_id: Optional[str] = "",
+    confirmed_by: Optional[str] = "",
 ) -> str:
     """登记一个待办/承诺/未闭环事项。status=active(默认)/resolved/abandoned。related_bucket 可选,关联到某个普通记忆桶。weight=承诺重量 0.0-1.0(默认 0.5),与 importance 区分——importance 表示「多重要」、weight 表示「多重」。why_remembered=登记原因(可选、仅展示)。plan 不衰减,在一键 breath 的独立计划段和 dream 末尾返回；长期未确认时只提醒,绝不自动改状态,可在 Dashboard 继续/完成/放弃。后续 hold/grow 写入新事件时系统自动判断已登记的 plan 是否完成。"""
     return await _with_notice(
         _t_plan.plan_create(
             content=content, status=status, related_bucket=related_bucket,
             weight=weight, why_remembered=why_remembered,
+            due_date=due_date, candidate_id=candidate_id, confirmed_by=confirmed_by,
         ),
         op="plan",
         args={
@@ -1001,7 +1005,7 @@ async def raw_browse(
     thinking: Optional[bool] = False,
     speaker: Optional[str] = "",
 ) -> str:
-    """只给 date=翻那天/范围的原话；只给 query=全库逐字搜；date 和 query 都给=在日期范围内搜。date 接受 YYYY-MM-DD、YYYY-MM-DD..YYYY-MM-DD、最近7天、2026年10月上旬等；page 从 0 开始，thinking=True 可看当时的思考。"""
+    """只给 date=翻那天/范围的原话；只给 query=全库逐字搜；date 和 query 都给=在日期范围内搜。date 接受 YYYY-MM-DD、YYYY-MM-DD..YYYY-MM-DD、最近7天、2026年10月上旬等；page 从 0 开始；thinking=True 可按需查看原文中的思考；书记员不读取该字段。"""
     return await _with_notice(
         _t_raw.browse(
             date=date or "", query=query or "", page=0 if page is None else page,

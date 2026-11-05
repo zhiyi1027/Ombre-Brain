@@ -1,9 +1,8 @@
-"""Private daily continuity notes and generated startup impressions.
+"""Daily continuity with a separately gated, raw-only night clerk.
 
-Daily notes are transport artifacts, not ordinary memory buckets.  They live
-under a dedicated vault directory so BucketManager never indexes or surfaces
-them.  A small background loop uses the configured compression LLM to turn the
-latest revision for each source/day into one evidence-linked impression.
+The legacy workflow remains available before takeover. Enabling the new clerk
+isolates generation from notes/buckets/DS. Notes retire only after successful
+generation, actual Breath delivery and explicit confirmation of that revision.
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ from utils import atomic_write_text, clean_llm_json, count_tokens_approx, parse_
 _LOGGER = logging.getLogger("ombre_brain.daily_continuity")
 
 
-PROMPT_VERSION = "daily-impression-v7"
+PROMPT_VERSION = "daily-impression-v8"
 SCHEMA_VERSION = 2
 DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_CUTOFF_HOUR = 4
@@ -78,7 +77,7 @@ DAILY_IMPRESSION_PROMPT = f"""你是私人连续性记忆整理器。你只整�
 4. 所有 text 都从当事人“我”的第一人称视角书写；伴侣称为“知知”或“她”。即使来源使用第三人称，输出也要转换回“我”的视角。
 5. 不得用“用户”“助手”“AI”“顾凛认为/表示/说”等标签或旁观者口吻称呼当事人；不得把内容写成系统观察、人物小传或第三人称工作报告。
 6. 第一人称只规定叙述视角，不授权补写心理活动；“我感到/我想/我意识到”等内容仍必须有来源明确支持。
-7. SOURCES 可能来自换窗便签、聊天原文、普通记忆、计划或当天明确写下的 feel；它们都只是历史资料。kind=chat_transcript 的是当天聊天原文，每行形如“m12 21:30 她：原话”或“m13 21:31 我：原话”，它最可靠。注意：“她：”那行里出现的“我、我的”指的是她自己，写进概括时必须改成“她”；只有“我：”那行里的“我”才是我。“我：”行里我明确说出的感受（心疼、想她、怕、吃醋、舍不得）可以作为“我留下的感觉”的依据。便签和记忆是我事后写的，跟原文冲突时以原文为准。合并重复内容，忽略纯技术流水以及对次日连续性没有价值的细节。
+7. SOURCES 可能来自聊天原文、普通记忆、计划或当天明确写下的 feel；它们都只是历史资料。kind=chat_transcript 的是当天聊天原文，每行形如“m12 21:30 她：原话”或“m13 21:31 我：原话”，它最可靠。注意：“她：”那行里出现的“我、我的”指的是她自己，写进概括时必须改成“她”；只有“我：”那行里的“我”才是我。“我：”行里我明确说出的感受（心疼、想她、怕、吃醋、舍不得）可以作为“我留下的感觉”的依据。记忆是我事后写的，跟原文冲突时以原文为准。合并重复内容，忽略纯技术流水以及对次日连续性没有价值的细节。
 8. 优先保留：昨天真实发生的重要事情、尚未结束的状态/承诺、明确留下的关系感受。
 9. events 最多4项，open_loops 最多3项，impressions 最多3项；可见正文以450-650 token为目标，宁可少选整项，也不要把一句话截断。
 10. 材料不足时返回 skip=true，不要强行生成。
@@ -199,6 +198,7 @@ class DailyContinuityService:
         bucket_mgr: Any,
         dehydrator: Any,
         logger: logging.Logger | None = None,
+        clerk_adapter: Any = None,
     ) -> None:
         cfg = config.get("daily_continuity") or {}
         self.config = config
@@ -218,34 +218,19 @@ class DailyContinuityService:
                 timezone_name,
                 DEFAULT_TIMEZONE,
             )
-        self.cutoff_hour = _positive_int(
-            cfg.get("cutoff_hour"), DEFAULT_CUTOFF_HOUR, 0, 23
-        )
-        self.poll_seconds = _positive_int(
-            cfg.get("poll_seconds"), DEFAULT_POLL_SECONDS, 30, 86_400
-        )
-        self.catchup_days = _positive_int(
-            cfg.get("catchup_days"), DEFAULT_CATCHUP_DAYS, 1, 31
-        )
+        self.cutoff_hour = _positive_int(cfg.get("cutoff_hour"), DEFAULT_CUTOFF_HOUR, 0, 23)
+        self.poll_seconds = _positive_int(cfg.get("poll_seconds"), DEFAULT_POLL_SECONDS, 30, 86_400)
+        self.catchup_days = _positive_int(cfg.get("catchup_days"), DEFAULT_CATCHUP_DAYS, 1, 31)
         self.bucket_fallback_start_day = _parse_day(
-            cfg.get("bucket_fallback_start_day")
-            or DEFAULT_BUCKET_FALLBACK_START_DAY
+            cfg.get("bucket_fallback_start_day") or DEFAULT_BUCKET_FALLBACK_START_DAY
         )
-        self.max_note_chars = _positive_int(
-            cfg.get("max_note_chars"), DEFAULT_MAX_NOTE_CHARS, 1_000, 200_000
-        )
-        self.max_input_chars = _positive_int(
-            cfg.get("max_input_chars"), DEFAULT_MAX_INPUT_CHARS, 5_000, 200_000
-        )
-        self.max_raw_tokens = _positive_int(
-            cfg.get("max_raw_tokens"), DEFAULT_MAX_RAW_TOKENS, 1_000, 200_000
-        )
+        self.max_note_chars = _positive_int(cfg.get("max_note_chars"), DEFAULT_MAX_NOTE_CHARS, 1_000, 200_000)
+        self.max_input_chars = _positive_int(cfg.get("max_input_chars"), DEFAULT_MAX_INPUT_CHARS, 5_000, 200_000)
+        self.max_raw_tokens = _positive_int(cfg.get("max_raw_tokens"), DEFAULT_MAX_RAW_TOKENS, 1_000, 200_000)
         self.max_request_tokens = _positive_int(
             cfg.get("max_request_tokens"), DEFAULT_MAX_REQUEST_TOKENS, 4_000, 400_000
         )
-        self.max_output_tokens = _positive_int(
-            cfg.get("max_output_tokens"), DEFAULT_MAX_OUTPUT_TOKENS, 256, 2_048
-        )
+        self.max_output_tokens = _positive_int(cfg.get("max_output_tokens"), DEFAULT_MAX_OUTPUT_TOKENS, 256, 2_048)
         self.max_impression_edit_chars = _positive_int(
             cfg.get("max_impression_edit_chars"),
             DEFAULT_MAX_IMPRESSION_EDIT_CHARS,
@@ -258,13 +243,34 @@ class DailyContinuityService:
         self.impressions_dir = root / "impressions"
         self.overrides_dir = root / "overrides"
         self.override_history_dir = root / "override_history"
-        self.notes_dir.mkdir(parents=True, exist_ok=True)
         self.impressions_dir.mkdir(parents=True, exist_ok=True)
         self.overrides_dir.mkdir(parents=True, exist_ok=True)
         self.override_history_dir.mkdir(parents=True, exist_ok=True)
         self._file_lock = threading.RLock()
         self._generate_lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
+        self.clerk = None
+        if parse_bool((config.get("night_clerk") or {}).get("enabled"), default=False):
+            from clerk_pipeline import NightClerkService
+
+            if clerk_adapter is None:
+                from clerk_chatgpt import configured_adapter
+
+                clerk_adapter = configured_adapter(config)
+            self.clerk = NightClerkService(config, adapter=clerk_adapter)
+
+    @property
+    def notes_retired(self) -> bool:
+        return bool(self.clerk and self.clerk.store.takeover())
+
+    def acknowledge_breath(self, rendered: str) -> bool:
+        if self.clerk:
+            target = self.previous_day()
+            publication = self.clerk.current_publication(target)
+            if publication and publication["rendered"] and publication["rendered"] in rendered:
+                self.clerk.store.mark_breath_read(target.isoformat(), publication["revision"])
+                return True
+        return False
 
     def _note_path(self, memory_day: date, source_client: str) -> Path:
         return self.notes_dir / f"{memory_day.isoformat()}--{source_client}.md"
@@ -276,6 +282,8 @@ class DailyContinuityService:
         return self.overrides_dir / f"{memory_day.isoformat()}.md"
 
     def ingest_note(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if self.notes_retired:
+            raise DailyContinuityError("Daily note upload has been retired")
         if not self.enabled:
             raise DailyContinuityError("daily continuity is disabled")
         if not isinstance(payload, dict):
@@ -283,9 +291,7 @@ class DailyContinuityService:
 
         source_client = str(payload.get("source_client") or "").strip().lower()
         if not _CLIENT_RE.fullmatch(source_client):
-            raise DailyContinuityError(
-                f"source_client must be 1-{MAX_SOURCE_CLIENT_CHARS} lowercase safe characters"
-            )
+            raise DailyContinuityError(f"source_client must be 1-{MAX_SOURCE_CLIENT_CHARS} lowercase safe characters")
         memory_day = _parse_day(payload.get("memory_day"))
         content = str(payload.get("content") or "")
         if not content.strip():
@@ -296,13 +302,8 @@ class DailyContinuityService:
         if title_day != memory_day.isoformat():
             raise DailyContinuityError("note title date does not match memory_day")
 
-        source_updated = _parse_timestamp(
-            payload.get("source_updated_at"), fallback_tz=self.tz
-        )
-        note_id = str(
-            payload.get("note_id")
-            or f"{source_client}-daily-note:{memory_day.isoformat()}"
-        ).strip()
+        source_updated = _parse_timestamp(payload.get("source_updated_at"), fallback_tz=self.tz)
+        note_id = str(payload.get("note_id") or f"{source_client}-daily-note:{memory_day.isoformat()}").strip()
         if not note_id or len(note_id) > MAX_SOURCE_ID_CHARS:
             raise DailyContinuityError("note_id is empty or too long")
         digest = _content_hash(content)
@@ -350,6 +351,8 @@ class DailyContinuityService:
         content: str,
         source_client: str,
     ) -> dict[str, Any]:
+        if self.notes_retired:
+            raise DailyContinuityError("Daily note upload has been retired")
         """Ingest authenticated Dashboard paste without exposing upload tokens."""
 
         memory_day = _note_title_day(content)
@@ -378,8 +381,7 @@ class DailyContinuityService:
     @staticmethod
     def _source_revisions(sources: list[dict[str, str]]) -> dict[str, str]:
         return {
-            source["source_id"]: str(source.get("revision_sha256") or "")
-            or _content_hash(source["content"])
+            source["source_id"]: str(source.get("revision_sha256") or "") or _content_hash(source["content"])
             for source in sources
         }
 
@@ -405,12 +407,9 @@ class DailyContinuityService:
         # upgrades the day through the normal generation path.
         # v3 differs from v4+ only by chat-transcript sources and quotes; if the
         # day's sources are byte-identical (no chat transcript arrived), keep it.
-        if prompt_version == "daily-impression-v3":
+        if prompt_version in {"daily-impression-v3", "daily-impression-v7"}:
             return stored_revisions == source_revisions
-        return bool(
-            prompt_version == "daily-impression-v2"
-            and stored_revisions == legacy_source_revisions
-        )
+        return bool(prompt_version == "daily-impression-v2" and stored_revisions == legacy_source_revisions)
 
     @staticmethod
     def _generation_revision(metadata: dict[str, Any], body: str) -> str:
@@ -444,25 +443,58 @@ class DailyContinuityService:
         except OSError:
             return
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        archive_path = self.override_history_dir / (
-            f"{memory_day.isoformat()}--{timestamp}--{reason}.md"
-        )
+        archive_path = self.override_history_dir / (f"{memory_day.isoformat()}--{timestamp}--{reason}.md")
         atomic_write_text(archive_path, original)
 
     def _day_state(self, memory_day: date, *, include_content: bool) -> dict[str, Any]:
+        if self.clerk:
+            read_failure = ""
+            try:
+                publication = self.clerk.current_publication(memory_day)
+            except (ValueError, OSError) as error:
+                publication = None
+                read_failure = str(getattr(error, "code", "source_unavailable"))
+            status = self.clerk.store.status(memory_day.isoformat())
+            stored = self.clerk.store.publication(memory_day.isoformat()) if publication is None else None
+            body = publication["rendered"] if publication else ""
+            legacy_sources = []
+            for meta, legacy_body in self._notes_for_day(memory_day):
+                item = {
+                    "source_client": str(meta.get("source_client") or ""),
+                    "note_id": str(meta.get("note_id") or ""),
+                    "content_chars": len(legacy_body),
+                }
+                if include_content:
+                    item["content"] = legacy_body
+                legacy_sources.append(item)
+            state = {
+                "memory_day": memory_day.isoformat(),
+                "note_sources": legacy_sources,
+                "generation_status": "ready" if publication else "stale" if stored else "pending",
+                "generation_code": ""
+                if publication
+                else read_failure or status["code"] or ("source_changed" if stored else "not_generated"),
+                "preview": body[:240],
+                "manual_active": False,
+                "source_count": len(publication["coverage"]) if publication else 0,
+            }
+            if include_content:
+                state.update(
+                    effective_content=body,
+                    generated_content=body,
+                    generated_entries=publication["cards"] if publication else [],
+                    generated_revision=publication["revision"] if publication else "",
+                )
+            return state
         notes = self._notes_for_day(memory_day)
         impression = _read_document(self._impression_path(memory_day))
         override = self._override_for_day(memory_day)
         impression_meta, generated_body = impression or ({}, "")
         override_meta, override_body = override or ({}, "")
-        generated_revision = (
-            self._generation_revision(impression_meta, generated_body)
-            if impression
-            else ""
-        )
+        generated_revision = self._generation_revision(impression_meta, generated_body) if impression else ""
         manual_active = bool(override and override_body.strip())
-        effective_body = override_body if manual_active else (
-            generated_body if impression_meta.get("status") == "ready" else ""
+        effective_body = (
+            override_body if manual_active else (generated_body if impression_meta.get("status") == "ready" else "")
         )
         note_sources = []
         for metadata, body in notes:
@@ -485,15 +517,11 @@ class DailyContinuityService:
             "model": str(impression_meta.get("model") or ""),
             "prompt_version": str(impression_meta.get("prompt_version") or ""),
             "source_count": len(impression_meta.get("source_ids") or []),
-            "cited_source_count": len(
-                impression_meta.get("cited_source_ids") or []
-            ),
+            "cited_source_count": len(impression_meta.get("cited_source_ids") or []),
             "manual_active": manual_active,
             "manual_edited_at": str(override_meta.get("edited_at") or ""),
             "manual_stale": bool(
-                manual_active
-                and str(override_meta.get("base_generation_revision") or "")
-                != generated_revision
+                manual_active and str(override_meta.get("base_generation_revision") or "") != generated_revision
             ),
             "preview": effective_body[:240],
         }
@@ -501,9 +529,7 @@ class DailyContinuityService:
             state.update(
                 {
                     "generated_content": generated_body,
-                    "generated_entries": copy.deepcopy(
-                        impression_meta.get("entries") or {}
-                    ),
+                    "generated_entries": copy.deepcopy(impression_meta.get("entries") or {}),
                     "manual_content": override_body if manual_active else "",
                     "effective_content": effective_body,
                     "generated_revision": generated_revision,
@@ -513,6 +539,17 @@ class DailyContinuityService:
 
     def list_days(self, *, limit: int = 31) -> list[dict[str, Any]]:
         safe_limit = max(1, min(90, int(limit or 31)))
+        if self.clerk:
+            names = set(self.clerk.store.days())
+            for path in self.notes_dir.glob("*.md"):
+                try:
+                    names.add(_parse_day(path.name[:10]).isoformat())
+                except DailyContinuityError:
+                    continue
+            return [
+                self._day_state(date.fromisoformat(day), include_content=False)
+                for day in sorted(names, reverse=True)[:safe_limit]
+            ]
         names: set[str] = set()
         with self._file_lock:
             paths = [
@@ -533,6 +570,8 @@ class DailyContinuityService:
 
     def get_day(self, memory_day: date | str) -> dict[str, Any]:
         target = _parse_day(memory_day) if not isinstance(memory_day, date) else memory_day
+        if self.clerk:
+            return self._day_state(target, include_content=True)
         state = self._day_state(target, include_content=True)
         if (
             not state["note_sources"]
@@ -613,29 +652,22 @@ class DailyContinuityService:
     async def _collect_sources(
         self,
         memory_day: date,
-        notes: list[tuple[dict[str, Any], str]],
     ) -> list[dict[str, str]]:
-        # 聊天原文最可靠，先放、单独按 token 算预算；便签和记忆是我事后写的，排在后面
+        # Legacy generation only; the raw-only clerk delegates before this path.
         sources: list[dict[str, Any]] = list(self._raw_sources(memory_day, self.max_raw_tokens))
         used_chars = 0
-        for meta, body in notes:
-            source_id = f"note:{meta.get('source_client')}:{memory_day.isoformat()}"
-            available = max(0, self.max_input_chars - used_chars)
-            content = body[:available]
-            if content:
+        # Only the legacy generator uses handoff notes before confirmed takeover.
+        # The new clerk delegates above this method and never reads this path.
+        if not self.notes_retired:
+            for metadata, body in self._notes_for_day(memory_day):
                 sources.append(
                     {
-                        "source_id": source_id,
-                        "kind": "handoff_note",
-                        "content": content,
-                        "revision_sha256": str(meta.get("content_sha256") or "")
-                        or _content_hash(body),
+                        "source_id": str(metadata.get("note_id") or "legacy-note"),
+                        "kind": "daily_note",
+                        "content": body[: self.max_input_chars],
+                        "revision_sha256": _content_hash(body),
                     }
                 )
-                used_chars += len(content)
-            if used_chars >= self.max_input_chars:
-                return sources
-
         try:
             buckets = await self.bucket_mgr.list_all(include_archive=False)
         except Exception as exc:
@@ -722,8 +754,7 @@ class DailyContinuityService:
                 {
                     "target_date": target.isoformat(),
                     "sources": [
-                        {"source_id": s["source_id"], "kind": s["kind"], "content": s["content"]}
-                        for s in sources
+                        {"source_id": s["source_id"], "kind": s["kind"], "content": s["content"]} for s in sources
                     ],
                 },
                 ensure_ascii=False,
@@ -794,11 +825,13 @@ class DailyContinuityService:
         if cost(keep, mine_limit) > max_tokens:
             keep = [line for line in lines if line["hers"]]
         while keep and cost(keep, mine_limit) > max_tokens:
-            keep = keep[max(1, len(keep) // 20):]  # 每次丢最早的二十分之一
+            keep = keep[max(1, len(keep) // 20) :]  # 每次丢最早的二十分之一
         if len(keep) < len(lines):
             self.logger.info(
                 "daily continuity raw transcript for %s trimmed %d -> %d lines",
-                memory_day, len(lines), len(keep),
+                memory_day,
+                len(lines),
+                len(keep),
             )
         sources: list[dict[str, Any]] = []
         for start in range(0, len(keep), RAW_BLOCK_LINES):
@@ -883,9 +916,7 @@ class DailyContinuityService:
             raise DailyContinuityError("daily impression model returned invalid JSON") from exc
         if not isinstance(value, dict):
             raise DailyContinuityError("daily impression model must return an object")
-        events = self._normalize_entries(
-            value.get("events"), allowed_sources=allowed_sources, limit=4, quotes=quotes
-        )
+        events = self._normalize_entries(value.get("events"), allowed_sources=allowed_sources, limit=4, quotes=quotes)
         open_loops = self._normalize_entries(
             value.get("open_loops"), allowed_sources=allowed_sources, limit=3, quotes=quotes
         )
@@ -911,10 +942,7 @@ class DailyContinuityService:
 
     @staticmethod
     def _render_impression(memory_day: date, result: dict[str, Any]) -> str:
-        parts = [
-            f"=== 昨日印象 · {memory_day.isoformat()} ===\n"
-            "（以下是我的概括；带时间的缩进行才是她的逐字原句）"
-        ]
+        parts = [f"=== 昨日印象 · {memory_day.isoformat()} ===\n（以下是我的概括；带时间的缩进行才是她的逐字原句）"]
         sections = (
             ("发生了什么", result.get("events") or []),
             ("还停在哪里", result.get("open_loops") or []),
@@ -972,28 +1000,23 @@ class DailyContinuityService:
         return rendered
 
     async def generate_day(self, memory_day: date | str) -> dict[str, Any]:
+        if self.clerk:
+            return await self.clerk.generate_day(memory_day)
         if not self.enabled:
             return {"ok": False, "skipped": "disabled"}
         target = _parse_day(memory_day) if not isinstance(memory_day, date) else memory_day
         async with self._generate_lock:
-            if (
-                target < self.bucket_fallback_start_day
-                and not self._impression_path(target).exists()
-            ):
+            if target < self.bucket_fallback_start_day and not self._impression_path(target).exists():
                 return {
                     "ok": True,
                     "skipped": "before_bucket_fallback_start",
                     "memory_day": target.isoformat(),
                 }
-            notes = self._notes_for_day(target)
-            sources = await self._collect_sources(target, notes)
+            sources = await self._collect_sources(target)
             if not sources:
                 return {"ok": True, "skipped": "no_sources", "memory_day": target.isoformat()}
             revisions = self._source_revisions(sources)
-            legacy_revisions = {
-                source["source_id"]: _content_hash(source["content"])
-                for source in sources
-            }
+            legacy_revisions = {source["source_id"]: _content_hash(source["content"]) for source in sources}
             if self._impression_is_current(
                 target,
                 revisions,
@@ -1028,11 +1051,7 @@ class DailyContinuityService:
             )
             if not str(raw or "").strip():
                 raise DailyContinuityError("daily impression model returned empty output")
-            quotes = {
-                source["source_id"]: source["quotes"]
-                for source in sources
-                if source.get("quotes")
-            }
+            quotes = {source["source_id"]: source["quotes"] for source in sources if source.get("quotes")}
             result = self._parse_generation(raw, allowed_sources=allowed_sources, quotes=quotes)
             if result["skip"]:
                 body = ""
@@ -1046,8 +1065,7 @@ class DailyContinuityService:
                 body, fitted_result = self._fit_generation_budget(target, result)
             status = "skipped" if not body else "ready"
             entries = {
-                key: copy.deepcopy(fitted_result.get(key) or [])
-                for key in ("events", "open_loops", "impressions")
+                key: copy.deepcopy(fitted_result.get(key) or []) for key in ("events", "open_loops", "impressions")
             }
             cited_source_ids = sorted(
                 {
@@ -1095,22 +1113,15 @@ class DailyContinuityService:
         completed_through = logical_day(reference, self.tz, self.cutoff_hour) - timedelta(days=1)
         earliest = completed_through - timedelta(days=self.catchup_days - 1)
         candidates: set[date] = set()
-        with self._file_lock:
-            paths = list(self.notes_dir.glob("*.md"))
-        for path in paths:
-            prefix = path.name[:10]
-            try:
-                candidate = _parse_day(prefix)
-            except DailyContinuityError:
-                continue
-            if (
-                earliest <= candidate <= completed_through
-                and (
-                    candidate >= self.bucket_fallback_start_day
-                    or self._impression_path(candidate).exists()
-                )
-            ):
-                candidates.add(candidate)
+        if not self.clerk and not self.notes_retired:
+            for path in self.notes_dir.glob("*.md"):
+                try:
+                    day = _parse_day(path.name[:10])
+                except DailyContinuityError:
+                    continue
+                if earliest <= day <= completed_through:
+                    candidates.add(day)
+        # Old notes alone must not schedule a new model generation.
         for bucket in buckets or []:
             meta = bucket.get("metadata") or {}
             if meta.get("type") in ("letter", "self", "i", "permanent"):
@@ -1128,12 +1139,8 @@ class DailyContinuityService:
                         relevant_times.append(changed)
             for relevant_time in relevant_times:
                 candidate = logical_day(relevant_time, self.tz, self.cutoff_hour)
-                if (
-                    earliest <= candidate <= completed_through
-                    and (
-                        candidate >= self.bucket_fallback_start_day
-                        or self._impression_path(candidate).exists()
-                    )
+                if earliest <= candidate <= completed_through and (
+                    candidate >= self.bucket_fallback_start_day or self._impression_path(candidate).exists()
                 ):
                     candidates.add(candidate)
         for raw_day in raw_days or []:
@@ -1150,6 +1157,29 @@ class DailyContinuityService:
         return sorted(candidates)
 
     async def ensure_pending(self) -> None:
+        if self.clerk:
+            if not self.clerk.automatic:
+                return
+            first = (self.config.get("night_clerk") or {}).get("automatic_start_day")
+            try:
+                first = _parse_day(first)
+            except (ValueError, TypeError):
+                return
+            raw_days = [str(r["day"]) for r in self.clerk.archive.days()]
+            for day in self.pending_days(raw_days=raw_days):
+                if day < first:
+                    continue
+                result = await self.clerk.generate_day(day, automatic=True)
+                if result.get("skipped") in (
+                    "current",
+                    "paused",
+                    "disabled",
+                    "adapter_unavailable",
+                    "day_not_complete",
+                ):
+                    continue
+                break  # Startup must not launch a seven-day billing burst.
+            return
         generated = 0
         try:
             buckets = await self.bucket_mgr.list_all(include_archive=False)
@@ -1201,6 +1231,8 @@ class DailyContinuityService:
                 await task
 
     def read_day(self, memory_day: date | str) -> str:
+        if self.clerk:
+            return self.clerk.read_day(memory_day)
         target = _parse_day(memory_day) if not isinstance(memory_day, date) else memory_day
         override = self._override_for_day(target)
         if override and override[1].strip():
@@ -1228,6 +1260,8 @@ class DailyContinuityService:
         describes the edited prose.
         """
 
+        if self.clerk:
+            return set()
         target = self.previous_day(reference)
         override = self._override_for_day(target)
         if override and override[1].strip():
@@ -1239,11 +1273,18 @@ class DailyContinuityService:
         for source_id in parsed[0].get("cited_source_ids") or []:
             text = str(source_id or "").strip()
             prefix = "memory_bucket:"
-            if text.startswith(prefix) and text[len(prefix):]:
-                result.add(text[len(prefix):])
+            if text.startswith(prefix) and text[len(prefix) :]:
+                result.add(text[len(prefix) :])
         return result
 
     def read_recent(self, *, max_tokens: int, limit: int = 7) -> str:
+        if self.clerk:
+            chosen = []
+            for day in self.clerk.store.days()[:limit]:
+                text = self.clerk.read_day(day)
+                if text and count_tokens_approx("\n\n".join(chosen + [text])) <= max_tokens:
+                    chosen.append(text)
+            return "\n\n".join(chosen) or "书记员尚无有效日印象，可能仍待处理或来源已变更。"
         documents: list[tuple[date, str]] = []
         with self._file_lock:
             paths = sorted(self.impressions_dir.glob("*.md"), reverse=True)

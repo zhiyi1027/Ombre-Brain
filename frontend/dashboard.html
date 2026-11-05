@@ -940,7 +940,7 @@
   .daily-status { display:inline-flex;align-items:center;padding:2px 7px;border:1px solid var(--border);border-radius:999px;font-size:10px;color:var(--text-dim);white-space:nowrap; }
   .daily-evidence-sources .daily-status { min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-all; }
   .daily-document { width:100%;max-width:100%;box-sizing:border-box;margin:0;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:12px/1.75 'Share Tech Mono','SF Mono',Consolas,monospace;max-height:360px;overflow:auto; }
-  #daily-impression-editor, #daily-manual-note-content { min-width:0;max-width:100%; }
+  #daily-impression-editor { min-width:0;max-width:100%; }
   @media (max-width: 760px) { .daily-layout { grid-template-columns:minmax(0,1fr); } .daily-day-list { max-height:260px; } }
 
   /* ============ 模块块：Bento 注塑外壳（无边框，靠留白+柔影聚合） ============ */
@@ -2727,33 +2727,15 @@
   </div>
 </div>
 
-<!-- Daily continuity: private handoff notes + editable generated impressions -->
+<!-- Daily impressions and read-only legacy handoff notes -->
 <div class="content" id="daily-view" style="display:none">
-  <div class="config-section" style="margin:0 0 16px;">
-    <details id="daily-manual-submit">
-      <summary style="cursor:pointer;font-size:13px;font-weight:600;">手动提交便签 <span class="en">Paste Markdown</span></summary>
-      <p style="font-size:11px;line-height:1.6;color:var(--text-dim);margin:10px 0;">适合换机器或没有触发 nightswap 时补传。粘贴完整 Markdown，第一行必须是 <code># YYYY-MM-DD 便签</code>；提交前会显示日期和最终 note_id。</p>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:9px;">
-        <select id="daily-manual-source-client" onchange="previewManualDailyNote()" style="flex:0 0 230px;">
-          <option value="cc" selected>CC（更新当天 CC 便签）</option>
-          <option value="codex">Codex（单独来源）</option>
-        </select>
-        <span id="daily-manual-note-preview" style="font-size:11px;color:var(--text-dim);">等待粘贴…</span>
-      </div>
-      <textarea id="daily-manual-note-content" oninput="previewManualDailyNote()" placeholder="# 2026-08-20 便签（周四）&#10;&#10;## 今天的她&#10;…" style="width:100%;box-sizing:border-box;min-height:210px;resize:vertical;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:13px 14px;border-radius:8px;font-family:inherit;font-size:13px;line-height:1.7;"></textarea>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;">
-        <button id="daily-manual-note-submit" class="btn-primary" onclick="submitManualDailyNote()" disabled style="height:34px;padding:0 14px;"><i data-lucide="upload"></i> 提交便签</button>
-        <span id="daily-manual-note-status" style="font-size:11px;color:var(--text-dim);"></span>
-      </div>
-    </details>
-  </div>
   <div class="daily-layout">
     <div class="config-section" style="margin:0;">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">
         <h3 style="margin:0;">每日连续性 <span class="en">Daily Continuity</span></h3>
         <button class="btn-secondary" onclick="loadDailyContinuity()" title="刷新" style="padding:6px 10px;font-size:12px;"><i data-lucide="refresh-cw"></i></button>
       </div>
-      <p style="font-size:11px;line-height:1.6;color:var(--text-dim);margin:0 0 12px;">原始便签只读；人工修改与 DS 原稿分开保存，Breath 优先读取人工版本。</p>
+      <p style="font-size:11px;line-height:1.6;color:var(--text-dim);margin:0 0 12px;">昨日印象依据后台资料整理；历史便签仅供只读查阅，不参与新整理。人工修改与 DS 原稿分开保存。</p>
       <div id="daily-day-list" class="daily-day-list">
         <div class="loading">点击刷新加载…</div>
       </div>
@@ -8869,21 +8851,26 @@ function _planCard(p) {
   var name = esc(p.name || (p.content || '').slice(0, 40) || p.id);
   var content = esc((p.content || '').slice(0, 240));
   var created = formatTimeAgo(p.created_at);
+  var effectiveStatus = p.effective_status || p.status;
   // iter 1.8: 承诺重量条（0–1.0，不计分，仅为 active 列排序与展示）
   // iter 1.9 A2: 附上中文档位语义错（轻/中/重/必须）
   var weight = (typeof p.weight === 'number') ? p.weight : null;
-  var weightHtml = (weight != null && p.status === 'active') ?
+  var weightHtml = (weight != null && effectiveStatus === 'active') ?
     ('<div style="margin-top:8px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-dim);">' +
      '<span>重量</span>' +
      '<span style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden;"><span style="display:block;width:' + Math.round(weight*100) + '%;height:100%;background:linear-gradient(90deg,var(--accent),#d97a55);"></span></span>' +
      '<span>' + (weight*100).toFixed(0) + '% · ' + weightAnchorLabel(weight) + '</span>' +
     '</div>') : '';
   var reviewHtml = '';
-  if (p.status === 'active' && p.is_stale) {
+  if (effectiveStatus === 'active' && p.is_stale) {
     var staleDays = Number.isFinite(Number(p.days_since_confirmation)) ? Number(p.days_since_confirmation) : '?';
     reviewHtml = '<div style="margin-top:8px;padding:8px 10px;border-left:3px solid #c69a45;background:rgba(198,154,69,.10);font-size:12px;line-height:1.6;color:var(--text-dim);">' +
       '<b style="color:#a87925;">待确认</b> · 已 ' + esc(staleDays) + ' 天未确认，这条计划仍然有效吗？' +
       '</div>';
+  }
+  if (effectiveStatus === 'expired' && p.expiration) {
+    reviewHtml = '<div style="margin-top:8px;font-size:12px;color:var(--text-dim);">已离开 ' +
+      esc(p.expiration.place) + '，本次逗留的承诺已过期。记录保留；再次前往时需重新承诺。</div>';
   }
   var historyHtml = '';
   if (p.change_log && p.change_log.length) {
@@ -8899,13 +8886,13 @@ function _planCard(p) {
   }
   // Action buttons depend on current status
   var actions = '';
-  if (p.status === 'active') {
+  if (effectiveStatus === 'active') {
     if (p.is_stale) {
       actions += '<button class="icon-btn" data-plan-id="' + escAttr(p.id) + '" title="确认计划仍然有效" onclick="planAction(this.dataset.planId,\'confirm\')"><i data-lucide="refresh-cw"></i> 继续</button> ';
     }
     actions += '<button class="icon-btn" data-plan-id="' + escAttr(p.id) + '" title="标为完成" onclick="planAction(this.dataset.planId,\'resolve\')"><i data-lucide="check-square"></i> 完成</button>' +
               ' <button class="icon-btn" data-plan-id="' + escAttr(p.id) + '" title="放弃" onclick="planAction(this.dataset.planId,\'abandon\')"><i data-lucide="x-square"></i> 放弃</button>';
-  } else {
+  } else if (effectiveStatus !== 'expired') {
     actions = '<button class="icon-btn" data-plan-id="' + escAttr(p.id) + '" title="重新激活" onclick="planAction(this.dataset.planId,\'reopen\')"><i data-lucide="rotate-ccw"></i> 重新激活</button>';
   }
   actions += ' <button class="icon-btn" data-plan-id="' + escAttr(p.id) + '" title="编辑内容" onclick="planEdit(this.dataset.planId)"><i data-lucide="pencil"></i> 编辑</button>';
@@ -8933,7 +8920,7 @@ async function loadPlans() {
     if (!resp) return;
     const d = await resp.json();
     if (d.error) { board.innerHTML = '<div style="color:var(--negative)">' + esc(d.error) + '</div>'; return; }
-    stats.textContent = '共 ' + (d.total || 0) + ' 条 · 进行中 ' + d.active.length + ' / 待确认 ' + (d.stale_active || 0) + ' / 已完成 ' + d.resolved.length + ' / 已放弃 ' + d.abandoned.length;
+    stats.textContent = '共 ' + (d.total || 0) + ' 条 · 进行中 ' + d.active.length + ' / 待确认 ' + (d.stale_active || 0) + ' / 已完成 ' + d.resolved.length + ' / 已放弃 ' + d.abandoned.length + ' / 地点过期 ' + (d.expired || []).length;
     // 待确认计划优先；其余 active 计划仍按 weight desc 排序。
     var activeSorted = (d.active || []).slice().sort(function(a, b) {
       if (!!a.is_stale !== !!b.is_stale) return a.is_stale ? -1 : 1;
@@ -8949,7 +8936,8 @@ async function loadPlans() {
     board.innerHTML =
       section('进行中 / Active', activeSorted, 'var(--accent)') +
       section('已完成 / Resolved', d.resolved, 'var(--positive)') +
-      section('已放弃 / Abandoned', d.abandoned, 'var(--text-light)');
+      section('已放弃 / Abandoned', d.abandoned, 'var(--text-light)') +
+      section('地点过期 / Expired', d.expired || [], 'var(--text-light)');
     if (window.lucide) lucide.createIcons();
   } catch(e) {
     board.innerHTML = '<div style="color:var(--negative)">加载失败: ' + esc(e.message) + '</div>';
@@ -9220,7 +9208,7 @@ function _dailyStatusLabel(day) {
   if (day.manual_active) return day.manual_stale ? '人工版 · DS已更新' : '人工版';
   if (day.generation_status === 'ready') return 'DS 已整理';
   if (day.generation_status === 'skipped') return '材料不足';
-  return day.note_sources && day.note_sources.length ? '等待整理' : '无便签';
+  return '等待原文整理';
 }
 
 function _dailyTime(value) {
@@ -9228,70 +9216,11 @@ function _dailyTime(value) {
   try { return new Date(value).toLocaleString(); } catch (_) { return value; }
 }
 
-function _manualDailyNoteDay(content) {
-  const firstLine = String(content || '').split(/\r?\n/, 1)[0].trim();
-  const match = firstLine.match(/^#\s*(\d{4}-\d{2}-\d{2})\s+便签(?:\s|（|\(|$)/);
-  if (!match) return '';
-  const parsed = new Date(match[1] + 'T00:00:00Z');
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== match[1]) return '';
-  return match[1];
-}
-
-function previewManualDailyNote() {
-  const editor = document.getElementById('daily-manual-note-content');
-  const source = document.getElementById('daily-manual-source-client');
-  const preview = document.getElementById('daily-manual-note-preview');
-  const submit = document.getElementById('daily-manual-note-submit');
-  if (!editor || !source || !preview || !submit) return;
-  const content = editor.value;
-  const day = _manualDailyNoteDay(content);
-  submit.disabled = !day;
-  preview.style.color = day ? 'var(--text-dim)' : (content.trim() ? 'var(--negative)' : 'var(--text-dim)');
-  preview.textContent = day
-    ? '将提交为 ' + source.value + '-daily-note:' + day + ' · ' + content.length + ' 字符'
-    : (content.trim() ? '第一行格式不对，无法识别日期。' : '等待粘贴…');
-}
-
-async function submitManualDailyNote() {
-  const editor = document.getElementById('daily-manual-note-content');
-  const source = document.getElementById('daily-manual-source-client');
-  const submit = document.getElementById('daily-manual-note-submit');
-  const status = document.getElementById('daily-manual-note-status');
-  const content = editor ? editor.value : '';
-  const client = source ? source.value : 'cc';
-  const day = _manualDailyNoteDay(content);
-  if (!day) return alert('第一行必须是 # YYYY-MM-DD 便签。');
-  const noteId = client + '-daily-note:' + day;
-  if (!confirm('确认提交为 ' + noteId + '？同一天同来源会更新为这份最新版。')) return;
-  submit.disabled = true;
-  status.style.color = 'var(--text-dim)';
-  status.textContent = '提交中…';
-  try {
-    const response = await authFetch('/api/daily-continuity/notes', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({content:content, source_client:client}),
-    });
-    if (!response) return;
-    const data = await readJsonSafe(response);
-    if (!response.ok) throw new Error(data.error || '提交失败');
-    const labels = {created:'已创建', updated:'已更新', unchanged:'内容未变化'};
-    status.style.color = 'var(--positive)';
-    status.textContent = (labels[data.status] || '已提交') + ' · ' + data.note_id;
-    await loadDailyContinuity(day);
-  } catch (error) {
-    status.style.color = 'var(--negative)';
-    status.textContent = '提交失败：' + error.message;
-  } finally {
-    previewManualDailyNote();
-  }
-}
-
 function renderDailyDayList() {
   const list = document.getElementById('daily-day-list');
   if (!list) return;
   if (!_dailyDays.length) {
-    list.innerHTML = '<div class="loading" style="padding:28px 0;">还没有收到便签。</div>';
+    list.innerHTML = '<div class="loading" style="padding:28px 0;">还没有昨日印象记录。</div>';
     return;
   }
   list.innerHTML = _dailyDays.map(function(day) {
@@ -9303,7 +9232,7 @@ function renderDailyDayList() {
         '<strong style="font-family:\'Share Tech Mono\',monospace;font-size:13px;">' + esc(day.memory_day) + '</strong>' +
         '<span class="daily-status">' + esc(_dailyStatusLabel(day)) + '</span>' +
       '</div>' +
-      '<div style="font-size:10px;color:var(--text-light);margin-top:6px;">' + esc(clients || '尚无来源') + (sources.length ? ' · ' + sources.length + ' 份便签' : '') + '</div>' +
+      '<div style="font-size:10px;color:var(--text-light);margin-top:6px;">' + esc(sources.length ? clients + ' · ' + sources.length + ' 份历史便签' : '后台资料整理') + '</div>' +
       (day.preview ? '<div class="daily-day-preview">' + esc(day.preview.replace(/\s+/g, ' ')) + '</div>' : '') +
     '</button>';
   }).join('');
@@ -9357,7 +9286,7 @@ function _dailyEvidenceSource(sourceId) {
       'title="打开来源记忆" style="cursor:pointer;border:1px solid var(--border);">' +
       esc(value) + '</button>';
   }
-  return '<span class="daily-status" title="便签来源">' + esc(value) + '</span>';
+  return '<span class="daily-status" title="来源编号">' + esc(value) + '</span>';
 }
 
 function renderDailyEvidence(day) {
@@ -9397,7 +9326,7 @@ function renderDailyDetail(day) {
   const sourceHtml = sources.length ? sources.map(function(source) {
     return '<details open style="margin-top:10px;">' +
       '<summary style="cursor:pointer;font-size:12px;color:var(--text-dim);">' +
-        esc((source.source_client || '?').toUpperCase()) + ' 原始便签 · 收到于 ' + esc(_dailyTime(source.received_at)) +
+        esc((source.source_client || '?').toUpperCase()) + ' 历史便签 · 收到于 ' + esc(_dailyTime(source.received_at)) +
       '</summary>' +
       '<pre class="daily-document" style="margin-top:8px;">' + esc(source.content || '') + '</pre>' +
       '<div style="font-size:10px;color:var(--text-light);margin-top:5px;word-break:break-all;">SHA-256 ' + esc(source.content_sha256 || '') + '</div>' +
@@ -9405,9 +9334,6 @@ function renderDailyDetail(day) {
   }).join('') : '<div class="loading" style="padding:18px 0;">这一天没有便签正文。</div>';
   const generated = day.generated_content || '';
   const generatedEvidence = renderDailyEvidence(day);
-  const missingNote = generated && !sources.length
-    ? '<div style="margin:10px 0;padding:9px 11px;border-left:3px solid var(--warning);background:var(--surface);font-size:11px;color:var(--text-dim);">本日没有收到换窗便签；这份日印象仅根据当天已存入 OB 的记忆与 feel 生成。</div>'
-    : '';
   const editable = day.generation_status !== 'pending';
   const current = day.manual_active ? (day.manual_content || '') : generated;
   const stale = day.manual_stale
@@ -9421,11 +9347,11 @@ function renderDailyDetail(day) {
         (day.model ? ' · ' + esc(day.model) : '') + '</div></div>' +
       '<button class="btn-secondary" onclick="selectDailyDay(\'' + escAttr(day.memory_day) + '\')" style="padding:6px 10px;font-size:12px;"><i data-lucide="refresh-cw"></i> 刷新</button>' +
     '</div>' +
-    '<div style="margin-top:20px;"><strong style="font-size:13px;">CC/Codex 实际上传的内容 <span class="en">Source Notes · Read Only</span></strong>' + sourceHtml + '</div>' +
+    '<div style="margin-top:20px;"><strong style="font-size:13px;">历史便签存档（不参与新整理） <span class="en">Legacy Notes · Read Only</span></strong>' + sourceHtml + '</div>' +
     '<div style="height:1px;background:var(--border);margin:22px 0;"></div>' +
     '<div><strong style="font-size:13px;">DS 原稿 <span class="en">Generated · Preserved</span></strong>' +
       (generated ? '<pre class="daily-document" style="margin-top:9px;">' + esc(generated) + '</pre>' : '<div class="loading" style="padding:18px 0;">' + (day.generation_status === 'skipped' ? '资料不足，DS 没有生成正文。' : '尚未生成，通常会在凌晨 4 点后整理。') + '</div>') +
-      generatedEvidence + missingNote +
+      generatedEvidence +
     '</div>' + stale +
     '<div style="margin-top:20px;"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">' +
       '<strong style="font-size:13px;">当前用于 Breath 的版本 <span class="en">Effective · Editable</span></strong>' +
