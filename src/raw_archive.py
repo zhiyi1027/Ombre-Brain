@@ -281,7 +281,7 @@ class RawArchive:
             return 0
         with self._lock, self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute("INSERT OR IGNORE INTO raw_clerk_gaps SELECT DISTINCT msg_uuid,conv_uuid,at "
+            conn.execute("INSERT OR IGNORE INTO raw_clerk_gaps SELECT DISTINCT msg_uuid,conv_uuid,at "  # nosec B608: only module-owned SQL fragments; values are bound.
                          f"FROM raw_message_parts WHERE source=? AND {_VISIBLE_TEXT}", (source,))
             conn.execute("DELETE FROM raw_message_parts WHERE source=?", (source,))
             return conn.execute("DELETE FROM raw_messages WHERE source=?", (source,)).rowcount
@@ -317,7 +317,7 @@ class RawArchive:
                 f"WHERE deleted_at IS NULL AND ({target})",  # nosec B608
                 (deleted_at, purge_after, *target_params),
             )
-            conn.execute("INSERT OR IGNORE INTO raw_clerk_gaps SELECT DISTINCT msg_uuid,conv_uuid,at "
+            conn.execute("INSERT OR IGNORE INTO raw_clerk_gaps SELECT DISTINCT msg_uuid,conv_uuid,at "  # nosec B608: only module-owned SQL fragments; values are bound.
                          f"FROM raw_message_parts WHERE msg_uuid=? AND {_VISIBLE_TEXT}", (msg_uuid,))
             conn.execute("DELETE FROM raw_message_parts WHERE msg_uuid=?", (msg_uuid,))
         return int(count or pending)
@@ -357,7 +357,7 @@ class RawArchive:
                 (deleted_at, purge_after, start_at, end_at),
             )
             conn.execute(
-                "INSERT OR IGNORE INTO raw_clerk_gaps SELECT DISTINCT msg_uuid,conv_uuid,at "
+                "INSERT OR IGNORE INTO raw_clerk_gaps SELECT DISTINCT msg_uuid,conv_uuid,at "  # nosec B608: only module-owned SQL fragments; values are bound.
                 f"FROM raw_message_parts WHERE {_VISIBLE_TEXT} AND beijing_timestamp(at) BETWEEN ? AND ?",
                 (start_at, end_at),
             )
@@ -434,11 +434,11 @@ class RawArchive:
                 raise VisibilityStateError("legacy exclusion metadata requires visible-text revalidation")
             pending = conn.execute("SELECT COUNT(*) FROM raw_message_parts").fetchone()[0]
             rows = conn.execute(
-                "SELECT msg_uuid,conv_uuid,speaker,at,text FROM raw_messages "
+                "SELECT msg_uuid,conv_uuid,speaker,at,text FROM raw_messages "  # nosec B608: only module-owned SQL fragments; values are bound.
                 f"WHERE deleted_at IS NULL AND {_VISIBLE_TEXT} ORDER BY at,conv_uuid,msg_uuid"
             ).fetchall()
             gaps = conn.execute(
-                "SELECT msg_uuid,conv_uuid,at FROM raw_clerk_gaps UNION "
+                "SELECT msg_uuid,conv_uuid,at FROM raw_clerk_gaps UNION "  # nosec B608: only module-owned SQL fragments; values are bound.
                 f"SELECT msg_uuid,conv_uuid,at FROM raw_messages WHERE deleted_at IS NOT NULL AND {_VISIBLE_TEXT}"
             ).fetchall()
         return {"rows": [dict(r) for r in rows], "gaps": [dict(r) for r in gaps],
@@ -448,7 +448,7 @@ class RawArchive:
         with self._connect() as conn:
             total = conn.execute("SELECT COUNT(*) FROM raw_messages WHERE deleted_at IS NULL AND day=?", (day,)).fetchone()[0]
             rows = conn.execute(
-                f"SELECT {_ARCHIVE_COLUMNS} FROM raw_messages WHERE deleted_at IS NULL AND day=? ORDER BY at, conv_uuid LIMIT ? OFFSET ?",
+                f"SELECT {_ARCHIVE_COLUMNS} FROM raw_messages WHERE deleted_at IS NULL AND day=? ORDER BY at, conv_uuid LIMIT ? OFFSET ?",  # nosec B608: only module-owned SQL fragments; values are bound.
                 (day, limit, offset),
             ).fetchall()
         return [dict(r) for r in rows], int(total)
@@ -463,7 +463,7 @@ class RawArchive:
                 (start_day, end_day),
             ).fetchone()[0]
             rows = conn.execute(
-                f"SELECT {_ARCHIVE_COLUMNS} FROM raw_messages WHERE deleted_at IS NULL AND day BETWEEN ? AND ? "
+                f"SELECT {_ARCHIVE_COLUMNS} FROM raw_messages WHERE deleted_at IS NULL AND day BETWEEN ? AND ? "  # nosec B608: only module-owned SQL fragments; values are bound.
                 "ORDER BY at, conv_uuid, msg_uuid LIMIT ? OFFSET ?",
                 (start_day, end_day, limit, offset),
             ).fetchall()
@@ -602,7 +602,7 @@ def _upsert(conn: sqlite3.Connection, clean: dict[str, str], source: str) -> boo
 def _delete_legacy_parts(conn: sqlite3.Connection, replacement: dict) -> None:
     msg_uuid = replacement["msg_uuid"]
     if _LEGACY_HOME_ID.fullmatch(msg_uuid):
-        rows = conn.execute(f"SELECT {_VISIBLE_COLUMNS} FROM raw_messages WHERE msg_uuid GLOB ? AND raw_base_uuid(msg_uuid)=?",
+        rows = conn.execute(f"SELECT {_VISIBLE_COLUMNS} FROM raw_messages WHERE msg_uuid GLOB ? AND raw_base_uuid(msg_uuid)=?",  # nosec B608: fixed column list; values are bound.
                             (msg_uuid + "-part-[0-9]*", msg_uuid)).fetchall()
         ordered = sorted(rows, key=lambda r: int(re.search(r"-part-(\d+)$", r["msg_uuid"]).group(1)))
         equivalent = bool(ordered) and all(
