@@ -12,6 +12,8 @@ A long-term emotional memory system for Claude (and any MCP client). Tags memori
 >
 > **更新日志**：每个版本「修了什么」见 [CHANGELOG.md](CHANGELOG.md)。
 
+夜间书记员的[昨日印象选材与地点承诺规则](docs/CLERK_EVENT_AND_LOCATION_RULES.md)：事件最多8条，具体经历优先；有证据确认离开后，本次逗留的地点承诺派生过期，保留原记录。
+
 ---
 
 ## 它是什么 / What is this

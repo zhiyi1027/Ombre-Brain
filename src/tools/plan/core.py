@@ -30,6 +30,8 @@ from typing import Optional
 from .. import _runtime as rt
 from errors import safe_error_detail
 from plan_review import confirmation_timestamp
+from plan_dates import normalize_due_date
+from .._plan_state import active_plan, plan_reader
 from .._common import check_content_size, check_metadata_size, check_query_size
 from utils import strip_wikilinks, get_ai_name
 
@@ -40,7 +42,24 @@ async def plan_create(
     related_bucket: Optional[str] = "",
     weight: Optional[float] = 0.5,
     why_remembered: Optional[str] = "",
+    due_date: Optional[str] = "",
+    candidate_id: Optional[str] = "",
+    confirmed_by: Optional[str] = "",
 ) -> str:
+    try:
+        due = normalize_due_date(due_date)
+    except ValueError as error:
+        return str(error)
+    candidate = None
+    if candidate_id:
+        service = getattr(rt, "daily_continuity", None)
+        clerk = getattr(service, "clerk", None)
+        if confirmed_by not in ("知知", "顾凛") or clerk is None:
+            return "候选承诺须由知知或顾凛明确确认。"
+        matches = clerk.search_facts(str(candidate_id), candidates_only=True)
+        candidate = next((c for c in matches if c["id"] == candidate_id), None)
+        if candidate is None:
+            return "候选承诺不存在或来源已失效。"
     if status is None:
         status = "active"
     if related_bucket is None:
@@ -77,11 +96,12 @@ async def plan_create(
     norm = content.strip()
     try:
         all_buckets = await rt.bucket_mgr.list_all(include_archive=False)
+        read_plan = plan_reader()
         for b in all_buckets:
             m = b.get("metadata", {})
             if (
                 m.get("type") == "plan"
-                and m.get("status", "active") == "active"
+                and active_plan(b, reader=read_plan)
                 and (b.get("content") or "").strip() == norm
             ):
                 return f"跟原有 active plan 完全重复→{b['id']}（未重复登记）"
@@ -105,9 +125,18 @@ async def plan_create(
     initial_log = append_plan_change_log([], "created", to=status)
     update_kwargs = {
         "status": status,
+        "due_date": due,
         "change_log": initial_log,
         "last_confirmed_at": confirmation_timestamp(),
     }
+    if candidate_id:
+        update_kwargs.update(clerk_candidate_id=candidate_id, confirmed_by=confirmed_by)
+        from clerk_locations import confirmation_scope
+        scope = confirmation_scope(candidate, content.strip())
+        if scope:
+            from clerk_pipeline import digest
+            update_kwargs.update(clerk_location_scope=scope,
+                                 clerk_location_content_sha256=digest(content.strip()))
     if related_bucket.strip():
         update_kwargs["related_bucket"] = related_bucket.strip()
     try:

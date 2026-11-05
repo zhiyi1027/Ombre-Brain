@@ -30,6 +30,7 @@ from datetime import datetime, timedelta
 
 from ombrebrain.policy.surfacing import SurfacePolicyVM
 from plan_review import plan_review_state, plan_stale_after_days
+from .._plan_state import active_plan, plan_reader
 from .. import _runtime as rt
 from utils import count_tokens_approx, parse_bool, parse_iso_datetime
 from ._verbatim import render_stored_bucket
@@ -94,10 +95,11 @@ async def surface_plans(max_tokens: int) -> str:
 
     plans = []
     reference_time = datetime.now()
+    read_plan = plan_reader(reference_time=reference_time)
     stale_after_days = plan_stale_after_days(getattr(rt, "config", {}))
     for bucket in all_buckets:
         meta = bucket.get("metadata") or {}
-        if meta.get("type") != "plan" or meta.get("status", "active") != "active":
+        if meta.get("type") != "plan" or not active_plan(bucket, reader=read_plan):
             continue
         if meta.get("deleted_at") or meta.get("tombstone") or meta.get("dont_surface"):
             continue
@@ -212,9 +214,19 @@ async def surface_default(
             except Exception as exc:
                 rt.logger.warning("Private startup continuity unavailable: %s", exc)
         service = getattr(rt, "daily_continuity", None)
+        clerk = getattr(service, "clerk", None)
+        factual_texts = ()
+        publication_revision = None
         if service is not None and getattr(service, "enabled", False):
             try:
-                daily_impression = service.read_previous()
+                if clerk:
+                    publication = clerk.current_publication(service.previous_day())
+                    if publication:
+                        daily_impression = publication["rendered"]
+                        publication_revision = publication["revision"]
+                        factual_texts = tuple(c["text"] for c in publication["cards"] if c["id"] in publication["selected_ids"])
+                else:
+                    daily_impression = service.read_previous()
             except Exception as exc:
                 rt.logger.warning("Daily startup impression unavailable: %s", exc)
             try:
@@ -239,10 +251,8 @@ async def surface_default(
                 )
             except Exception as exc:
                 rt.logger.warning("Nightly startup dream unavailable: %s", exc)
-        return await surface_startup(
-            all_buckets,
-            max_results=max_results,
-            hard_tokens=max_tokens,
+        startup_args = dict(
+            max_results=max_results, hard_tokens=max_tokens,
             soft_tokens=int(
                 surfacing_cfg.get("startup_breath_soft_tokens")
                 or DEFAULT_SOFT_TOKENS
@@ -253,7 +263,23 @@ async def surface_default(
             nightly_dream=nightly_dream,
             dream_tokens=dream_tokens,
             private_continuity=private_continuity,
+            clerk_layout=clerk is not None,
+            daily_factual_texts=factual_texts,
         )
+        rendered = await surface_startup(all_buckets, **startup_args)
+        if clerk and daily_impression:
+            try:
+                latest = clerk.current_publication(service.previous_day())
+                valid = latest is not None and latest["revision"] == publication_revision
+                acknowledge = getattr(service, "acknowledge_breath", None)
+                if valid and callable(acknowledge):
+                    valid = acknowledge(rendered)
+            except Exception:
+                valid = False
+            if not valid:
+                startup_args.update(daily_impression="", daily_factual_texts=())
+                rendered = await surface_startup(all_buckets, **startup_args)
+        return rendered
 
     # --- pinned/protected 桶置顶（排除 letter 桶：letter 的 importance=10 不代表核心准则）---
     # 注意：pinned 提取在 anchor 过滤 *之前*，保证 anchor+pinned 桶也能出现在核心准则段。

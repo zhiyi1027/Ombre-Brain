@@ -13,6 +13,8 @@ web/plans.py — 计划看板（Plan kanban）
 from starlette.requests import Request
 from starlette.responses import Response
 
+from tools._plan_state import plan_reader
+
 from plan_review import (
     confirmation_timestamp,
     plan_review_state,
@@ -46,7 +48,8 @@ def register(mcp) -> None:
             stale_after_days = plan_stale_after_days(sh.config)
             # 三个空桶子，后面按 status 往里填
             # 类型标注 dict[str, list] 是 Python 3.9+ 语法，不要变运行 IDE 报错
-            groups: dict[str, list] = {"active": [], "resolved": [], "abandoned": []}
+            groups: dict[str, list] = {"active": [], "resolved": [], "abandoned": [], "expired": []}
+            read_plan = plan_reader()
             for b in all_buckets:
                 meta = b.get("metadata", {})
                 # 过滤：只要计划类，跳过其他类型的桶
@@ -57,11 +60,14 @@ def register(mcp) -> None:
                 # 未知状态一律当 active 处理，避免 KeyError
                 if st not in groups:
                     st = "active"
+                lifecycle = read_plan(b)
+                group = lifecycle["effective_status"]
                 review = plan_review_state(
                     b,
                     stale_after_days=stale_after_days,
                 )
-                groups[st].append({
+                groups[group].append({
+                    "due_date": meta.get("due_date"),
                     "id": b["id"],
                     "name": meta.get("name") or "",
                     "content": b.get("content", ""),
@@ -76,6 +82,7 @@ def register(mcp) -> None:
                     "weight": float(meta.get("weight", 0.5)) if meta.get("weight") is not None else 0.5,
                     "why_remembered": meta.get("why_remembered", ""),
                     **review,
+                    **lifecycle,
                 })
             # 每组按 updated_at 倒序。lambda 是匿名函数；key 函数指定「拿什么排序」
             # `or .. or ""` 堆叠保底：缺字段也不会报 NoneType < str 错
@@ -99,12 +106,13 @@ def register(mcp) -> None:
                 key=lambda p: bool(p.get("is_stale")),
                 reverse=True,
             )
-            for k in ("resolved", "abandoned"):
+            for k in ("resolved", "abandoned", "expired"):
                 groups[k].sort(key=lambda p: p.get("updated_at") or p.get("created_at") or "", reverse=True)
             return JSONResponse({
                 "active": groups["active"],
                 "resolved": groups["resolved"],
                 "abandoned": groups["abandoned"],
+                "expired": groups["expired"],
                 "stale_active": sum(
                     1 for plan in groups["active"] if plan.get("is_stale")
                 ),
@@ -189,6 +197,11 @@ def register(mcp) -> None:
                 if old_status == "active":
                     updates["last_confirmed_at"] = confirmation_timestamp()
                 history = append_plan_change_log(history, "edit")
+            elif action == "reschedule":
+                from plan_dates import normalize_due_date
+                due = normalize_due_date(body.get("due_date"))
+                updates["due_date"] = due
+                history = append_plan_change_log(history, "rescheduled", **{"from": old_meta.get("due_date"), "to": due})
             else:
                 return JSONResponse({"error": f"unknown action: {action}"}, status_code=400)
 

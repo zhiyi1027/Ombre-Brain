@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import argparse
 import copy
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 import importlib.util
 import json
 from pathlib import Path
@@ -49,13 +48,13 @@ class FakeDehydrator:
             "events": [
                 {
                     "text": "知知和我确认了日印象的时间归属。",
-                    "source_ids": ["note:cc:2026-08-20"],
+                    "source_ids": ["memory_bucket:fixture-2026-08-20"],
                 }
             ],
             "open_loops": [
                 {
                     "text": "还要把 CC 上传器接入换窗流程。",
-                    "source_ids": ["note:cc:2026-08-20"],
+                    "source_ids": ["memory_bucket:fixture-2026-08-20"],
                 }
             ],
             "impressions": [],
@@ -122,6 +121,26 @@ def note_payload(content, *, day="2026-08-20", digest=""):
     return value
 
 
+
+def seed_source(service, payload):
+    day = payload['memory_day']
+    bid = 'fixture-' + day
+    bucket = {'id': bid, 'content': payload['content'],
+              'metadata': {'type': 'dynamic', 'created': day + 'T12:00:00+08:00'}}
+    service.bucket_mgr.buckets[:] = [b for b in service.bucket_mgr.buckets if b['id'] != bid] + [bucket]
+
+
+def seed_legacy_note(service, payload):
+    from daily_continuity import _render_document
+    import hashlib
+    day, client = payload['memory_day'], payload['source_client']
+    path = service._note_path(date.fromisoformat(day), client)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    meta = {'kind': 'daily_note', 'note_id': payload['note_id'], 'source_client': client,
+            'memory_day': day, 'content_sha256': hashlib.sha256(payload['content'].encode()).hexdigest()}
+    path.write_text(_render_document(meta, payload['content']), encoding='utf-8')
+
+
 def test_logical_day_changes_at_four_in_shanghai():
     tz = ZoneInfo("Asia/Shanghai")
     assert logical_day(datetime(2026, 8, 21, 0, 30, tzinfo=tz), tz, 4) == date(2026, 8, 20)
@@ -130,7 +149,7 @@ def test_logical_day_changes_at_four_in_shanghai():
 
 
 def test_daily_prompt_requires_first_person_without_inventing_feelings():
-    assert PROMPT_VERSION == "daily-impression-v7"
+    assert PROMPT_VERSION == "daily-impression-v8"
     assert "所有 text 都从当事人“我”的第一人称视角书写" in DAILY_IMPRESSION_PROMPT
     assert "知知" in DAILY_IMPRESSION_PROMPT
     assert "用户”“助手”“AI”“顾凛认为/表示/说" in DAILY_IMPRESSION_PROMPT
@@ -144,7 +163,7 @@ def test_daily_generation_uses_expanded_visible_and_json_budgets(tmp_path):
     import daily_continuity as daily_module
 
     service = make_service(tmp_path)
-    source = "note:cc:2026-08-20"
+    source = "memory_bucket:fixture-2026-08-20"
     entry = {"text": "有依据的条目", "source_ids": [source]}
     parsed = service._parse_generation(
         json.dumps(
@@ -166,67 +185,65 @@ def test_daily_generation_uses_expanded_visible_and_json_budgets(tmp_path):
     assert len(parsed["impressions"]) == 3
 
 
-def test_ingest_upserts_one_revision_per_client_day(tmp_path):
+def test_service_note_ingest_is_retired_without_writes(tmp_path, monkeypatch):
+    # Retirement applies only after confirmed clerk takeover.
+    monkeypatch.setattr(DailyContinuityService, "notes_retired", property(lambda self: True))
     service = make_service(tmp_path)
-    first_note = "# 2026-08-20 便签（周四）\n\n## 今天聊了什么\n第一版"
-    second_note = "# 2026-08-20 便签（周四）\n\n## 今天聊了什么\n第二版"
-
-    created = service.ingest_note(note_payload(first_note))
-    unchanged = service.ingest_note(note_payload(first_note))
-    updated = service.ingest_note(note_payload(second_note))
-
-    assert created["status"] == "created" and created["dirty"] is True
-    assert unchanged["status"] == "unchanged" and unchanged["dirty"] is False
-    assert updated["status"] == "updated" and updated["dirty"] is True
-    paths = list(service.notes_dir.glob("*.md"))
-    assert len(paths) == 1
-    assert "第二版" in paths[0].read_text(encoding="utf-8")
+    with pytest.raises(DailyContinuityError, match="retired"):
+        service.ingest_note(note_payload("# 2026-08-20 便签\n虚构"))
+    assert not service.notes_dir.exists()
 
 
-def test_manual_note_uses_title_day_and_upserts_selected_client(tmp_path):
+def test_manual_note_ingest_is_retired_without_writes(tmp_path, monkeypatch):
+    # Retirement applies only after confirmed clerk takeover.
+    monkeypatch.setattr(DailyContinuityService, "notes_retired", property(lambda self: True))
     service = make_service(tmp_path)
-    first = "# 2026-08-20 便签（周四）\n\n## 换窗交接\n第一版"
-    second = "# 2026-08-20 便签（周四）\n\n## 换窗交接\n第二版"
-
-    created = service.ingest_manual_note(content=first, source_client="CC")
-    updated = service.ingest_manual_note(content=second, source_client="cc")
-
-    assert created["status"] == "created"
-    assert created["note_id"] == "cc-daily-note:2026-08-20"
-    assert updated["status"] == "updated"
-    assert len(list(service.notes_dir.glob("*.md"))) == 1
-    assert "第二版" in next(service.notes_dir.glob("*.md")).read_text(encoding="utf-8")
+    with pytest.raises(DailyContinuityError, match="retired"):
+        service.ingest_manual_note(content="synthetic", source_client="cc")
+    assert not service.notes_dir.exists()
 
 
-def test_manual_note_rejects_missing_title_day(tmp_path):
-    service = make_service(tmp_path)
-    with pytest.raises(DailyContinuityError, match="must start"):
-        service.ingest_manual_note(content="## 没有日期\n正文", source_client="cc")
-
-
-def test_ingest_rejects_title_day_or_hash_mismatch(tmp_path):
-    service = make_service(tmp_path)
-    with pytest.raises(DailyContinuityError, match="title date"):
-        service.ingest_note(
-            note_payload("# 2026-08-19 便签（周三）\n正文", day="2026-08-20")
-        )
-    with pytest.raises(DailyContinuityError, match="sha256"):
-        service.ingest_note(
-            note_payload("# 2026-08-20 便签（周四）\n正文", digest="0" * 64)
-        )
+def test_retired_note_ingest_does_not_inspect_content(tmp_path, monkeypatch):
+    # Retirement applies only after confirmed clerk takeover.
+    monkeypatch.setattr(DailyContinuityService, "notes_retired", property(lambda self: True))
+    class Unreadable:
+        def __str__(self):
+            raise AssertionError("retired input must not be inspected")
+    with pytest.raises(DailyContinuityError, match="retired"):
+        make_service(tmp_path).ingest_manual_note(content=Unreadable(), source_client="cc")
 
 
 @pytest.mark.asyncio
-async def test_generate_uses_latest_note_and_regenerates_after_revision(tmp_path):
+async def test_legacy_notes_remain_readable_but_never_feed_generation(tmp_path, monkeypatch):
+    # Retirement applies only after confirmed clerk takeover.
+    monkeypatch.setattr(DailyContinuityService, "notes_retired", property(lambda self: True))
+    service = make_service(tmp_path)
+    payload = note_payload("# 2026-08-20 便签\nSYNTHETIC-LEGACY-NOTE")
+    seed_legacy_note(service, payload)
+    assert 'SYNTHETIC-LEGACY-NOTE' in service.get_day('2026-08-20')['note_sources'][0]['content']
+    assert (await service.generate_day('2026-08-20'))['skipped'] == 'no_sources'
+    assert service.dehydrator.calls == []
+    assert service.pending_days(datetime(2026, 8, 21, 5, tzinfo=ZoneInfo('Asia/Shanghai'))) == []
+    # A genuine archive source can generate an impression, but the old note
+    # must not leak into the model request alongside it.
+    from raw_archive import get_archive
+    get_archive(service.config).import_rows(_raw_rows())
+    await service.generate_day('2026-08-20')
+    assert 'SYNTHETIC-LEGACY-NOTE' not in str(service.dehydrator.calls)
+    assert all(s['kind'] != 'handoff_note' for s in service.dehydrator.calls[0][1]['sources'])
+
+
+@pytest.mark.asyncio
+async def test_generate_regenerates_after_evidence_revision(tmp_path):
     dehydrator = FakeDehydrator()
     service = make_service(tmp_path, dehydrator=dehydrator)
     first = "# 2026-08-20 便签（周四）\n\n## 换窗交接\n第一版"
     second = "# 2026-08-20 便签（周四）\n\n## 换窗交接\n第二版"
-    service.ingest_note(note_payload(first))
+    seed_source(service, note_payload(first))
 
     generated = await service.generate_day("2026-08-20")
     current = await service.generate_day("2026-08-20")
-    service.ingest_note(note_payload(second))
+    seed_source(service, note_payload(second))
     regenerated = await service.generate_day("2026-08-20")
 
     assert generated["status"] == "ready"
@@ -257,7 +274,7 @@ async def test_late_bucket_regenerates_without_note_revision(tmp_path):
         bucket_mgr=buckets,
         dehydrator=dehydrator,
     )
-    service.ingest_note(note_payload("# 2026-08-20 便签（周四）\n正文"))
+    seed_source(service, note_payload("# 2026-08-20 便签（周四）\n正文"))
     await service.generate_day("2026-08-20")
     buckets.buckets.append(
         {
@@ -329,7 +346,7 @@ async def test_pre_start_day_is_not_backfilled_from_note_or_bucket(tmp_path):
         },
     }
     service = make_service(tmp_path, dehydrator=dehydrator, buckets=[bucket])
-    service.ingest_note(
+    seed_source(service,
         note_payload("# 2026-08-19 便签（周三）\n旧日便签", day="2026-08-19")
     )
 
@@ -339,9 +356,10 @@ async def test_pre_start_day_is_not_backfilled_from_note_or_bucket(tmp_path):
     assert dehydrator.calls == []
 
 
+@pytest.mark.parametrize("legacy_version", ["daily-impression-v2", "daily-impression-v7"])
 @pytest.mark.asyncio
-async def test_unchanged_v2_impression_is_not_rewritten_but_source_change_upgrades(
-    tmp_path,
+async def test_unchanged_legacy_impression_is_preserved_until_source_changes(
+    tmp_path, legacy_version,
 ):
     dehydrator = FakeDehydrator(
         {
@@ -349,7 +367,7 @@ async def test_unchanged_v2_impression_is_not_rewritten_but_source_change_upgrad
             "events": [
                 {
                     "text": "我保留了旧日印象，直到来源真的变化。",
-                    "source_ids": ["note:cc:2026-08-19"],
+                    "source_ids": ["memory_bucket:fixture-2026-08-19"],
                 }
             ],
             "open_loops": [],
@@ -359,17 +377,23 @@ async def test_unchanged_v2_impression_is_not_rewritten_but_source_change_upgrad
     service = make_service(tmp_path, dehydrator=dehydrator)
     first = "# 2026-08-19 便签（周三）\n第一版"
     second = "# 2026-08-19 便签（周三）\n第二版"
-    service.ingest_note(note_payload(first, day="2026-08-19"))
+    seed_source(service, note_payload(first, day="2026-08-19"))
     service.bucket_fallback_start_day = date(2026, 8, 19)
     await service.generate_day("2026-08-19")
     impression_path = service._impression_path(date(2026, 8, 19))
     impression_path.write_text(
         impression_path.read_text(encoding="utf-8").replace(
-            "prompt_version: daily-impression-v7",
-            "prompt_version: daily-impression-v2",
+            "prompt_version: daily-impression-v8",
+            "prompt_version: " + legacy_version,
         ),
         encoding="utf-8",
     )
+    from daily_continuity import _read_document, _render_document, _content_hash
+    meta, body = _read_document(impression_path)
+    original_sources = await service._collect_sources(date(2026, 8, 19))
+    if legacy_version == 'daily-impression-v2':
+        meta['source_revisions'] = {s['source_id']: _content_hash(s['content']) for s in original_sources}
+    impression_path.write_text(_render_document(meta, body), encoding='utf-8')
     service.bucket_fallback_start_day = date(2026, 8, 20)
     dehydrator.calls.clear()
 
@@ -377,12 +401,12 @@ async def test_unchanged_v2_impression_is_not_rewritten_but_source_change_upgrad
     assert current["skipped"] == "current"
     assert dehydrator.calls == []
 
-    service.ingest_note(note_payload(second, day="2026-08-19"))
+    seed_source(service, note_payload(second, day="2026-08-19"))
     upgraded = await service.generate_day("2026-08-19")
 
     assert upgraded["status"] == "ready"
     assert len(dehydrator.calls) == 1
-    assert "prompt_version: daily-impression-v7" in impression_path.read_text(
+    assert "prompt_version: daily-impression-v8" in impression_path.read_text(
         encoding="utf-8"
     )
 
@@ -435,7 +459,7 @@ async def test_daily_generation_includes_feel_as_evidence(tmp_path):
 @pytest.mark.asyncio
 async def test_generated_entries_preserve_per_item_source_ids(tmp_path):
     service = make_service(tmp_path)
-    service.ingest_note(note_payload("# 2026-08-20 便签（周四）\n正文"))
+    seed_source(service, note_payload("# 2026-08-20 便签（周四）\n正文"))
 
     generated = await service.generate_day("2026-08-20")
     state = service.get_day("2026-08-20")
@@ -444,11 +468,11 @@ async def test_generated_entries_preserve_per_item_source_ids(tmp_path):
     assert state["generated_entries"]["events"] == [
         {
             "text": "知知和我确认了日印象的时间归属。",
-            "source_ids": ["note:cc:2026-08-20"],
+            "source_ids": ["memory_bucket:fixture-2026-08-20"],
         }
     ]
     assert state["generated_entries"]["open_loops"][0]["source_ids"] == [
-        "note:cc:2026-08-20"
+        "memory_bucket:fixture-2026-08-20"
     ]
     assert state["cited_source_count"] == 1
 
@@ -492,7 +516,7 @@ async def test_manual_impression_survives_regeneration_and_can_restore(tmp_path)
     service = make_service(tmp_path, dehydrator=dehydrator)
     first_note = "# 2026-08-20 便签（周四）\n第一版"
     second_note = "# 2026-08-20 便签（周四）\n第二版"
-    service.ingest_note(note_payload(first_note))
+    seed_source(service, note_payload(first_note))
     await service.generate_day("2026-08-20")
 
     edited = service.edit_impression("2026-08-20", "这是我确认过的人工版本。")
@@ -502,7 +526,7 @@ async def test_manual_impression_survives_regeneration_and_can_restore(tmp_path)
     original_generated = edited["generated_content"]
 
     dehydrator.response["events"][0]["text"] = "DS 根据第二版重新整理。"
-    service.ingest_note(note_payload(second_note))
+    seed_source(service, note_payload(second_note))
     await service.generate_day("2026-08-20")
     regenerated = service.get_day("2026-08-20")
 
@@ -527,7 +551,7 @@ async def test_generation_drops_entries_with_unknown_sources(tmp_path):
         }
     )
     service = make_service(tmp_path, dehydrator=dehydrator)
-    service.ingest_note(note_payload("# 2026-08-20 便签（周四）\n正文"))
+    seed_source(service, note_payload("# 2026-08-20 便签（周四）\n正文"))
     result = await service.generate_day("2026-08-20")
     assert result["status"] == "skipped"
     assert service.read_day("2026-08-20") == ""
@@ -555,7 +579,7 @@ async def test_old_plan_changed_that_day_is_included(tmp_path):
         },
     }
     service = make_service(tmp_path, dehydrator=dehydrator, buckets=[plan])
-    service.ingest_note(note_payload("# 2026-08-20 便签（周四）\n正文"))
+    seed_source(service, note_payload("# 2026-08-20 便签（周四）\n正文"))
     await service.generate_day("2026-08-20")
     sources = dehydrator.calls[0][1]["sources"]
     plan_source = next(source for source in sources if source["source_id"] == "plan:plan-old")
@@ -564,10 +588,10 @@ async def test_old_plan_changed_that_day_is_included(tmp_path):
 
 def test_pending_day_waits_until_after_cutoff(tmp_path):
     service = make_service(tmp_path)
-    service.ingest_note(note_payload("# 2026-08-20 便签（周四）\n正文"))
+    seed_source(service, note_payload("# 2026-08-20 便签（周四）\n正文"))
     shanghai = ZoneInfo("Asia/Shanghai")
-    assert service.pending_days(datetime(2026, 8, 21, 3, 59, tzinfo=shanghai)) == []
-    assert service.pending_days(datetime(2026, 8, 21, 4, 1, tzinfo=shanghai)) == [date(2026, 8, 20)]
+    assert service.pending_days(datetime(2026, 8, 21, 3, 59, tzinfo=shanghai), buckets=service.bucket_mgr.buckets) == []
+    assert service.pending_days(datetime(2026, 8, 21, 4, 1, tzinfo=shanghai), buckets=service.bucket_mgr.buckets) == [date(2026, 8, 20)]
 
 
 def test_pending_days_include_bucket_only_day(tmp_path):
@@ -590,7 +614,7 @@ def test_pending_days_include_bucket_only_day(tmp_path):
 
 def test_pending_days_do_not_backfill_pre_start_sources(tmp_path):
     service = make_service(tmp_path)
-    service.ingest_note(
+    seed_source(service,
         note_payload("# 2026-08-19 便签（周三）\n旧日便签", day="2026-08-19")
     )
     bucket = {
@@ -614,12 +638,12 @@ def test_render_budget_does_not_mutate_generation_result(monkeypatch):
 
     result = {
         "skip": False,
-        "events": [{"text": "事件" * 100, "source_ids": ["note:cc:2026-08-20"]}],
+        "events": [{"text": "事件" * 100, "source_ids": ["memory_bucket:fixture-2026-08-20"]}],
         "open_loops": [
-            {"text": "待办" * 100, "source_ids": ["note:cc:2026-08-20"]}
+            {"text": "待办" * 100, "source_ids": ["memory_bucket:fixture-2026-08-20"]}
         ],
         "impressions": [
-            {"text": "感受" * 100, "source_ids": ["note:cc:2026-08-20"]}
+            {"text": "感受" * 100, "source_ids": ["memory_bucket:fixture-2026-08-20"]}
         ],
     }
     original = copy.deepcopy(result)
@@ -717,105 +741,40 @@ def _load_sync_module():
     return module
 
 
-def test_uploader_uses_title_day_and_four_am_cutoff(tmp_path):
+def test_retired_uploader_never_reads_args_or_files(monkeypatch, capsys):
     module = _load_sync_module()
-    note = tmp_path / ".daily-note"
-    note.write_text("# 2026-08-20 便签（周四）\n正文", encoding="utf-8")
-    # 2026-08-21 00:30 Asia/Shanghai: still the 2026-08-20 logical day.
-    timestamp = datetime(2026, 8, 20, 16, 30, tzinfo=timezone.utc).timestamp()
-    note.touch()
-    import os
-    os.utime(note, (timestamp, timestamp))
-    args = argparse.Namespace(
-        file=note,
-        source_client="cc",
-        timezone="Asia/Shanghai",
-        cutoff_hour=4,
-    )
-    payload = module._payload(args)
-    assert payload["memory_day"] == "2026-08-20"
-    assert payload["note_id"] == "cc-daily-note:2026-08-20"
-
-    os.utime(
-        note,
-        (
-            datetime(2026, 8, 21, 4, 1, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp(),
-            datetime(2026, 8, 21, 4, 1, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp(),
-        ),
-    )
-    with pytest.raises(module.PermanentSyncError, match="logical day"):
-        module._payload(args)
+    monkeypatch.setattr(sys, 'argv', ['sync-daily-note.py', '--file', '/never-read', '--token-file', '/never-read'])
+    monkeypatch.setattr('builtins.open', lambda *a, **k: pytest.fail('retired uploader opened a file'))
+    assert module.main() == 2
+    assert 'retired' in capsys.readouterr().err
 
 
-def test_uploader_rejects_missing_source_client_instead_of_sharing_cc(tmp_path):
-    module = _load_sync_module()
-    note = tmp_path / ".daily-note"
-    note.write_text("# 2026-08-20 便签（周四）\n正文", encoding="utf-8")
-    timestamp = datetime(2026, 8, 20, 12, 0, tzinfo=timezone.utc).timestamp()
-    import os
-    os.utime(note, (timestamp, timestamp))
-    args = argparse.Namespace(
-        file=note,
-        source_client="",
-        timezone="Asia/Shanghai",
-        cutoff_hour=4,
-    )
-
-    with pytest.raises(module.PermanentSyncError, match="source-client is invalid"):
-        module._payload(args)
 
 
-def test_uploader_bad_old_note_does_not_block_newer_note(monkeypatch):
-    module = _load_sync_module()
-    pending = {
-        "cc-daily-note:2026-08-19": {"memory_day": "2026-08-19"},
-        "cc-daily-note:2026-08-20": {"memory_day": "2026-08-20"},
-    }
 
-    def fake_post(_url, _token, payload, _timeout):
-        if payload["memory_day"] == "2026-08-19":
-            raise module.PermanentSyncError("HTTP 400")
-        return {"ok": True}
 
-    monkeypatch.setattr(module, "_post", fake_post)
-    remaining, delivered, transient, permanent = module._deliver_pending(
-        "https://ob.invalid/internal/daily-notes",
-        "token",
-        pending,
-        1.0,
-    )
-
-    assert delivered == ["cc-daily-note:2026-08-20"]
-    assert list(remaining) == ["cc-daily-note:2026-08-19"]
-    assert transient == []
-    assert permanent == ["cc-daily-note:2026-08-19: HTTP 400"]
 
 
 @pytest.mark.asyncio
-async def test_private_ingest_route_requires_token_and_never_echoes_content(
-    tmp_path, monkeypatch
-):
+async def test_retired_private_upload_authenticates_then_returns_410_without_body(tmp_path, monkeypatch):
+    # Retirement applies only after confirmed clerk takeover.
+    monkeypatch.setattr(DailyContinuityService, "notes_retired", property(lambda self: True))
     service = make_service(tmp_path)
-    monkeypatch.setattr(web_shared, "daily_continuity", service, raising=False)
-    monkeypatch.setattr(web_shared, "config", {"daily_continuity": {}}, raising=False)
-    monkeypatch.setattr(web_shared, "_is_authenticated", lambda _request: False)
-    monkeypatch.setenv("OMBRE_DAILY_NOTE_TOKEN", "secret-token")
+    monkeypatch.setattr(web_shared, 'daily_continuity', service, raising=False)
+    monkeypatch.setattr(web_shared, 'config', {'daily_continuity': {}}, raising=False)
+    monkeypatch.setattr(web_shared, '_is_authenticated', lambda r: False)
+    monkeypatch.setenv('OMBRE_DAILY_NOTE_TOKEN', 'synthetic-token')
+    class NoBody(JsonRequest):
+        async def json(self):
+            raise AssertionError('retired route must not read a request body')
     mcp = FakeMCP()
     daily_web.register(mcp)
-    handler = mcp.routes[("POST", "/internal/daily-notes")]
-    content = "# 2026-08-20 便签（周四）\n绝不能在HTTP响应里回显"
-    payload = note_payload(content)
-
-    denied = await handler(JsonRequest(payload))
-    accepted = await handler(
-        JsonRequest(payload, {"authorization": "Bearer secret-token"})
-    )
-
-    assert denied.status_code == 401
-    assert accepted.status_code == 200
-    response = json.loads(accepted.body)
-    assert response["ok"] is True
-    assert "绝不能" not in accepted.body.decode("utf-8")
+    route = mcp.routes[('POST', '/internal/daily-notes')]
+    assert (await route(NoBody())).status_code == 401
+    response = await route(NoBody(headers={'authorization': 'Bearer synthetic-token'}))
+    assert response.status_code == 410
+    assert json.loads(response.body)['code'] == 'daily_note_upload_retired'
+    assert not service.notes_dir.exists()
 
 
 @pytest.mark.asyncio
@@ -823,7 +782,8 @@ async def test_dashboard_daily_continuity_routes_list_edit_and_restore(
     tmp_path, monkeypatch
 ):
     service = make_service(tmp_path)
-    service.ingest_note(note_payload("# 2026-08-20 便签（周四）\n只在详情接口返回"))
+    seed_source(service, note_payload("# 2026-08-20 便签（周四）\n只在详情接口返回"))
+    seed_legacy_note(service, note_payload("# 2026-08-20 便签（周四）\n只在详情接口返回"))
     await service.generate_day("2026-08-20")
     monkeypatch.setattr(web_shared, "daily_continuity", service, raising=False)
     monkeypatch.setattr(web_shared, "_require_auth", lambda _request: None)
@@ -866,26 +826,20 @@ async def test_dashboard_daily_continuity_routes_list_edit_and_restore(
 
 
 @pytest.mark.asyncio
-async def test_dashboard_manual_note_route_upserts_without_echoing_content(
-    tmp_path, monkeypatch
-):
+async def test_retired_dashboard_upload_returns_410_without_body(tmp_path, monkeypatch):
+    # Retirement applies only after confirmed clerk takeover.
+    monkeypatch.setattr(DailyContinuityService, "notes_retired", property(lambda self: True))
     service = make_service(tmp_path)
-    monkeypatch.setattr(web_shared, "daily_continuity", service, raising=False)
-    monkeypatch.setattr(web_shared, "_require_auth", lambda _request: None)
+    monkeypatch.setattr(web_shared, 'daily_continuity', service, raising=False)
+    monkeypatch.setattr(web_shared, '_require_auth', lambda r: None)
+    class NoBody(JsonRequest):
+        async def json(self):
+            raise AssertionError('retired route must not inspect the body')
     mcp = FakeMCP()
     daily_web.register(mcp)
-    content = "# 2026-08-20 便签（周四）\n不能出现在响应里的正文"
-
-    response = await mcp.routes[("POST", "/api/daily-continuity/notes")](
-        JsonRequest({"content": content, "source_client": "cc"})
-    )
-
-    assert response.status_code == 200
-    result = json.loads(response.body)
-    assert result["note_id"] == "cc-daily-note:2026-08-20"
-    assert result["memory_day"] == "2026-08-20"
-    assert "不能出现在" not in response.body.decode("utf-8")
-    assert service.get_day("2026-08-20")["note_sources"][0]["content"] == content
+    response = await mcp.routes[('POST', '/api/daily-continuity/notes')](NoBody())
+    assert response.status_code == 410
+    assert not service.notes_dir.exists()
 
 
 @pytest.mark.asyncio
@@ -930,13 +884,13 @@ def test_dashboard_contains_daily_continuity_read_and_edit_surface():
     assert 'data-tab="daily"' in dashboard
     assert 'id="daily-view"' in dashboard
     assert "/api/daily-continuity" in dashboard
-    assert "CC/Codex 实际上传的内容" in dashboard
+    assert "历史便签存档（不参与新整理）" in dashboard
     assert "恢复 DS 版本" in dashboard
     assert "generated_entries" in dashboard
     assert "openDailyEvidenceBucket" in dashboard
-    assert 'id="daily-manual-note-content"' in dashboard
-    assert "submitManualDailyNote" in dashboard
-    assert "/api/daily-continuity/notes" in dashboard
+    assert 'id="daily-manual-note-content"' not in dashboard
+    assert "submitManualDailyNote" not in dashboard
+    assert "/api/daily-continuity/notes" not in dashboard
 
 
 def test_dashboard_daily_continuity_cannot_expand_mobile_viewport():
@@ -1032,14 +986,14 @@ async def test_quote_must_come_from_a_cited_block(tmp_path):
             "events": [],
             "open_loops": [
                 {"text": "她说：今天不想理我。", "source_ids": ["chat:2026-08-20:m1"], "quote_ids": ["m1"]},
-                {"text": "她在外面吃饭。", "source_ids": ["note:cc:2026-08-20"], "quote_ids": ["m1"]},
+                {"text": "她在外面吃饭。", "source_ids": ["memory_bucket:fixture-2026-08-20"], "quote_ids": ["m1"]},
                 {"text": "她回家后跟我道了晚安。", "source_ids": ["chat:2026-08-20:m1"], "quote_ids": ["m3"]},
             ],
             "impressions": [],
         }
     )
     service = make_service(tmp_path, dehydrator=dehydrator)
-    service.ingest_note(note_payload("# 2026-08-20 便签（周四）\n正文"))
+    seed_source(service, note_payload("# 2026-08-20 便签（周四）\n正文"))
     get_archive(service.config).import_rows(_raw_rows())
 
     await service.generate_day("2026-08-20")

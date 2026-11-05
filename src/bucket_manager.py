@@ -2040,7 +2040,8 @@ class BucketManager:
         # 由 server.py 的 plan() / trace() / /api/plans/{id}/action 维护，bucket_manager 不参与生成。
         for k in ("status", "type", "resolution_reason", "resolved_by",
                   "related_bucket", "author", "user_name", "title", "letter_date",
-                  "change_log", "last_confirmed_at",
+                  "change_log", "last_confirmed_at", "due_date", "clerk_candidate_id", "confirmed_by",
+                  "clerk_location_scope", "clerk_location_content_sha256",
                   # iter 1.8 新增字段。除 weight 外全部透传不转换。
                   # weight 在 plan 上才有意义；这里不在这个循环里校验类型，由上层 server.py 保证传入范围。
                   "why_remembered", "dont_surface", "first_of_kind",

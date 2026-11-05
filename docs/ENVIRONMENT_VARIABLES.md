@@ -48,8 +48,8 @@
 - `OMBRE_HOOK_TOKEN`：Hook 鉴权令牌。
 - `OMBRE_HOOK_SKIP`：跳过 Hook。
 - `OMBRE_HOOK_ALLOW_PUBLIC`：允许公网 Hook 地址。
-- `OMBRE_DAILY_NOTE_TOKEN`：`POST /internal/daily-notes` 的私有上传密钥；未设置时回退使用 `OMBRE_HOOK_TOKEN`。
-- `OMBRE_DAILY_NOTE_URL`：CC/Codex VPS 上传器使用的完整接收地址；只作用于 `sync-daily-note.py`，不由 OB 服务端读取。
+- `OMBRE_DAILY_NOTE_TOKEN`：已弃用的便签上传密钥；上传入口现在返回 410。仅保留现有私有连续状态的旧鉴权回退，不在本次轮换凭据。
+- `OMBRE_DAILY_NOTE_URL`：已退役；`sync-daily-note.py` 只报告退役并退出，不再读取便签、凭据或执行网络请求。
 - `OMBRE_PRIVATE_CONTINUITY_TOKEN`：私有冲突连续状态同步密钥；未设置时依次回退 `OMBRE_DAILY_NOTE_TOKEN`、`OMBRE_HOOK_TOKEN`。
 - `TUNNEL_EDGE`：cloudflared 边缘节点覆盖值。
 - `TUNNEL_TRANSPORT_PROTOCOL`：cloudflared 传输协议。

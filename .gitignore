@@ -68,3 +68,11 @@ kernel/rust/**/target/
 kernel/rust/ombre-kernel/Cargo.lock
 .tmp/ombre-nodes-v2.yaml
 .tmp/
+
+# Private raw evidence and derived clerk state, including SQLite sidecars.
+**/.night_clerk/
+**/_raw/
+raw-clerk-backup*.zip
+
+# Independent SIWC credentials must never be committed, even if misplaced.
+**/ob-chatgpt.sqlite3*
