@@ -82,7 +82,10 @@ EXPECTED_TOOL_PROPERTIES = {
         "state_key",
         "superseded_by",
     },
-    "plan": {"content", "status", "related_bucket", "weight", "why_remembered"},
+    "plan": {
+        "content", "status", "related_bucket", "weight", "why_remembered",
+        "due_date", "candidate_id", "confirmed_by",
+    },
     "letter_write": {"author", "content", "user_name", "title", "date", "ai_name"},
     "letter_read": {"query", "limit", "author", "date_from", "date_to"},
     "I": {"content", "aspect", "read", "limit"},
