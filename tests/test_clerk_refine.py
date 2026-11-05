@@ -17,8 +17,12 @@ from clerk_pipeline import (
 )
 from clerk_refine import build_refinement, split_refinement, validate_refinement, valid_refinement_payload
 from clerk_chatgpt import ChatGPTSubscriptionAdapter, request_body
-import test_clerk_pipeline as fixtures
-from test_clerk_pipeline import DAY, NOW, raw
+try:
+    from . import test_clerk_pipeline as fixtures
+    from .test_clerk_pipeline import DAY, NOW, raw
+except ImportError:
+    import test_clerk_pipeline as fixtures
+    from test_clerk_pipeline import DAY, NOW, raw
 
 
 class ReviewContract(unittest.TestCase):
