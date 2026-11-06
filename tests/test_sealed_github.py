@@ -4,15 +4,77 @@ import asyncio
 import hashlib
 import os
 from pathlib import Path
+import shlex
+import socket
 import sqlite3
 import subprocess
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 import zipfile
 
 import local_backup as core
 import sealed_github as sealed
+
+
+@unittest.skipUnless(os.name == "posix" and Path("/usr/bin/ssh").is_file(), "OpenSSH parser required")
+class SSHConfigTests(unittest.TestCase):
+    def test_openssh_loads_exact_known_hosts_file_with_spaces_and_quotes(self):
+        with tempfile.TemporaryDirectory(prefix="ob ssh config ") as name:
+            root = Path(name)
+            key = root / "generated-key"
+            subprocess.run(
+                ["/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True
+            )
+            public = key.with_suffix(".pub").read_text().split()
+            for filename in ("known hosts", 'known "hosts"', "known \\hosts"):
+                with self.subTest(filename=filename), socket.socket() as server:
+                    server.bind(("127.0.0.1", 0))
+                    server.listen(1)
+                    server.settimeout(5)
+                    port = server.getsockname()[1]
+                    hosts = root / filename
+                    hosts.write_text(f"[127.0.0.1]:{port} {public[0]} {public[1]}\n")
+                    hosts.chmod(0o600)
+
+                    def banner_only():
+                        try:
+                            connection, _ = server.accept()
+                            with connection:
+                                connection.settimeout(5)
+                                connection.sendall(b"SSH-2.0-GENERATED_CONFIG_PROBE\r\n")
+                                data = b""
+                                while b"\n" not in data:
+                                    chunk = connection.recv(4096)
+                                    if not chunk:
+                                        return
+                                    data += chunk
+                                if not data.split(b"\n", 1)[1]:
+                                    connection.recv(4096)
+                        except OSError:
+                            pass
+
+                    worker = threading.Thread(target=banner_only, daemon=True)
+                    worker.start()
+                    try:
+                        env = sealed.git_environment(key, hosts)
+                        result = subprocess.run(
+                            [*shlex.split(env["GIT_SSH_COMMAND"]), "-vvv", "-o", "GlobalKnownHostsFile=/dev/null",
+                             "-p", str(port), "-T", "git@127.0.0.1"],
+                            capture_output=True, text=True, timeout=8,
+                        )
+                        # The local banner-only peer never authenticates or receives application data.
+                        self.assertNotEqual(result.returncode, 0)
+                        self.assertIn(f"loaded 1 keys from [127.0.0.1]:{port}", result.stderr)
+                    finally:
+                        server.close()
+                        worker.join(timeout=6)
+                    self.assertFalse(worker.is_alive())
+
+    def test_control_character_path_refused_before_ssh(self):
+        with self.assertRaisesRegex(core.Refused, "git_private_path"):
+            sealed.git_environment("/GENERATED\nKEY", "/MUST-NOT-READ")
 
 
 @unittest.skipUnless(os.name == "posix", "Private POSIX backup entry")

@@ -172,6 +172,7 @@ def create_snapshot(vault, output):
 def git_environment(key, known_hosts):
     for path in (key, known_hosts):
         path = Path(path)
+        core.require(not any(c in str(path) for c in "\x00\r\n"), "git_private_path")
         core.require(path.is_absolute() and path.is_file() and not path.is_symlink(), "git_private_file")
         info = path.stat()
         core.require(
@@ -193,7 +194,8 @@ def git_environment(key, known_hosts):
         "-o",
         "StrictHostKeyChecking=yes",
         "-o",
-        "UserKnownHostsFile=" + str(known_hosts),
+        # OpenSSH parses this option as a list after the shell has parsed it.
+        'UserKnownHostsFile="' + str(known_hosts).replace("\\", "\\\\").replace('"', '\\"') + '"',
         "-o",
         "ConnectTimeout=20",
         "-o",
