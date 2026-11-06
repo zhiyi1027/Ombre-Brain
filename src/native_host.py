@@ -59,6 +59,27 @@ async def inactive(*_args, **_kwargs):
     return None
 
 
+def configure_native_transport(mcp, public_origin):
+    """Keep rebinding protection for loopback and the configured public origin."""
+    from urllib.parse import urlsplit
+
+    from mcp.server.transport_security import TransportSecuritySettings
+    from public_origin import normalize_public_origin
+
+    normalized = normalize_public_origin(public_origin)
+    require(not public_origin or normalized == public_origin, "native_public_origin_invalid")
+    hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    origins = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+    if normalized:
+        hosts.append(urlsplit(normalized).netloc)
+        origins.append(normalized)
+    mcp.settings.transport_security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=origins,
+    )
+
+
 def build_native_app(server, *, background=False):
     from server_app import HTTPRuntimeSettings, RuntimeLifecycle, build_http_app, merge_mcp_tool_registries
 
@@ -68,6 +89,7 @@ def build_native_app(server, *, background=False):
     require(not server.config.get("night_clerk", {}).get("enabled") or background, "night_clerk_gate_closed")
     require(not server.config.get("daily_continuity", {}).get("enabled") or background, "daily_continuity_gate_closed")
     require(not server.config.get("nightly_dreams", {}).get("enabled") or background, "nightly_dream_gate_closed")
+    configure_native_transport(server.mcp, settings.public_origin)
     merge_mcp_tool_registries(server.mcp, server.mcp_extra)
     if not background:
         # breath may lazily start decay; suppress that route as well as lifespan.

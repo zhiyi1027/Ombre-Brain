@@ -1,5 +1,6 @@
 """Native host policy and orphan-group checks; generated data only."""
 
+import asyncio
 import os
 from pathlib import Path
 import select
@@ -56,7 +57,7 @@ class NativeHostTests(unittest.TestCase):
             embedding_outbox=object(),
             daily_continuity=object(),
             nightly_dreams=object(),
-            mcp=object(),
+            mcp=SimpleNamespace(settings=SimpleNamespace(transport_security=None)),
             mcp_extra=object(),
             _is_valid_static_mcp_token=lambda _token: True,
         )
@@ -68,7 +69,8 @@ class NativeHostTests(unittest.TestCase):
 
         settings = SimpleNamespace(
             from_config=lambda cfg: SimpleNamespace(
-                auth_required=cfg["mcp_require_auth"], auth_mode=cfg["mcp_auth_mode"]
+                auth_required=cfg["mcp_require_auth"], auth_mode=cfg["mcp_auth_mode"],
+                public_origin=cfg.get("deployment", {}).get("public_url", ""),
             )
         )
         return SimpleNamespace(
@@ -107,6 +109,43 @@ class NativeHostTests(unittest.TestCase):
         for server in cases:
             with self.subTest(), patch.dict(sys.modules, {"server_app": self.factory()}), self.assertRaises(ValueError):
                 host.build_native_app(server, background=False)
+
+    def transport_response(self, public_origin, hostname, origin=None):
+        from mcp.server.transport_security import TransportSecurityMiddleware
+        from starlette.requests import HTTPConnection
+
+        mcp = SimpleNamespace(settings=SimpleNamespace(transport_security=None))
+        host.configure_native_transport(mcp, public_origin)
+        self.assertTrue(mcp.settings.transport_security.enable_dns_rebinding_protection)
+        headers = [(b"host", hostname.encode()), (b"content-type", b"application/json")]
+        if origin is not None:
+            headers.append((b"origin", origin.encode()))
+        request = HTTPConnection({"type": "http", "headers": headers})
+        middleware = TransportSecurityMiddleware(mcp.settings.transport_security)
+        return asyncio.run(middleware.validate_request(request, is_post=True))
+
+    def test_native_transport_accepts_configured_public_and_loopback(self):
+        public = "https://ob.example.test"
+        for hostname, origin in (("ob.example.test", public), ("127.0.0.1:18001", None)):
+            with self.subTest(hostname=hostname):
+                self.assertIsNone(self.transport_response(public, hostname, origin))
+
+    def test_native_transport_rejects_foreign_and_lookalike_hosts(self):
+        for hostname in ("other.example.test", "ob.example.test.evil.test", "ob.example.test:8443"):
+            with self.subTest(hostname=hostname):
+                self.assertEqual(self.transport_response("https://ob.example.test", hostname).status_code, 421)
+
+    def test_native_transport_origin_and_nondefault_port_are_exact(self):
+        public = "https://ob.example.test:8443"
+        self.assertIsNone(self.transport_response(public, "ob.example.test:8443", public))
+        self.assertEqual(self.transport_response(public, "ob.example.test").status_code, 421)
+        for origin in ("http://ob.example.test:8443", "https://other.example.test", "null"):
+            with self.subTest(origin=origin):
+                self.assertEqual(self.transport_response(public, "ob.example.test:8443", origin).status_code, 403)
+
+    def test_native_transport_without_public_origin_stays_loopback_only(self):
+        self.assertIsNone(self.transport_response("", "127.0.0.1:18001"))
+        self.assertEqual(self.transport_response("", "ob.example.test").status_code, 421)
 
     def test_watchdog_refuses_to_signal_foreign_process_group(self):
         with (
