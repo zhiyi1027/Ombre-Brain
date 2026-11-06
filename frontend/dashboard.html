@@ -3936,6 +3936,12 @@ function showAuthError(msg) {
   el.style.display = 'block';
 }
 
+function loadAuthenticatedDashboard() {
+  document.getElementById('auth-overlay').style.display = 'none';
+  loadBuckets();
+  loadStatusBanner();
+}
+
 async function doSetup() {
   const p1 = document.getElementById('auth-setup-pwd').value;
   const p2 = document.getElementById('auth-setup-pwd2').value;
@@ -3952,7 +3958,7 @@ async function doSetup() {
   if (q && a) {
     await fetch('/auth/security-question', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({question: q, answer: a}) });
   }
-  document.getElementById('auth-overlay').style.display = 'none';
+  loadAuthenticatedDashboard();
 }
 
 function showLogin() {
@@ -3979,7 +3985,7 @@ async function doRecover() {
   if (newPwd.length < 6) return showAuthError('新密码至少6位');
   const resp = await fetch('/auth/recover', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({answer, new_password: newPwd}) });
   if (resp.ok) {
-    document.getElementById('auth-overlay').style.display = 'none';
+    loadAuthenticatedDashboard();
   } else {
     const d = await resp.json().catch(() => ({}));
     showAuthError(d.error || '验证失败');
@@ -3990,7 +3996,7 @@ async function doLogin() {
   const pwd = document.getElementById('auth-login-pwd').value;
   const resp = await fetch('/auth/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({password: pwd}) });
   if (resp.ok) {
-    document.getElementById('auth-overlay').style.display = 'none';
+    loadAuthenticatedDashboard();
   } else {
     const d = await resp.json().catch(() => ({}));
     showAuthError(d.detail || '密码错误');
@@ -4452,7 +4458,7 @@ async function loadSystemDiagnostics() {
         + '</div></details>';
     }
     listEl.innerHTML = html;
-    if (updatedEl) updatedEl.textContent = '刚刚刷新 ' + new Date().toLocaleTimeString();
+    if (updatedEl) updatedEl.textContent = '刚刚刷新 ' + new Date().toLocaleTimeString('zh-CN', {timeZone: 'Asia/Shanghai', hourCycle: 'h23'}) + ' 北京时间';
   } catch(e) {
     summaryEl.style.color = 'var(--negative)';
     summaryEl.textContent = '体检失败：' + (e && e.message ? e.message : e);
@@ -5857,8 +5863,8 @@ async function showDetail(id) {
         '<div class="field"><label>已消化 / Digested</label>' + (meta.digested ? _SV.ok : '—') + '</div>' +
         '<div class="field"><label>钉选 / Pinned</label>' + (meta.pinned ? _SV.ok : '—') + '</div>' +
         '<div class="field"><label>Anchor</label>' + (meta.anchor ? _SV.anchor+' 坐标系 / anchor' : '—') + '</div>' +
-        '<div class="field"><label>创建 / Created</label>' + esc(meta.created || '—') + '</div>' +
-        '<div class="field"><label>最后活跃 / Last active</label>' + esc(meta.last_active || '—') + '</div>' +
+        '<div class="field"><label>创建 / Created</label>' + esc(formatExactBucketTime(meta.created)) + '</div>' +
+        '<div class="field"><label>最后活跃 / Last active</label>' + esc(formatExactBucketTime(meta.last_active)) + '</div>' +
         stateKeyHtml +
         weightHtml +
         triggerHtml +
@@ -6657,8 +6663,34 @@ window._updateWeightLabel = function(v) {
 
 function parseBucketDate(iso) {
   if (iso === null || iso === undefined || String(iso).trim() === '') return null;
+  if (typeof iso === 'string') {
+    var text = iso.trim();
+    // Stored naive OB timestamps denote Beijing wall time. Preserve explicit
+    // offsets and numeric epochs as instants, independent of the viewer's TZ.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+      text += 'T00:00:00+08:00';
+    } else if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?$/.test(text)) {
+      text = text.replace(' ', 'T').replace(/(\.\d{3})\d+$/, '$1') + '+08:00';
+    }
+    iso = text;
+  }
   var d = new Date(iso);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+var _beijingBucketFormatter;
+function beijingBucketParts(date) {
+  if (!_beijingBucketFormatter) {
+    _beijingBucketFormatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    });
+  }
+  var result = {};
+  _beijingBucketFormatter.formatToParts(date).forEach(function(part) {
+    if (part.type !== 'literal') result[part.type] = part.value;
+  });
+  return result;
 }
 
 function firstValidBucketTime() {
@@ -6684,17 +6716,16 @@ function formatTimeAgo(iso) {
 function formatCompactBucketTime(iso) {
   var d = parseBucketDate(iso);
   if (!d) return '—';
-  function pad(value) { return String(value).padStart(2, '0'); }
-  var now = new Date();
-  var datePart = d.getFullYear() === now.getFullYear()
-    ? pad(d.getMonth() + 1) + '-' + pad(d.getDate())
-    : d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-  return datePart + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  var parts = beijingBucketParts(d);
+  var current = beijingBucketParts(new Date());
+  var datePart = (parts.year === current.year ? '' : parts.year + '-') + parts.month + '-' + parts.day;
+  return datePart + ' ' + parts.hour + ':' + parts.minute;
 }
 
 function formatExactBucketTime(iso) {
   var d = parseBucketDate(iso);
-  return d ? d.toLocaleString('zh-CN', { hour12: false }) : '—';
+  if (!d) return '—';
+  return d.toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai', hourCycle: 'h23'}) + ' 北京时间';
 }
 
 function daysSince(iso) {
@@ -8026,7 +8057,7 @@ async function loadGithubStatus() {
       document.getElementById('gh-st-prefix').textContent = d.path_prefix || '（根目录）';
       var intervalLabels = {0:'关闭', 30:'每 30 分钟', 60:'每 1 小时', 360:'每 6 小时', 720:'每 12 小时', 1440:'每 24 小时'};
       document.getElementById('gh-st-interval').textContent = intervalLabels[autoMin] || (autoMin > 0 ? '每 ' + autoMin + ' 分钟' : '关闭');
-      document.getElementById('gh-st-time').textContent = d.last_sync ? new Date(d.last_sync).toLocaleString() : '从未';
+      document.getElementById('gh-st-time').textContent = d.last_sync ? formatExactBucketTime(d.last_sync) : '从未';
       document.getElementById('gh-st-status').innerHTML = ({idle:'待机', ok: _SV.ok+' 成功', error: _SV.err+' 失败'})[d.last_status] || esc(d.last_status);
       var errRow = document.getElementById('gh-st-error-row');
       if (d.last_error) {
@@ -8570,7 +8601,7 @@ async function saveConfig(persist) {
   }
 }
 
-checkAuth().then(authed => { if (authed) { loadBuckets(); loadStatusBanner(); } });
+checkAuth().then(authed => { if (authed) loadAuthenticatedDashboard(); });
 
 // ====== iter 1.7: version badge, plan kanban, about page ======
 var _obLocalVersion = null;
@@ -9213,7 +9244,7 @@ function _dailyStatusLabel(day) {
 
 function _dailyTime(value) {
   if (!value) return '';
-  try { return new Date(value).toLocaleString(); } catch (_) { return value; }
+  return formatExactBucketTime(value);
 }
 
 function renderDailyDayList() {

@@ -124,7 +124,9 @@ def test_dashboard_meaning_runtime_supports_lists_legacy_strings_and_escaping():
     html = DASHBOARD.read_text(encoding="utf-8")
     start = html.index("let detailLoadGeneration = 0;")
     end = html.index("async function bucketPin(", start)
-    source = html[start:end]
+    time_start = html.index("function parseBucketDate(")
+    time_end = html.index("function daysSince(", time_start)
+    source = html[time_start:time_end] + html[start:end]
     script = r"""
 const payloads = [
   {id:'list', metadata:{name:'List', type:'dynamic', meaning:[

@@ -115,6 +115,9 @@ dehydration:
   # api_key: ""    # ⚠️ Use env var OMBRE_COMPRESS_API_KEY instead / 请使用环境变量 OMBRE_COMPRESS_API_KEY
   max_tokens: 1024
   temperature: 0.1
+  # Optional OpenAI-compatible provider control; leave absent for other providers.
+  # DeepSeek tagging/dreams: use model deepseek-flash + reasoning_effort none.
+  # reasoning_effort: "none"
   timeout_seconds: 120             # LLM request timeout seconds / LLM 请求超时秒数
 
 # --- Daily continuity / 每日连续性 ---------------------------------

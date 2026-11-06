@@ -285,6 +285,12 @@ class Dehydrator:
         self.base_url = dehy_cfg.get("base_url", _DEFAULT_BASE_URL)
         self.max_tokens = dehy_cfg.get("max_tokens", _DEFAULT_MAX_TOKENS)
         self.temperature = dehy_cfg.get("temperature", _DEFAULT_TEMPERATURE)
+        # Optional provider capability: omit by default for compatibility.
+        self.reasoning_effort = dehy_cfg.get("reasoning_effort")
+        if self.reasoning_effort is not None and self.reasoning_effort not in (
+            "none", "minimal", "low", "medium", "high", "xhigh", "max",
+        ):
+            raise ValueError("dehydration.reasoning_effort is not supported")
         self.timeout_seconds = positive_float(dehy_cfg.get("timeout_seconds"), _API_TIMEOUT_SECONDS)
         # api_format: "openai_compat" (default) | "gemini" | "anthropic"
         self.api_format = dehy_cfg.get("api_format", "openai_compat")
@@ -402,6 +408,9 @@ class Dehydrator:
             f"{_PROMPT_VERSION}|{self.human}|{self.api_format}|"
             f"{self.base_url.rstrip('/')}|{self.model}|{content}"
         )
+        if self.api_format == "openai_compat" and self.reasoning_effort is not None:
+            keyed = json.dumps(["reasoning-effort-v1", self.reasoning_effort, keyed],
+                               ensure_ascii=False, separators=(",", ":"))
         return hashlib.sha256(keyed.encode()).hexdigest()
 
     def _get_cached_summary(self, content: str) -> str | None:
@@ -522,6 +531,9 @@ class Dehydrator:
         # openai_compat (default)
         if self.client is None:
             return ""
+        optional = {}
+        if self.reasoning_effort is not None:
+            optional["reasoning_effort"] = self.reasoning_effort
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -530,6 +542,7 @@ class Dehydrator:
             ],
             max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
             temperature=temperature if temperature is not None else self.temperature,
+            **optional,
         )
         if not response.choices:
             return ""

@@ -101,6 +101,12 @@ def register(mcp) -> None:
 
     @mcp.custom_route("/api/github/config", methods=["POST"])
     async def api_github_config(request: Request) -> Response:
+        if os.environ.get('OB_GITHUB_SEALED_ONLY') == '1':
+            err = sh._require_auth(request)
+            if err:
+                return err
+            from starlette.responses import JSONResponse
+            return JSONResponse({'ok': False, 'error': 'GitHub backup uses the sealed native job.'}, status_code=403)
         from starlette.responses import JSONResponse
         err = sh._require_auth(request)
         if err:
@@ -239,6 +245,12 @@ def register(mcp) -> None:
 
     @mcp.custom_route("/api/github/sync", methods=["POST"])
     async def api_github_sync(request: Request) -> Response:
+        if os.environ.get('OB_GITHUB_SEALED_ONLY') == '1':
+            err = sh._require_auth(request)
+            if err:
+                return err
+            from starlette.responses import JSONResponse
+            return JSONResponse({'ok': False, 'error': 'Plaintext backup is disabled.'}, status_code=403)
         from starlette.responses import JSONResponse
         err = sh._require_auth(request)
         if err:
@@ -253,6 +265,12 @@ def register(mcp) -> None:
 
     @mcp.custom_route("/api/github/import", methods=["POST"])
     async def api_github_import(request: Request) -> Response:
+        if os.environ.get('OB_GITHUB_SEALED_ONLY') == '1':
+            err = sh._require_auth(request)
+            if err:
+                return err
+            from starlette.responses import JSONResponse
+            return JSONResponse({'ok': False, 'error': 'Decrypt into a fresh private root.'}, status_code=403)
         """从 GitHub 拉回记忆（恢复 / 回滚）。⚠️ 会覆盖本地同名记忆。
 
         合并覆盖语义 + 导入前自动 zip 备份本地（可退回）。导入后建议跑 backfill 重建
