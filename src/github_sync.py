@@ -166,6 +166,8 @@ class GitHubSync:
 
     async def sync(self, buckets_dir: str) -> dict[str, Any]:
         """同步 buckets_dir 下所有 .md 到 GitHub。返回结果 dict。"""
+        if os.environ.get('OB_GITHUB_SEALED_ONLY') == '1':
+            return {'ok': False, 'error': 'Plaintext sync is disabled; use the sealed native backup job.'}
         async with self._sync_lock:
             try:
                 files = self._collect_files(buckets_dir)
@@ -197,6 +199,8 @@ class GitHubSync:
         本地独有的文件保留不动。embeddings.db 不在仓库里，调用方应在导入后跑一次
         backfill 重建向量。带 path-traversal 防护（仓库内容不可信，防 ../ 逃逸）。
         """
+        if os.environ.get('OB_GITHUB_SEALED_ONLY') == '1':
+            return {'ok': False, 'error': 'Legacy merge restore is disabled; decrypt into a fresh private root.'}
         async with self._sync_lock:
             return await self._import_from_github_locked(buckets_dir)
 
